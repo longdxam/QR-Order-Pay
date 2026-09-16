@@ -1,0 +1,26 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: maycafe-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/init-replica.js:ro
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().ok } catch (e) {
+            if (e.codeName === 'NotYetInitialized' || e.codeName === 'InvalidReplicaSetConfig') rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]})
+            else throw e
+          }
+        "
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  mongo_data:

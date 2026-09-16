@@ -1,0 +1,382 @@
+openapi: 3.0.3
+info:
+  title: Mây Café API
+  version: 1.0.0
+  description: |
+    REST API cho hệ thống đặt đồ uống qua QR tích hợp AI Barista.
+    - Prefix: `/api/v1`
+    - Auth: JWT (Staff/Admin) + HttpOnly cookie (Guest)
+    - Error envelope: `{ success: false, error: { code, message, details? }, requestId }`
+servers:
+  - url: http://localhost:4000/api/v1
+paths:
+  /admin/reviews:
+    get:
+      summary: Danh sách đánh giá khách hàng cho ADMIN
+      parameters:
+        - in: query
+          name: rating
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        '200': { description: 'data gồm items, total, averageRating, distribution, page, limit' }
+        '403': { description: Chỉ ADMIN }
+        '422': { description: Bộ lọc không hợp lệ }
+  /staff/tables:
+    get:
+      summary: Danh sách bàn cho STAFF hoặc ADMIN, không trả token/hash QR
+      responses:
+        '200': { description: 'data.tables gồm _id, code, name, capacity, isActive' }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Không đúng vai trò }
+  /receipts/current:
+    get:
+      summary: Hóa đơn của thiết bị sau khi đóng phiên
+      description: Cookie HttpOnly mc_receipt riêng, chỉ dùng cho hóa đơn và đánh giá; hết hạn 12 giờ từ lúc vào bàn. Không chấp nhận cookie này để đặt món. Chỉ trả đơn SERVED và PAID của participant hiện tại.
+      responses:
+        '200': { description: 'data gồm tableName, closedAt, total, orders kèm review' }
+        '401': { description: Phiên chưa đóng hoặc quyền xem hết hạn }
+  /receipts/orders/{id}/review:
+    post:
+      summary: Đánh giá đơn đã thanh toán bằng cookie mc_receipt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Đã lưu đánh giá }
+        '401': { description: Quyền xem hết hạn hoặc phiên chưa đóng }
+        '403': { description: Đơn của thiết bị khác }
+        '409': { description: Đơn đã được đánh giá }
+        '422': { description: Dữ liệu không hợp lệ hoặc đơn chưa phục vụ/thanh toán }
+  /auth/login:
+    post:
+      summary: Đăng nhập Staff/Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Sai tài khoản/mật khẩu
+  /categories:
+    get:
+      summary: Danh sách danh mục
+      responses:
+        '200': { description: OK }
+  /products:
+    get:
+      summary: Danh sách món đang bán
+      parameters:
+        - in: query
+          name: categoryId
+          schema: { type: string }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: tag
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /products/featured:
+    get: { summary: Món signature, responses: { '200': { description: OK } } }
+  /table-sessions/join:
+    post:
+      summary: Khách vào bàn bằng token QR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tableToken]
+              properties:
+                tableToken: { type: string, minLength: 8 }
+      responses:
+        '200': { description: OK, headers: { Set-Cookie: { description: 'mc_guest và mc_receipt (HttpOnly, 12 giờ)' } } }
+        '403': { description: Phiên chưa mở }
+        '404': { description: Token không hợp lệ }
+  /table-sessions/current:
+    get: { summary: Guest session hiện tại, responses: { '200': { description: OK } } }
+  /table-sessions/leave:
+    post: { summary: Rời bàn, responses: { '200': { description: OK } } }
+  /orders:
+    post:
+      summary: Đặt món
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 8 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [productId, sugarLevel, iceLevel, quantity]
+                    properties:
+                      productId: { type: string }
+                      variantId: { type: string, nullable: true }
+                      sugarLevel: { type: string }
+                      iceLevel: { type: string }
+                      toppingIds: { type: array, items: { type: string } }
+                      note: { type: string, maxLength: 280 }
+                      quantity: { type: integer, minimum: 1, maximum: 50 }
+                note: { type: string, maxLength: 280 }
+      responses:
+        '201': { description: Tạo mới }
+        '200': { description: Replay (idempotent) }
+        '409': { description: IDEMPOTENCY_CONFLICT hoặc bàn không khả dụng }
+        '422': { description: Dữ liệu không hợp lệ }
+  /orders/mine:
+    get: { summary: Đơn của participant hiện tại, responses: { '200': { description: OK } } }
+  /orders/{id}:
+    get:
+      summary: Chi tiết đơn (ownership)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '403': { description: Không thuộc participant }
+  /orders/{id}/cancel:
+    post:
+      summary: Huỷ đơn (chỉ khi PENDING)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '409': { description: Không thể huỷ }
+  /orders/{id}/review:
+    post:
+      summary: Đánh giá đơn (sau SERVED + PAID)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: OK }
+        '409': { description: Đã đánh giá }
+  /service-requests:
+    post:
+      summary: Gửi yêu cầu (gọi nhân viên / thanh toán)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [CALL_STAFF, REQUEST_BILL, OTHER] }
+                note: { type: string, maxLength: 280 }
+      responses:
+        '201': { description: OK }
+        '409': { description: Yêu cầu đang chờ xử lý }
+  /ai/recommendations:
+    post:
+      summary: AI gợi ý món
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string, minLength: 1, maxLength: 500 }
+                maxBudget: { type: integer, minimum: 1 }
+                preferences:
+                  type: object
+                  properties:
+                    noCaffeine: { type: boolean }
+                    noDairy: { type: boolean }
+                    lowSugar: { type: boolean }
+                    flavor: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [llm, fallback] }
+                  message: { type: string }
+                  recommendations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productId: { type: string }
+                        variantId: { type: string, nullable: true }
+                        reason: { type: string }
+                        unitPrice: { type: integer }
+                        name: { type: string }
+                        image: { type: string }
+        '429': { description: Rate limit }
+  /staff/orders:
+    get: { summary: Đơn cho KDS, responses: { '200': { description: OK } } }
+  /staff/orders/{id}/status:
+    patch:
+      summary: Chuyển trạng thái đơn
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [PENDING, CONFIRMED, PREPARING, READY, SERVED, CANCELLED] }
+                reason: { type: string, maxLength: 280 }
+      responses:
+        '200': { description: OK }
+        '409': { description: State transition invalid hoặc race }
+  /staff/tables/{tableId}/sessions:
+    post: { summary: Mở phiên bàn, responses: { '200': { description: OK } } }
+  /staff/table-sessions/{id}/status:
+    patch:
+      summary: Đổi trạng thái phiên
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, expectedVersion]
+              properties:
+                status: { type: string, enum: [OPEN, CHECKOUT, CLOSED] }
+                expectedVersion: { type: integer }
+      responses:
+        '200': { description: OK }
+        '409': { description: Phiên đã thay đổi }
+  /staff/table-sessions/{id}/bill:
+    get: { summary: Xem bill phiên, responses: { '200': { description: OK } } }
+  /staff/table-sessions/{id}/payments:
+    post:
+      summary: Thu tiền & đóng phiên
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 8 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, method, expectedVersion]
+              properties:
+                amount: { type: integer, minimum: 0 }
+                method: { type: string, enum: [CASH, BANK_TRANSFER, OTHER] }
+                expectedVersion: { type: integer }
+                note: { type: string, maxLength: 280 }
+      responses:
+        '201': { description: Tạo mới }
+        '200': { description: Replay }
+  /staff/service-requests:
+    get: { summary: Danh sách yêu cầu OPEN, responses: { '200': { description: OK } } }
+  /staff/service-requests/{id}/resolve:
+    post: { summary: Xử lý yêu cầu, responses: { '200': { description: OK } } }
+  /admin/reports/overview:
+    get:
+      summary: KPI tổng quan
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+      responses:
+        '200': { description: OK }
+  /admin/products:
+    get: { summary: Danh sách món (admin), responses: { '200': { description: OK } } }
+    post:
+      summary: Tạo món mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '201': { description: OK }
+  /admin/products/{id}:
+    patch: { summary: Cập nhật món, responses: { '200': { description: OK } } }
+    delete: { summary: Ẩn món, responses: { '200': { description: OK } } }
+  /admin/categories:
+    get: { summary: Danh mục, responses: { '200': { description: OK } } }
+    post: { summary: Tạo danh mục, responses: { '201': { description: OK } } }
+  /admin/toppings:
+    get: { summary: Topping, responses: { '200': { description: OK } } }
+    post: { summary: Tạo topping, responses: { '201': { description: OK } } }
+  /admin/toppings/{id}:
+    patch: { summary: Cập nhật topping, responses: { '200': { description: OK } } }
+  /admin/tables:
+    get: { summary: Danh sách bàn, responses: { '200': { description: OK } } }
+  /admin/users:
+    get: { summary: Danh sách nhân viên, responses: { '200': { description: OK } } }

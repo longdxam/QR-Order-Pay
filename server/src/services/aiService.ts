@@ -1,0 +1,257 @@
+import { z } from 'zod';
+import { config } from '../config/index.js';
+import { HttpAIProvider, type AIProvider } from '../providers/aiProvider.js';
+import { productRepository } from '../repositories/productRepository.js';
+import { logger } from '../infrastructure/logger.js';
+import type { ProductDoc } from '../models/Product.js';
+
+export interface RecommendInput {
+  prompt: string;
+  preferences?: {
+    noCaffeine?: boolean;
+    noDairy?: boolean;
+    lowSugar?: boolean;
+    flavor?: string;
+  };
+  maxBudget?: number;
+}
+
+export interface RecommendResult {
+  mode: 'llm' | 'fallback';
+  message: string;
+  recommendations: Array<{
+    productId: string;
+    variantId: string | null;
+    reason: string;
+    unitPrice: number;
+    name: string;
+    image: string;
+  }>;
+  followUpQuestion?: string;
+  latencyMs: number;
+}
+
+const RECOMMEND_SCHEMA = z.object({
+  message: z.string(),
+  recommendations: z.array(
+    z.object({
+      productId: z.string(),
+      variantId: z.string().nullable().optional(),
+      reason: z.string(),
+    }),
+  ),
+  followUpQuestion: z.string().optional(),
+});
+
+export class AIService {
+  constructor(private readonly provider: AIProvider | null, private readonly mode: 'live' | 'fallback' | 'off') {}
+
+  async recommend(input: RecommendInput): Promise<RecommendResult> {
+    input = normalizePreferences(input);
+    const started = Date.now();
+    if (this.mode === 'off') {
+      return fallbackResult(input, 'Chế độ AI đang tắt. Đang hiển thị gợi ý theo menu.', Date.now() - started);
+    }
+    if (!this.provider) {
+      return fallbackResult(input, 'AI Barista đang dùng gợi ý theo menu (fallback).', Date.now() - started);
+    }
+    try {
+      return await this.llmRecommend(input, started);
+    } catch (e) {
+      logger.warn({ err: (e as Error).message }, 'ai recommend failed; using fallback');
+      return fallbackResult(input, 'AI tạm thời không khả dụng, đang dùng gợi ý theo menu.', Date.now() - started);
+    }
+  }
+
+  private async llmRecommend(input: RecommendInput, started: number): Promise<RecommendResult> {
+    const candidates = await productRepository.listPublic({});
+    const filtered = candidates.filter((p) => matchesPreferences(p, input));
+    const candidateJson = filtered.map((p) => ({
+      id: p._id.toString(),
+      name: p.name,
+      description: p.description,
+      basePrice: p.basePrice,
+      variants: p.variants.map((v) => ({ id: v._id?.toString() ?? null, name: v.name, price: v.price })),
+      caffeine: !!p.ingredientMetadata?.caffeine,
+      dairy: !!p.ingredientMetadata?.dairy,
+      flavorProfile: p.ingredientMetadata?.flavorProfile ?? [],
+      tags: p.tags ?? [],
+    }));
+    const budget = input.maxBudget ?? null;
+    const preferences = input.preferences ?? {};
+    const sysPrompt = `Bạn là AI Barista cho quán cà phê Việt Nam. Trả lời tiếng Việt. CHỈ chọn món từ danh sách sản phẩm. KHÔNG tự tạo ID. Trả về JSON hợp lệ theo schema: {"message": string, "recommendations":[{"productId": string, "variantId": string|null, "reason": string}], "followUpQuestion": string?}. Lý do ≤ 25 từ, đề cập ràng buộc ngân sách/dinh dưỡng nếu có. Tối đa 3 gợi ý.`;
+    const userPrompt = `Khách: ${input.prompt}\nNgân sách: ${budget ? `${budget} VND` : 'không giới hạn'}\nSở thích: ${JSON.stringify(preferences)}\nDanh sách món (id, tên, giá từ, caffeine, dairy, flavor): ${JSON.stringify(candidateJson)}`;
+    const raw = await this.provider!.chat(
+      [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      { model: config.ai.model, jsonMode: true, temperature: 0.3 },
+    );
+    const parsed = safeJsonParse(raw);
+    const validated = RECOMMEND_SCHEMA.safeParse(parsed);
+    if (!validated.success) {
+      logger.warn({ raw: raw.slice(0, 200) }, 'ai schema invalid');
+      throw new Error('AI schema invalid');
+    }
+    const candidateMap = new Map(filtered.map((p) => [p._id.toString(), p]));
+    const seen = new Set<string>();
+    const recommendations = [];
+    for (const rec of validated.data.recommendations) {
+      const product = candidateMap.get(rec.productId);
+      if (!product) continue;
+      if (seen.has(rec.productId)) continue;
+      seen.add(rec.productId);
+      const variantId = rec.variantId ?? null;
+      const variant = variantId
+        ? product.variants.find((v) => v._id?.toString() === variantId && v.isAvailable !== false && product.allowedOptions.sizes.includes(v.name)) ?? null
+        : availableVariant(product);
+      if ((variantId && !variant) || (product.variants.length > 0 && !variant)) continue;
+      const unitPrice = variant ? variant.price : product.basePrice;
+      if (budget && unitPrice > budget) continue;
+      recommendations.push({
+        productId: product._id.toString(),
+        variantId: variant?._id?.toString() ?? null,
+        reason: rec.reason,
+        unitPrice,
+        name: product.name,
+        image: product.image,
+      });
+      if (recommendations.length >= 3) break;
+    }
+    if (recommendations.length === 0) {
+      return await fallbackResult(
+        input,
+        'AI chưa tìm được món phù hợp ràng buộc của bạn. Dưới đây là các món đang bán:',
+        Date.now() - started,
+      );
+    }
+    return {
+      mode: 'llm',
+      message: validated.data.message,
+      recommendations,
+      followUpQuestion: validated.data.followUpQuestion,
+      latencyMs: Date.now() - started,
+    };
+  }
+}
+
+function safeJsonParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    const match = /\{[\s\S]*\}/.exec(s);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function fallbackResult(input: RecommendInput, message: string, latencyMs: number): Promise<RecommendResult> {
+  return productRepository.listPublic({}).then((products) => {
+    const filtered = products.filter((p) => matchesPreferences(p, input));
+    const budget = input.maxBudget ?? Number.POSITIVE_INFINITY;
+    const pref = input.preferences ?? {};
+    const promptLow = input.prompt.toLowerCase();
+    const candidates: { p: ProductDoc; score: number }[] = [];
+    for (const p of filtered) {
+      const basePrice = availableVariant(p)?.price ?? p.basePrice;
+      if (basePrice > budget) continue;
+      if (pref.noCaffeine && p.ingredientMetadata?.caffeine) continue;
+      if (pref.noDairy && p.ingredientMetadata?.dairy) continue;
+      const flavor = (p.ingredientMetadata?.flavorProfile ?? []).map((x) => x.toLowerCase());
+      const tags = (p.tags ?? []).map((x) => x.toLowerCase());
+      const haystack = `${p.name} ${p.description} ${flavor.join(' ')} ${tags.join(' ')}`.toLowerCase();
+      let score = 0;
+      if (pref.lowSugar && /ít ngọt|low sugar/.test(haystack)) score += 2;
+      if (pref.flavor && haystack.includes(pref.flavor.toLowerCase())) score += 2;
+      if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) score += 1;
+      if (pref.noDairy && !p.ingredientMetadata?.dairy) score += 1;
+      if (/chua/.test(promptLow) && flavor.some((f) => f.includes('chua'))) score += 2;
+      if (/đắng|manly|đậm/.test(promptLow) && flavor.some((f) => f.includes('đắng') || f.includes('đậm'))) score += 2;
+      if (/ngọt/.test(promptLow) && flavor.some((f) => f.includes('ngọt'))) score += 1;
+      if (/trái cây|fruit/.test(promptLow) && tags.some((t) => t.includes('fruit') || t.includes('trái cây'))) score += 2;
+      if (p.isFeatured) score += 1;
+      candidates.push({ p, score });
+    }
+    candidates.sort((a, b) => b.score - a.score || a.p.basePrice - b.p.basePrice);
+    const picks = candidates.slice(0, 3).map((c) => c.p);
+    if (picks.length === 0) {
+      return {
+        mode: 'fallback',
+        message: 'Hiện chưa có món phù hợp tất cả lựa chọn. Bạn có thể đổi ngân sách hoặc khẩu vị rồi thử lại.',
+        recommendations: [],
+        latencyMs,
+      };
+    }
+    return {
+      mode: 'fallback',
+      message,
+      recommendations: picks.map((p) => ({
+        productId: p._id.toString(),
+        variantId: availableVariant(p)?._id?.toString() ?? null,
+        reason: buildReason(p, pref, budget),
+        unitPrice: availableVariant(p)?.price ?? p.basePrice,
+        name: p.name,
+        image: p.image,
+      })),
+      latencyMs,
+    };
+  });
+}
+
+function availableVariant(p: ProductDoc) {
+  return p.variants.filter((v) => v.isAvailable !== false && p.allowedOptions.sizes.includes(v.name)).sort((a, b) => a.price - b.price)[0] ?? null;
+}
+
+function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
+  if (!p.isAvailable || p.isArchived) return false;
+  if (input.preferences?.noCaffeine && p.ingredientMetadata?.caffeine !== false) return false;
+  if (input.preferences?.noDairy && p.ingredientMetadata?.dairy !== false) return false;
+  const variant = availableVariant(p);
+  if (p.variants.length > 0 && !variant) return false;
+  return (variant?.price ?? p.basePrice) <= (input.maxBudget ?? Infinity);
+}
+
+function normalizePreferences(input: RecommendInput): RecommendInput {
+  const prompt = input.prompt.toLowerCase();
+  const budget = /(?:dưới|tối đa|ngân sách)\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|đ|vnd)?/.exec(prompt);
+  return {
+    ...input,
+    maxBudget: input.maxBudget ?? (budget ? Number(budget[1]!.replace(',', '.')) * (/^(k|nghìn|ngàn)$/.test(budget[2] ?? '') ? 1000 : 1) : undefined),
+    preferences: {
+      ...input.preferences,
+      noCaffeine: input.preferences?.noCaffeine || /không (?:có |uống )?(?:caffeine|cà phê)/.test(prompt),
+      noDairy: input.preferences?.noDairy || /không (?:có |uống )?sữa/.test(prompt),
+      lowSugar: input.preferences?.lowSugar || /ít (?:ngọt|đường)/.test(prompt),
+    },
+  };
+}
+
+function buildReason(p: ProductDoc, pref: NonNullable<RecommendInput['preferences']>, budget: number): string {
+  const reasons: string[] = [];
+  if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) reasons.push('không caffeine');
+  if (pref.noDairy && !p.ingredientMetadata?.dairy) reasons.push('không sữa');
+  if (pref.lowSugar) reasons.push('chọn mức đường thấp khi thêm món');
+  if (pref.flavor) reasons.push(`hương ${pref.flavor}`);
+  if (Number.isFinite(budget) && p.basePrice <= budget) reasons.push(`trong tầm ${budget.toLocaleString('vi-VN')}đ`);
+  if (reasons.length === 0) reasons.push('đề xuất của quán');
+  return reasons.join(', ');
+}
+
+export function buildAIService(): AIService {
+  if (config.ai.mode === 'live' && config.ai.apiKey) {
+    const provider = new HttpAIProvider({
+      name: config.ai.provider,
+      apiKey: config.ai.apiKey,
+      baseUrl: config.ai.baseUrl,
+    });
+    return new AIService(provider, 'live');
+  }
+  return new AIService(null, config.ai.mode === 'off' ? 'off' : 'fallback');
+}

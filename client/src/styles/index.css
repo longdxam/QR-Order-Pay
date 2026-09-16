@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: 'Inter', 'Be Vietnam Pro', system-ui, sans-serif;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-foreground hover:bg-muted;
+  }
+  .btn-outline {
+    @apply btn border border-foreground/15 bg-transparent text-foreground hover:bg-muted;
+  }
+  .btn-accent {
+    @apply btn bg-accent text-accent-foreground hover:bg-accent/90;
+  }
+  .card {
+    @apply rounded-2xl bg-card shadow-soft border border-foreground/5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #EFEAE2 0px, #F7F2EA 40px, #EFEAE2 80px);
+  background-size: 200px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer { animation: none; }
+}
