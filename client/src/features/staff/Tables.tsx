@@ -10,7 +10,13 @@ import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/Em
 
 interface Table { _id: string; code: string; name: string; capacity: number; isActive: boolean }
 interface SessionItem {
-  session: { _id: string; status: 'OPEN' | 'CHECKOUT' | 'CLOSED'; version: number };
+  session: {
+    _id: string;
+    status: 'OPEN' | 'CHECKOUT' | 'CLOSED';
+    version: number;
+    source?: 'STAFF' | 'GUEST';
+    closedReason?: 'PAID' | 'STAFF' | 'IDLE' | null;
+  };
   table: Table; orderCount: number;
 }
 interface Bill {
@@ -88,7 +94,7 @@ function SessionCard({ item }: { item: SessionItem }): JSX.Element {
   const unpaid = bill.data?.orders.filter((o) => o.status === 'SERVED' && o.paymentStatus === 'UNPAID') ?? [];
   const canCloseEmpty = bill.data && bill.data.orders.every((o) => o.paymentStatus === 'PAID' || o.status === 'CANCELLED');
   return <Card className="p-4 space-y-3">
-    <div className="flex justify-between gap-2"><h3 className="font-semibold text-lg">{table.name}</h3><Badge tone={session.status === 'CHECKOUT' ? 'warning' : 'info'}>{session.status === 'CHECKOUT' ? 'Đang thanh toán' : 'Đang phục vụ'}</Badge></div>
+    <div className="flex justify-between gap-2"><h3 className="font-semibold text-lg">{table.name}</h3><div className="flex items-center gap-2 shrink-0">{session.source === 'GUEST' ? <Badge tone="neutral">Tự mở</Badge> : null}<Badge tone={session.status === 'CHECKOUT' ? 'warning' : 'info'}>{session.status === 'CHECKOUT' ? 'Đang thanh toán' : 'Đang phục vụ'}</Badge></div></div>
     <p className="text-sm">{item.orderCount} đơn trong phiên</p>
     {bill.isError ? <ErrorState message={getErrorMessage(bill.error)} onRetry={() => bill.refetch()} /> : bill.isLoading ? <p>Đang tính tiền...</p> : <>
       <p className="font-semibold">Phải thu (món đã phục vụ): {vnd(bill.data!.total)}</p>

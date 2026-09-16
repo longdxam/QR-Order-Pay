@@ -5,14 +5,23 @@ import { ConflictError } from '../errors/AppError.js';
 export interface ITableSessionRepository {
   findActiveByTable(tableId: string): Promise<TableSessionDoc | null>;
   findById(id: string, session?: ClientSession | null): Promise<TableSessionDoc | null>;
-  create(data: { tableId: string; openedBy?: string | null }, session?: ClientSession | null): Promise<TableSessionDoc>;
+  create(
+    data: { tableId: string; openedBy?: string | null; source?: 'STAFF' | 'GUEST' },
+    session?: ClientSession | null,
+  ): Promise<TableSessionDoc>;
   updateStatus(
     id: string,
     expectedVersion: number,
-    update: { status: 'OPEN' | 'CHECKOUT' | 'CLOSED'; closedBy?: string | null },
+    update: {
+      status: 'OPEN' | 'CHECKOUT' | 'CLOSED';
+      closedBy?: string | null;
+      closedReason?: 'PAID' | 'STAFF' | 'IDLE' | null;
+      billId?: string | null;
+    },
     session?: ClientSession | null,
   ): Promise<TableSessionDoc | null>;
   listOpen(): Promise<TableSessionDoc[]>;
+  listIdleCandidates(cutoff: Date): Promise<TableSessionDoc[]>;
 }
 
 export const tableSessionRepository: ITableSessionRepository = {
@@ -25,7 +34,7 @@ export const tableSessionRepository: ITableSessionRepository = {
   async create(data, session) {
     try {
       return await TableSessionModel.create(
-        [{ tableId: data.tableId, openedBy: data.openedBy ?? null }],
+        [{ tableId: data.tableId, openedBy: data.openedBy ?? null, source: data.source ?? 'STAFF' }],
         { session: session ?? undefined },
       ).then((d) => d[0]!);
     } catch (e: unknown) {
@@ -40,20 +49,45 @@ export const tableSessionRepository: ITableSessionRepository = {
     }
   },
   async updateStatus(id, expectedVersion, update, session) {
-    const r = await TableSessionModel.findOneAndUpdate(
-      { _id: id, version: expectedVersion },
+    const filter = { _id: id, version: expectedVersion };
+    const options = { new: true, session: session ?? undefined };
+
+    if (update.status === 'CLOSED') {
+      return TableSessionModel.findOneAndUpdate(
+        filter,
+        {
+          $set: {
+            status: update.status,
+            closedAt: new Date(),
+            closedBy: update.closedBy ?? null,
+            closedReason: update.closedReason ?? 'STAFF',
+            ...(update.billId !== undefined ? { billId: update.billId } : {}),
+          },
+          $inc: { version: 1 },
+        },
+        options,
+      );
+    }
+
+    // Mở lại phiên (OPEN / CHECKOUT) phải sạch mọi dấu vết đã đóng trước đó.
+    return TableSessionModel.findOneAndUpdate(
+      filter,
       {
         $set: {
           status: update.status,
-          ...(update.status === 'CLOSED' ? { closedAt: new Date(), closedBy: update.closedBy ?? null } : {}),
+          closedBy: null,
+          ...(update.billId !== undefined ? { billId: update.billId } : {}),
         },
+        $unset: { closedAt: 1, closedReason: 1 },
         $inc: { version: 1 },
       },
-      { new: true, session: session ?? undefined },
+      options,
     );
-    return r;
   },
   async listOpen() {
     return TableSessionModel.find({ status: { $in: ['OPEN', 'CHECKOUT'] } });
+  },
+  async listIdleCandidates(cutoff) {
+    return TableSessionModel.find({ status: 'OPEN', source: 'GUEST', startedAt: { $lt: cutoff } });
   },
 };

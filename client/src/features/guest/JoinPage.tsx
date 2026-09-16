@@ -3,12 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { QrCode, Sparkles } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { api, getErrorMessage, unwrap } from '../../lib/api';
+import { api, getErrorCode, getErrorMessage, unwrap } from '../../lib/api';
 import { useToast } from '../../components/ui/Toast';
 import { useDocumentTitle } from '../../components/ui/EmptyState';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCart } from '../../store/cart';
 import { disconnectSocket } from '../../lib/socket';
+
+interface JoinResult {
+  guestSessionId: string;
+  participantId: string;
+  tableSessionId: string;
+  created: boolean;
+  table: { id: string; code: string; name: string; capacity: number };
+  tableSession: { id: string; status: string; startedAt: string };
+}
 
 export function JoinPage(): JSX.Element {
   useDocumentTitle('Vào bàn');
@@ -29,18 +38,32 @@ export function JoinPage(): JSX.Element {
     try {
       let tableToken = t.trim();
       if (tableToken.includes('/t/')) tableToken = tableToken.split('/t/')[1]!.split(/[?#]/)[0]!;
-      const joined = unwrap<{ participantId: string; tableSessionId: string }>(
-        await api.post('/table-sessions/join', { tableToken }),
-      );
+      const joined = unwrap<JoinResult>(await api.post('/table-sessions/join', { tableToken }));
       disconnectSocket();
+      const previousSessionId = useCart.getState().tableSessionId;
+      if (previousSessionId !== null && previousSessionId !== joined.tableSessionId) {
+        toast({ title: 'Phiên trước đã kết thúc — đây là phiên mới', tone: 'info' });
+      }
       useCart.getState().setSession(joined.tableSessionId, joined.participantId);
       qc.removeQueries({ queryKey: ['my-orders'] });
       qc.removeQueries({ queryKey: ['receipt'] });
       qc.removeQueries({ queryKey: ['guest-session'] });
-      toast({ title: 'Đã vào bàn', description: 'Bạn có thể bắt đầu chọn món.', tone: 'success' });
+      toast({
+        title: joined.created ? 'Đã mở phiên mới cho bàn' : 'Đã vào bàn',
+        description: 'Bạn có thể bắt đầu chọn món.',
+        tone: 'success',
+      });
       navigate('/menu');
     } catch (e) {
-      toast({ title: 'Không vào được bàn', description: getErrorMessage(e), tone: 'danger' });
+      if (getErrorCode(e) === 'FORBIDDEN') {
+        toast({
+          title: 'Bàn chưa mở phiên',
+          description: 'Vui lòng báo nhân viên hoặc quét lại QR sau ít phút.',
+          tone: 'danger',
+        });
+      } else {
+        toast({ title: 'Không vào được bàn', description: getErrorMessage(e), tone: 'danger' });
+      }
     } finally {
       setLoading(false);
     }

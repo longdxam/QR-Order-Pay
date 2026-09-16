@@ -4,17 +4,20 @@ import { config } from './config/index.js';
 import { connectMongo, disconnectMongo } from './infrastructure/mongo.js';
 import { logger } from './infrastructure/logger.js';
 import { createSocketServer } from './realtime/socket.js';
+import { startIdleSessionSweeper } from './services/idleSessionSweeper.js';
 
 async function main(): Promise<void> {
   await connectMongo();
   const app = buildApp();
   const httpServer = http.createServer(app);
   createSocketServer(httpServer);
+  const stopIdleSessionSweeper = startIdleSessionSweeper();
   httpServer.listen(config.port, () => {
     logger.info({ port: config.port }, 'server listening');
   });
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutting down');
+    stopIdleSessionSweeper();
     httpServer.close();
     await disconnectMongo();
     process.exit(0);
