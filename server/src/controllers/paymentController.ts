@@ -31,7 +31,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
       publishStaff('serviceRequest.resolved', payload);
       closeSessionSockets(id);
     }
-    res.status(result.replayed ? 200 : 201).json({ success: true, data: { payment: result.payment, orderIds: result.orderIds, replayed: result.replayed } });
+    res.status(result.replayed ? 200 : 201).json({ success: true, data: { payment: result.payment, orderIds: result.orderIds, replayed: result.replayed, billId: result.billId } });
   } catch (e) {
     next(e);
   }

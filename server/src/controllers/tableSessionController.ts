@@ -21,7 +21,17 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
       const table = await tableRepository.findByPublicTokenHash(sha256(input.tableToken));
       const session = await tableSessionRepository.findById(req.guest.tableSessionId);
       if (table?.isActive && session && session.tableId.toString() === table.id) {
-        res.json({ success: true, data: { participantId: req.guest.participantId, tableSessionId: session.id } });
+        res.json({
+          success: true,
+          data: {
+            guestSessionId: req.guest.id,
+            participantId: req.guest.participantId,
+            tableSessionId: session.id,
+            created: false,
+            table: { id: table.id, code: table.code, name: table.name, capacity: table.capacity },
+            tableSession: { id: session.id, status: session.status, startedAt: session.startedAt },
+          },
+        });
         return;
       }
     }
@@ -34,6 +44,7 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
         guestSessionId: result.guestId,
         participantId: result.participantId,
         tableSessionId: result.tableSession._id.toString(),
+        created: result.created,
         table: {
           id: result.table._id.toString(),
           code: result.table.code,
@@ -112,9 +123,9 @@ export async function staffOpen(req: Request, res: Response, next: NextFunction)
       res.status(422).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Thiếu tableId.' } });
       return;
     }
-    const session = await openSession(tableId, req.user.id);
+    const { session, created } = await openSession(tableId, req.user.id);
     publishStaff('tableSession.statusChanged', { tableSessionId: session.id, status: session.status });
-    res.json({ success: true, data: { session } });
+    res.json({ success: true, data: { session, created } });
   } catch (e) {
     next(e);
   }

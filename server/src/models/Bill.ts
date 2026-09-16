@@ -1,0 +1,60 @@
+import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
+
+export const billItemSchema = new Schema(
+  {
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    variantId: { type: Schema.Types.ObjectId, default: null },
+    sizeName: { type: String, default: null },
+    sugarLevel: { type: String, required: true },
+    iceLevel: { type: String, required: true },
+    toppingIds: { type: [Schema.Types.ObjectId], default: [] },
+    toppingNamesSnapshot: { type: [String], default: [] },
+    note: { type: String, default: '' },
+    quantity: { type: Number, required: true, min: 1 },
+    unitPrice: { type: Number, required: true, min: 0 },
+    lineTotal: { type: Number, required: true, min: 0 },
+    nameSnapshot: { type: String, required: true },
+    variantNameSnapshot: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
+export const billOrderSchema = new Schema(
+  {
+    orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
+    code: { type: String, required: true },
+    status: { type: String, required: true },
+    paymentStatus: { type: String, required: true },
+    total: { type: Number, required: true, min: 0 },
+    createdAt: { type: Date, required: true },
+    participantId: { type: String, default: null },
+    items: { type: [billItemSchema], default: [] },
+  },
+  { _id: false },
+);
+
+// Snapshot bất biến của một phiên đã thanh toán; chỉ ghi một lần, không có API sửa/xoá.
+export const billSchema = new Schema(
+  {
+    tableSessionId: { type: Schema.Types.ObjectId, ref: 'TableSession', required: true, unique: true, index: true },
+    tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
+    tableCode: { type: String, required: true },
+    source: { type: String, enum: ['STAFF', 'GUEST'], default: 'STAFF', required: true },
+    openedAt: { type: Date, required: true },
+    closedAt: { type: Date, required: true },
+    openedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    closedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    participants: { type: [String], default: [] },
+    orders: { type: [billOrderSchema], default: [] },
+    subtotal: { type: Number, required: true },
+    total: { type: Number, required: true },
+    paidAmount: { type: Number, required: true },
+    paymentIds: { type: [Schema.Types.ObjectId], ref: 'Payment', default: [] },
+  },
+  { timestamps: true },
+);
+
+billSchema.index({ createdAt: -1 });
+
+export type BillDoc = HydratedDocument<InferSchemaType<typeof billSchema>>;
+export const BillModel = model('Bill', billSchema);

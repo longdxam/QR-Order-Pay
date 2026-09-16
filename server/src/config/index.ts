@@ -42,6 +42,8 @@ export const config = {
   accessTokenTtl: required('ACCESS_TOKEN_TTL', '15m'),
   refreshTokenTtl: required('REFRESH_TOKEN_TTL', '30d'),
   seedDemoPassword: required('SEED_DEMO_PASSWORD', 'MayCafe@2025'),
+  guestAutoOpen: bool('GUEST_AUTO_OPEN', true),
+  sessionIdleTimeoutMin: num('SESSION_IDLE_TIMEOUT_MIN', 60),
   ai: {
     mode: required('AI_MODE', 'fallback') as 'live' | 'fallback' | 'off',
     provider: required('AI_PROVIDER', 'openai'),

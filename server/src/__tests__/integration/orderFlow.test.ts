@@ -17,6 +17,10 @@ import { GuestSessionModel } from '../../models/GuestSession.js';
 import { PaymentModel } from '../../models/Payment.js';
 import { AIService } from '../../services/aiService.js';
 import { ReviewModel } from '../../models/Review.js';
+import { OrderModel } from '../../models/Order.js';
+import { BillModel } from '../../models/Bill.js';
+import { AuditLogModel } from '../../models/AuditLog.js';
+import { config } from '../../config/index.js';
 
 let httpServer: Server;
 let socketServer: ReturnType<typeof createSocketServer>;
@@ -526,4 +530,182 @@ describe('order flow integration', () => {
       });
     expect(conflict.status).toBe(409);
   }, 60_000);
+
+  describe('guest auto-open sessions', () => {
+    function cookieNamed(res: { headers: Record<string, unknown> }, name: string): string {
+      const header = res.headers['set-cookie'];
+      const raw = (Array.isArray(header) ? (header as string[]) : []).find((c: string) => c.startsWith(`${name}=`));
+      expect(raw).toBeDefined();
+      return raw!.split(';')[0]!;
+    }
+    async function orderPayload() {
+      const product = (await ProductModel.findOne({ slug: 'espresso-may' }))!;
+      return {
+        items: [
+          {
+            productId: product._id.toString(),
+            variantId: product.variants[0]!._id!.toString(),
+            sugarLevel: '50%',
+            iceLevel: 'normal-ice',
+            toppingIds: [],
+            quantity: 1,
+          },
+        ],
+      };
+    }
+    async function joinWithoutStaff(cookie?: string) {
+      const req = request(app).post('/api/v1/table-sessions/join');
+      if (cookie) req.set('Cookie', cookie);
+      const res = await req.send({ tableToken });
+      expect(res.status).toBe(200);
+      return res;
+    }
+
+    it('auto-opens a GUEST session so a fresh table can order without staff', async () => {
+      const joined = await joinWithoutStaff();
+      expect(joined.body.data.created).toBe(true);
+      expect(joined.body.data.table).toMatchObject({ id: tableId, code: 'B01', name: 'Bàn 01', capacity: 4 });
+      const cookie = cookieNamed(joined, 'mc_guest');
+      const sessionId = joined.body.data.tableSessionId as string;
+      expect(joined.body.data.tableSession).toMatchObject({ id: sessionId, status: 'OPEN' });
+
+      const sessions = await TableSessionModel.find({ tableId }).lean();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({ status: 'OPEN', source: 'GUEST', openedBy: null });
+      expect(sessions[0]!._id.toString()).toBe(sessionId);
+      expect(await AuditLogModel.countDocuments({ action: 'tableSession.autoOpened', entityId: sessionId })).toBe(1);
+
+      const order = await place(cookie, await orderPayload());
+      expect(order.total).toBe(35000);
+    }, 60_000);
+
+    it('reuses the same participant and session when the QR is scanned again', async () => {
+      const first = await joinWithoutStaff();
+      const cookie = cookieNamed(first, 'mc_guest');
+      const again = await joinWithoutStaff(cookie);
+      expect(again.body.data.created).toBe(false);
+      expect(again.body.data.participantId).toBe(first.body.data.participantId);
+      expect(again.body.data.tableSessionId).toBe(first.body.data.tableSessionId);
+      expect(await TableSessionModel.countDocuments({ tableId })).toBe(1);
+    }, 60_000);
+
+    it('returns the live GUEST session instead of a conflict when staff opens the table', async () => {
+      const joined = await joinWithoutStaff();
+      const sessionId = joined.body.data.tableSessionId as string;
+      const opened = await request(app)
+        .post(`/api/v1/staff/tables/${tableId}/sessions`)
+        .set('Authorization', `Bearer ${staffAccess}`);
+      expect(opened.status).toBe(200);
+      expect(opened.body.data.created).toBe(false);
+      expect(opened.body.data.session._id).toBe(sessionId);
+
+      const list = await request(app).get('/api/v1/staff/table-sessions').set('Authorization', `Bearer ${staffAccess}`);
+      expect(list.status).toBe(200);
+      const item = list.body.data.items.find((it: { session: { _id: string } }) => it.session._id === sessionId);
+      expect(item).toBeDefined();
+      expect(item.session.source).toBe('GUEST');
+      expect(item.session).toHaveProperty('closedReason');
+      expect(item.table._id).toBe(tableId);
+    }, 60_000);
+
+    it('bill closes the auto-opened session and lets a new scan order again', async () => {
+      const joined = await joinWithoutStaff();
+      const cookie = cookieNamed(joined, 'mc_guest');
+      const sessionId = joined.body.data.tableSessionId as string;
+      const order = await place(cookie, await orderPayload());
+      await serve(order._id);
+      const version = await checkout(sessionId);
+      const paid = await pay(sessionId, order.total, version, 'auto-open-payment');
+      expect(paid.status).toBe(201);
+      expect(typeof paid.body.data.billId).toBe('string');
+      expect(paid.body.data.orderIds).toEqual([order._id]);
+      expect((await TableSessionModel.findById(sessionId))!.status).toBe('CLOSED');
+
+      const rescan = await joinWithoutStaff(cookie);
+      expect(rescan.body.data.created).toBe(true);
+      const newSessionId = rescan.body.data.tableSessionId as string;
+      expect(newSessionId).not.toBe(sessionId);
+      expect((await TableSessionModel.findById(newSessionId))!.status).toBe('OPEN');
+
+      const newCookie = cookieNamed(rescan, 'mc_guest');
+      const newOrder = await place(newCookie, await orderPayload());
+      expect(newOrder._id).toBeTruthy();
+
+      const revoked = await request(app)
+        .post('/api/v1/orders')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomToken(16))
+        .send(await orderPayload());
+      expect(revoked.status).toBe(401);
+    }, 60_000);
+
+    it('replays the payment idempotently against a single immutable bill', async () => {
+      const joined = await joinWithoutStaff();
+      const cookie = cookieNamed(joined, 'mc_guest');
+      const sessionId = joined.body.data.tableSessionId as string;
+      const order = await place(cookie, await orderPayload());
+      await serve(order._id);
+      const version = await checkout(sessionId);
+
+      const first = await pay(sessionId, order.total, version, 'auto-open-replay');
+      expect(first.status).toBe(201);
+      const replay = await pay(sessionId, order.total, version, 'auto-open-replay');
+      expect(replay.status).toBe(200);
+      expect(replay.body.data.replayed).toBe(true);
+      expect(replay.body.data.billId).toBe(first.body.data.billId);
+      expect(await BillModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
+      expect(await PaymentModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
+    }, 60_000);
+
+    it('serves the frozen bill snapshot and a receipt free of internal fields', async () => {
+      const joined = await joinWithoutStaff();
+      const cookie = cookieNamed(joined, 'mc_guest');
+      const receiptCookie = cookieNamed(joined, 'mc_receipt');
+      const sessionId = joined.body.data.tableSessionId as string;
+      const order = await place(cookie, await orderPayload());
+      await serve(order._id);
+      const version = await checkout(sessionId);
+      expect((await pay(sessionId, order.total, version, 'auto-open-snapshot')).status).toBe(201);
+
+      const receipt = await request(app).get('/api/v1/receipts/current').set('Cookie', receiptCookie);
+      expect(receipt.status).toBe(200);
+      expect(receipt.body.data.orders).toHaveLength(1);
+      const line = receipt.body.data.orders[0];
+      expect(line).toMatchObject({ _id: order._id, code: expect.any(String), total: order.total, review: null });
+      expect(line.items).toHaveLength(1);
+      for (const item of [line, ...line.items]) {
+        for (const key of ['idempotencyKey', 'requestHash', 'statusHistory', 'version', '__v']) {
+          expect(item).not.toHaveProperty(key);
+        }
+      }
+
+      await OrderModel.updateOne({ _id: order._id }, { $set: { total: 1 } });
+      const bill = await request(app)
+        .get(`/api/v1/staff/table-sessions/${sessionId}/bill`)
+        .set('Authorization', `Bearer ${staffAccess}`);
+      expect(bill.status).toBe(200);
+      expect(bill.body.data.total).toBe(order.total);
+      expect(bill.body.data.orders).toHaveLength(1);
+      expect(bill.body.data.orders[0]._id).toBe(order._id);
+      expect(bill.body.data.orders[0].total).toBe(order.total);
+    }, 60_000);
+
+    it('refuses guests when auto-open is disabled', async () => {
+      // `config` là object runtime thường; chỉ tầng type mới là `as const` nên test đổi được giá trị.
+      const runtimeConfig = config as unknown as { guestAutoOpen: boolean };
+      const previous = runtimeConfig.guestAutoOpen;
+      runtimeConfig.guestAutoOpen = false;
+      try {
+        const res = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+        expect(res.status).toBe(403);
+        expect(res.body.error).toMatchObject({
+          code: 'FORBIDDEN',
+          message: 'Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên.',
+        });
+        expect(await TableSessionModel.countDocuments()).toBe(0);
+      } finally {
+        runtimeConfig.guestAutoOpen = previous;
+      }
+    }, 60_000);
+  });
 });
