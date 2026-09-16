@@ -52,6 +52,7 @@ apiRouter.post('/ai/recommendations', loadGuest, guestCsrfGuard, requireGuest, a
 // staff/admin
 apiRouter.get('/staff/tables', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffTables);
 apiRouter.get('/staff/orders', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffList);
+apiRouter.get('/staff/orders/:id', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffGetOne);
 apiRouter.patch('/staff/orders/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffTransition);
 apiRouter.post('/staff/orders/:id/confirm', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffConfirmReceipt);
 
@@ -73,6 +74,7 @@ apiRouter.delete('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin
 
 apiRouter.get('/admin/categories', requireAuth, requireRole('ADMIN'), admin.listCategories);
 apiRouter.post('/admin/categories', requireAuth, requireRole('ADMIN'), admin.createCategory);
+apiRouter.patch('/admin/categories/:id', requireAuth, requireRole('ADMIN'), admin.updateCategory);
 
 apiRouter.get('/admin/toppings', requireAuth, requireRole('ADMIN'), admin.listToppings);
 apiRouter.post('/admin/toppings', requireAuth, requireRole('ADMIN'), admin.createTopping);
@@ -81,6 +83,8 @@ apiRouter.patch('/admin/toppings/:id', requireAuth, requireRole('ADMIN'), admin.
 apiRouter.get('/admin/tables', requireAuth, requireRole('ADMIN'), admin.listTables);
 apiRouter.post('/admin/tables/:id/rotate-token', requireAuth, requireRole('ADMIN'), admin.rotateTableToken);
 apiRouter.get('/admin/users', requireAuth, requireRole('ADMIN'), admin.listUsers);
+apiRouter.post('/admin/users', requireAuth, requireRole('ADMIN'), admin.createStaff);
+apiRouter.patch('/admin/users/:id', requireAuth, requireRole('ADMIN'), admin.updateUser);
 apiRouter.get('/admin/reviews', requireAuth, requireRole('ADMIN'), admin.listReviews);
 
 // health

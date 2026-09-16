@@ -9,6 +9,7 @@ import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
 import { publishMenuChange } from '../realtime/socket.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
+import { hashPassword } from '../utils/crypto.js';
 
 export async function reportsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -160,6 +161,68 @@ export async function createCategory(req: Request, res: Response, next: NextFunc
     if (!body.name || !body.slug) throw new ValidationError('Thiếu tên hoặc slug.');
     const created = await categoryRepository.create({ name: body.name, slug: body.slug, sortOrder: body.sortOrder ?? 0 });
     res.status(201).json({ success: true, data: { category: created } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateCategory(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params['id'] ?? '');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const updated = await categoryRepository.update(id, body);
+    if (!updated) {
+      res.status(404).json({ success: false, error: { code: 'CATEGORY_NOT_FOUND', message: 'Không tìm thấy danh mục.' } });
+      return;
+    }
+    publishMenuChange();
+    res.json({ success: true, data: { category: updated } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function createStaff(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = req.body as { name?: string; email?: string; password?: string; role?: 'STAFF' | 'ADMIN' };
+    if (!body.name || !body.email || !body.password) throw new ValidationError('Thiếu tên, email hoặc mật khẩu.');
+    if (body.password.length < 8) throw new ValidationError('Mật khẩu tối thiểu 8 ký tự.');
+    const existing = await userRepository.findByEmail(body.email);
+    if (existing) {
+      res.status(409).json({ success: false, error: { code: 'EMAIL_TAKEN', message: 'Email đã được sử dụng.' } });
+      return;
+    }
+    const passwordHash = await hashPassword(body.password);
+    const user = await userRepository.create({
+      name: body.name,
+      email: body.email,
+      passwordHash,
+      role: body.role ?? 'STAFF',
+    });
+    res.status(201).json({ success: true, data: { user: { id: user._id.toString(), name: user.name, email: user.email, role: user.role, isActive: user.isActive } } });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function updateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params['id'] ?? '');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.password === 'string') {
+      if (body.password.length < 8) throw new ValidationError('Mật khẩu tối thiểu 8 ký tự.');
+      body.passwordHash = await hashPassword(body.password);
+      delete body.password;
+    }
+    const updated = await userRepository.update(id, body);
+    if (!updated) {
+      res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'Không tìm thấy nhân viên.' } });
+      return;
+    }
+    res.json({
+      success: true,
+      data: { user: { id: updated._id.toString(), name: updated.name, email: updated.email, role: updated.role, isActive: updated.isActive } },
+    });
   } catch (e) {
     next(e);
   }

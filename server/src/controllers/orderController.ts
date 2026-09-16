@@ -98,6 +98,23 @@ export async function staffList(req: Request, res: Response, next: NextFunction)
   }
 }
 
+export async function staffGetOne(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params['id'] ?? '');
+    const order = await orderRepository.findById(id);
+    if (!order) {
+      res.status(404).json({ success: false, error: { code: 'ORDER_NOT_FOUND', message: 'Không tìm thấy đơn.' } });
+      return;
+    }
+    const tables = await tableRepository.list();
+    const table = tables.find((t) => t.id === order.tableId.toString());
+    const obj = order.toObject();
+    res.json({ success: true, data: { order: { ...obj, tableName: table?.name ?? 'Bàn', tableCode: table?.code ?? '' } } });
+  } catch (e) {
+    next(e);
+  }
+}
+
 export async function staffTransition(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.user) throw new NotFoundError();

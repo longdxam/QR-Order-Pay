@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -8,7 +8,8 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { getSocket } from '../../lib/socket';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Eye } from 'lucide-react';
+import { OrderDetailModal } from './OrderDetailModal';
 
 interface OrderItem {
   productId: string;
@@ -48,6 +49,7 @@ export function StaffKDS(): JSX.Element {
   useDocumentTitle('KDS');
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const ordersQuery = useQuery({
     queryKey: ['staff-orders'],
@@ -123,17 +125,18 @@ export function StaffKDS(): JSX.Element {
               {items.length === 0 ? (
                 <Card className="p-3 text-center text-xs text-muted-foreground">Trống</Card>
               ) : (
-                items.map((order) => <OrderCard key={order._id} order={order} busy={transition.isPending} nextStatus={c.next} onCancel={() => transition.mutate({ id: order._id, status: 'CANCELLED' })} onAdvance={() => transition.mutate({ id: order._id, status: c.next! })} />)
+                items.map((order) => <OrderCard key={order._id} order={order} busy={transition.isPending} nextStatus={c.next} onCancel={() => transition.mutate({ id: order._id, status: 'CANCELLED' })} onAdvance={() => transition.mutate({ id: order._id, status: c.next! })} onView={() => setDetailId(order._id)} />)
               )}
             </div>
           );
         })}
       </div>
+      <OrderDetailModal orderId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }
 
-function OrderCard({ order, nextStatus, onAdvance, onCancel, busy }: { order: Order; nextStatus?: Order['status']; onAdvance: () => void; onCancel: () => void; busy: boolean }): JSX.Element {
+function OrderCard({ order, nextStatus, onAdvance, onCancel, busy, onView }: { order: Order; nextStatus?: Order['status']; onAdvance: () => void; onCancel: () => void; busy: boolean; onView: () => void }): JSX.Element {
   const ageMin = Math.max(0, Math.round((Date.now() - new Date(order.createdAt).getTime()) / 60000));
   const isLate = ageMin > 10;
   return (
@@ -161,12 +164,17 @@ function OrderCard({ order, nextStatus, onAdvance, onCancel, busy }: { order: Or
           </li>
         ))}
       </ul>
-      {nextStatus ? (
-        <Button onClick={onAdvance} disabled={busy} size="sm" className="w-full">
-          Chuyển sang {statusLabel(nextStatus)} <ChevronRight className="h-4 w-4" />
+      <div className="flex gap-2">
+        {nextStatus ? (
+          <Button onClick={onAdvance} disabled={busy} size="sm" className="flex-1">
+            Chuyển sang {statusLabel(nextStatus)} <ChevronRight className="h-4 w-4" />
+          </Button>
+        ) : null}
+        <Button variant="outline" size="sm" onClick={onView} title="Xem chi tiết">
+          <Eye className="h-4 w-4" />
         </Button>
-      ) : null}
-      {['PENDING', 'CONFIRMED'].includes(order.status) ? <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel(); }}>Hủy đơn</Button> : null}
+      </div>
+      {['PENDING', 'CONFIRMED'].includes(order.status) ? <Button variant="outline" size="sm" disabled={busy} className="w-full" onClick={() => { if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel(); }}>Hủy đơn</Button> : null}
     </Card>
   );
 }
