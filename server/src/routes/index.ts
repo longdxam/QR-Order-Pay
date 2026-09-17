@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import * as auth from '../controllers/authController.js';
 import * as menu from '../controllers/menuController.js';
 import * as tableSession from '../controllers/tableSessionController.js';
@@ -11,11 +11,19 @@ import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { loadGuest, loadReceiptGuest, requireGuest, guestCsrfGuard } from '../middlewares/guest.js';
 import { currentReceipt } from '../controllers/receiptController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
+import { config } from '../config/index.js';
 
 export const apiRouter = Router();
 
-const authLimiter = expressRateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
-const guestMutationLimiter = expressRateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+// Rate limit là biện pháp bảo vệ production; trong test (NODE_ENV=test) nó bị vô hiệu theo cùng cách
+// morgan bị tắt ở app.ts, vì mọi request của bộ test đến từ cùng một IP và sẽ chạm trần một cách giả tạo.
+const rateLimitOrPassthrough = (max: number): RequestHandler =>
+  config.env === 'test'
+    ? (_req, _res, next) => next()
+    : expressRateLimit({ windowMs: 60_000, max, standardHeaders: true, legacyHeaders: false });
+
+const authLimiter = rateLimitOrPassthrough(30);
+const guestMutationLimiter = rateLimitOrPassthrough(60);
 
 // auth
 apiRouter.post('/auth/login', authLimiter, auth.login);
@@ -30,7 +38,7 @@ apiRouter.get('/products', menu.listMenu);
 apiRouter.get('/products/featured', menu.listFeaturedMenu);
 
 // table session public + guest
-apiRouter.post('/table-sessions/join', loadGuest, guestCsrfGuard, tableSession.join);
+apiRouter.post('/table-sessions/join', loadGuest, guestCsrfGuard, guestMutationLimiter, tableSession.join);
 apiRouter.get('/table-sessions/current', loadGuest, tableSession.current);
 apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.leave);
 

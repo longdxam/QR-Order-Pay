@@ -32,7 +32,7 @@ Status code dùng: 200, 201, 204, 400, 401, 403, 404, 409, 422, 429, 500.
 
 ## Phiên bàn
 
-- `POST /api/v1/table-sessions/join` — body `{ tableToken }`, set cookie `mc_guest`, trả `tableSessionId`, `participantId`.
+- `POST /api/v1/table-sessions/join` — body `{ tableToken }`, set cookie `mc_guest` (+ `mc_receipt`). Bàn chưa có phiên thì server **tự mở phiên** (`created: true`); bàn đang có phiên thì vào đúng phiên đó (`created: false`). Trả cùng một shape: `{ guestSessionId, participantId, tableSessionId, created, table, tableSession }`. `404` khi token sai/bàn tắt; `403` **chỉ khi** `GUEST_AUTO_OPEN=false` và bàn chưa mở phiên.
 - `GET  /api/v1/table-sessions/current` — kiểm tra guest session hiện tại.
 - `POST /api/v1/table-sessions/leave` — clear cookie.
 
@@ -43,6 +43,11 @@ Status code dùng: 200, 201, 204, 400, 401, 403, 404, 409, 422, 429, 500.
 - `GET  /api/v1/orders/:id` — chỉ đơn của participant.
 - `POST /api/v1/orders/:id/cancel` — chỉ khi status PENDING.
 - `POST /api/v1/orders/:id/review` — sau SERVED + PAID, 1 lần/đơn.
+
+## Hóa đơn (guest, sau khi đóng phiên)
+
+- `GET  /api/v1/receipts/current` — hóa đơn của thiết bị qua cookie `mc_receipt` (12 giờ), chỉ gồm đơn `SERVED` + `PAID` của participant hiện tại. Mỗi order chỉ trả các field khách dùng: `_id`, `code`, `items`, `total`, `status`, `paymentStatus`, `participantId`, `createdAt`, `review`; **không** trả field nội bộ (`idempotencyKey`, `requestHash`, `statusHistory`, `version`, `__v`, `tableId`, `updatedAt`).
+- `POST /api/v1/receipts/orders/:id/review` — đánh giá đơn đã thanh toán bằng cookie `mc_receipt`.
 
 ## Service request
 
@@ -57,11 +62,11 @@ Status code dùng: 200, 201, 204, 400, 401, 403, 404, 409, 422, 429, 500.
 - `GET  /api/v1/staff/orders` — đơn đang xử lý + SERVED.
 - `PATCH /api/v1/staff/orders/:id/status` — body `{ status, reason? }`, kiểm tra state machine.
 - `POST /api/v1/staff/orders/:id/confirm` — shortcut sang CONFIRMED.
-- `GET  /api/v1/staff/table-sessions` — phiên OPEN/CHECKOUT.
-- `POST /api/v1/staff/tables/:tableId/sessions` — mở phiên.
+- `GET  /api/v1/staff/table-sessions` — phiên OPEN/CHECKOUT (kèm `source` + `closedReason` để phân biệt phiên tự mở).
+- `POST /api/v1/staff/tables/:tableId/sessions` — mở phiên, trả `{ session, created }`. Bàn đã có phiên thì trả phiên hiện hữu (`created: false`) thay vì `409`; phiên đang `CHECKOUT` được revert về `OPEN`.
 - `PATCH /api/v1/staff/table-sessions/:id/status` — body `{ status, expectedVersion }`.
-- `GET  /api/v1/staff/table-sessions/:id/bill` — chi tiết bill.
-- `POST /api/v1/staff/table-sessions/:id/payments` — header `Idempotency-Key`, body `{ amount, method, expectedVersion, note? }`.
+- `GET  /api/v1/staff/table-sessions/:id/bill` — chi tiết bill; khi phiên `CLOSED` và đã có `Bill`, đọc snapshot bất biến (fallback tính động cho phiên cũ).
+- `POST /api/v1/staff/table-sessions/:id/payments` — header `Idempotency-Key`, body `{ amount, method, expectedVersion, note? }`; khi thu đủ tiền sẽ chốt `Bill` và trả `{ payment, orderIds, replayed, billId }`.
 - `GET  /api/v1/staff/service-requests` — yêu cầu OPEN.
 - `POST /api/v1/staff/service-requests/:id/resolve`.
 

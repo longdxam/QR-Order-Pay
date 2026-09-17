@@ -7,13 +7,13 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
-- Quét QR / nhập mã → vào phiên bàn (do nhân viên mở).
+- Quét QR / nhập mã → vào phiên bàn; bàn trống thì khách tự mở phiên, không cần chờ nhân viên.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - AI Barista gợi ý món từ menu thật theo sở thích & ngân sách (có fallback minh bạch khi không có API key).
 - Giỏ hàng theo thiết bị, idempotency khi gửi đơn.
 - KDS (Kitchen Display) với 4 cột trạng thái: Chờ xác nhận → Đã nhận → Đang pha → Sẵn sàng → Đã phục vụ.
 - Realtime qua Socket.IO cho cả guest và staff.
-- Thanh toán tại quầy với xác nhận của Staff, đóng phiên, hóa đơn.
+- Thanh toán tại quầy với xác nhận của Staff: phiên được chốt thành hóa đơn bất biến (`Bill` snapshot), trả bàn về trạng thái tự do.
 - Hóa đơn riêng theo thiết bị và đánh giá sau thanh toán, không cấp lại quyền đặt món.
 - Admin tạo ảnh QR để tải PNG/in; khách có thể dán token hoặc liên kết QR để vào bàn.
 - Dashboard doanh thu (30 ngày), biểu đồ ngày/giờ, top sản phẩm.
@@ -47,6 +47,24 @@ npm run dev            # chạy client + server
 - `staff.b@maycafe.vn` (STAFF)
 
 Khi seed, mỗi bàn sẽ in ra một token QR. Dùng token đó tại `/t/<token>` để vào phiên.
+
+## Luồng khách: quét QR → đặt món
+
+1. Khách quét QR (hoặc dán token) → `POST /api/v1/table-sessions/join`.
+2. Nếu bàn **chưa có phiên**, server tự mở phiên mới (`source: 'GUEST'`, có audit log) và trả `created: true`, kèm `guestSessionId` / `participantId` để đặt món. Thao tác này **idempotent** và an toàn khi nhiều người quét cùng lúc: hai request đồng thời chỉ tạo đúng một phiên, cả hai nhận cùng `tableSessionId`.
+3. Nếu bàn **đang có phiên**, khách được đưa vào đúng phiên đó (`created: false`) — không tạo phiên trùng.
+4. Khách đặt món như bình thường; giỏ hàng gắn theo phiên.
+
+Khi Staff thu đủ tiền, phiên được đóng và **chốt thành `Bill` bất biến** (snapshot đơn/giá/topping/tên món và các khoản đã thu) trong cùng transaction. Bàn lập tức trở lại trạng thái tự do: khách quét lại QR sẽ có phiên mới và đặt được món ngay, không cần nhân viên can thiệp. Bản ghi `Bill` chỉ ghi một lần (unique theo `tableSessionId`), không có API sửa/xóa.
+
+> Nếu quán muốn giữ quyền kiểm soát của nhân viên, đặt `GUEST_AUTO_OPEN=false`: khách quét QR lúc bàn chưa mở phiên sẽ nhận `403` với thông báo *"Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."* như hành vi cũ.
+
+## Cấu hình phiên bàn
+
+| Biến | Mặc định | Ý nghĩa |
+| --- | --- | --- |
+| `GUEST_AUTO_OPEN` | `true` | Khách quét QR tự mở phiên khi bàn trống. `false` = quay lại hành vi cũ (403 "Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."). |
+| `SESSION_IDLE_TIMEOUT_MIN` | `60` | Tự đóng phiên tự mở (`source: 'GUEST'`) không có đơn nào sau N phút, ghi `closedReason: 'IDLE'`. `0` = tắt sweeper. |
 
 ## Scripts
 

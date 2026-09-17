@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Coffee, ShoppingCart, ListChecks, Sparkles, LogOut, Wifi, WifiOff, BellRing, ReceiptText } from 'lucide-react';
+import { Coffee, ShoppingCart, ListChecks, Sparkles, LogOut, Wifi, WifiOff, BellRing, ReceiptText, QrCode } from 'lucide-react';
 import { useCart, cartTotals } from '../store/cart';
 import { api, unwrap, vnd, getErrorMessage } from '../lib/api';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
@@ -99,9 +99,13 @@ export function GuestLayout(): JSX.Element {
             <Button onClick={() => navigate('/cart')} disabled={session.status !== 'OPEN'}><ShoppingCart className="h-4 w-4" /> Xem giỏ</Button>
           </div> : null}
           <div className="flex justify-between items-center gap-2">
-            {session?.active ? <Button size="sm" variant="outline" onClick={() => callStaff.mutate()} disabled={callStaff.isPending}><BellRing className="h-4 w-4" /> Gọi nhân viên</Button> : <Button size="sm" variant="outline" onClick={() => navigate('/t')}>Vào bàn</Button>}
+            {session?.active ? <Button size="sm" variant="outline" onClick={() => callStaff.mutate()} disabled={callStaff.isPending}><BellRing className="h-4 w-4" /> Gọi nhân viên</Button> : <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => navigate('/t')}>Vào bàn</Button>
+              {session?.receiptAvailable ? <Button size="sm" onClick={() => navigate('/t')}><QrCode className="h-4 w-4" /> Quét lại QR để mở phiên mới</Button> : null}
+            </div>}
             <Button size="sm" variant="ghost" onClick={() => leave.mutate()} disabled={leave.isPending}><LogOut className="h-4 w-4" /> Rời bàn</Button>
           </div>
+          {session && !session.active && session.receiptAvailable ? <p className="text-xs text-muted-foreground">Phiên trước đã thanh toán. Quét QR tại bàn để mở phiên mới.</p> : null}
         </div>
       </footer>
     </div>

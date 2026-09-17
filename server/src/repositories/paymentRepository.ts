@@ -11,8 +11,8 @@ export const paymentRepository = {
   async findByIdempotency(key: string) {
     return PaymentModel.findOne({ idempotencyKey: key });
   },
-  async listBySession(tableSessionId: string) {
-    return PaymentModel.find({ tableSessionId }).sort({ paidAt: -1 });
+  async listBySession(tableSessionId: string, session?: ClientSession | null) {
+    return PaymentModel.find({ tableSessionId }, null, { session: session ?? undefined }).sort({ paidAt: -1 });
   },
   async sumPaidBySession(tableSessionId: string): Promise<number> {
     const agg = await PaymentModel.aggregate([

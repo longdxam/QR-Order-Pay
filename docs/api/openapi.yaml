@@ -40,7 +40,7 @@ paths:
   /receipts/current:
     get:
       summary: Hóa đơn của thiết bị sau khi đóng phiên
-      description: Cookie HttpOnly mc_receipt riêng, chỉ dùng cho hóa đơn và đánh giá; hết hạn 12 giờ từ lúc vào bàn. Không chấp nhận cookie này để đặt món. Chỉ trả đơn SERVED và PAID của participant hiện tại.
+      description: Cookie HttpOnly mc_receipt riêng, chỉ dùng cho hóa đơn và đánh giá; hết hạn 12 giờ từ lúc vào bàn. Không chấp nhận cookie này để đặt món. Chỉ trả đơn SERVED và PAID của participant hiện tại; mỗi order chỉ gồm các field khách dùng (_id, code, items, total, status, paymentStatus, participantId, createdAt, review) — đã bỏ field nội bộ.
       responses:
         '200': { description: 'data gồm tableName, closedAt, total, orders kèm review' }
         '401': { description: Phiên chưa đóng hoặc quyền xem hết hạn }
@@ -111,6 +111,11 @@ paths:
   /table-sessions/join:
     post:
       summary: Khách vào bàn bằng token QR
+      description: |
+        Bàn chưa có phiên thì server tự mở phiên mới (`created: true`, `source: GUEST`);
+        bàn đang có phiên thì đưa khách vào đúng phiên đó (`created: false`).
+        Idempotent và an toàn khi nhiều request đồng thời (chỉ một phiên được tạo).
+        `403` chỉ xảy ra khi cấu hình `GUEST_AUTO_OPEN=false`.
       requestBody:
         required: true
         content:
@@ -121,9 +126,38 @@ paths:
               properties:
                 tableToken: { type: string, minLength: 8 }
       responses:
-        '200': { description: OK, headers: { Set-Cookie: { description: 'mc_guest và mc_receipt (HttpOnly, 12 giờ)' } } }
-        '403': { description: Phiên chưa mở }
-        '404': { description: Token không hợp lệ }
+        '200':
+          description: OK
+          headers:
+            Set-Cookie: { description: 'mc_guest và mc_receipt (HttpOnly, 12 giờ)' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      guestSessionId: { type: string }
+                      participantId: { type: string }
+                      tableSessionId: { type: string }
+                      created: { type: boolean }
+                      table:
+                        type: object
+                        properties:
+                          id: { type: string }
+                          code: { type: string }
+                          name: { type: string }
+                          capacity: { type: integer }
+                      tableSession:
+                        type: object
+                        properties:
+                          id: { type: string }
+                          status: { type: string, enum: [OPEN, CHECKOUT, CLOSED] }
+                          startedAt: { type: string, format: date-time }
+        '403': { description: Chỉ khi GUEST_AUTO_OPEN=false và bàn chưa mở phiên }
+        '404': { description: Token không hợp lệ hoặc bàn bị tắt }
   /table-sessions/current:
     get: { summary: Guest session hiện tại, responses: { '200': { description: OK } } }
   /table-sessions/leave:
@@ -291,7 +325,15 @@ paths:
         '200': { description: OK }
         '409': { description: State transition invalid hoặc race }
   /staff/tables/{tableId}/sessions:
-    post: { summary: Mở phiên bàn, responses: { '200': { description: OK } } }
+    post:
+      summary: Mở phiên bàn (trả phiên hiện hữu nếu bàn đã có phiên)
+      parameters:
+        - in: path
+          name: tableId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 'data gồm { session, created }; created=false khi bàn đã có phiên (không còn 409)' }
   /staff/table-sessions/{id}/status:
     patch:
       summary: Đổi trạng thái phiên
@@ -314,10 +356,10 @@ paths:
         '200': { description: OK }
         '409': { description: Phiên đã thay đổi }
   /staff/table-sessions/{id}/bill:
-    get: { summary: Xem bill phiên, responses: { '200': { description: OK } } }
+    get: { summary: Xem bill phiên (đọc snapshot Bill bất biến khi phiên đã CLOSED), responses: { '200': { description: OK } } }
   /staff/table-sessions/{id}/payments:
     post:
-      summary: Thu tiền & đóng phiên
+      summary: Thu tiền & đóng phiên (chốt Bill bất biến)
       parameters:
         - in: header
           name: Idempotency-Key
@@ -336,8 +378,8 @@ paths:
                 expectedVersion: { type: integer }
                 note: { type: string, maxLength: 280 }
       responses:
-        '201': { description: Tạo mới }
-        '200': { description: Replay }
+        '201': { description: 'Tạo mới — data gồm { payment, orderIds, replayed, billId }' }
+        '200': { description: 'Replay — data gồm { payment, orderIds, replayed, billId }' }
   /staff/service-requests:
     get: { summary: Danh sách yêu cầu OPEN, responses: { '200': { description: OK } } }
   /staff/service-requests/{id}/resolve:
