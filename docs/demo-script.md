@@ -1,15 +1,16 @@
-# Demo script — 7 phút
+# Demo script — 8 phút
 
 ## Chuẩn bị trước
 
-- `npm ci && npm run db:up && npm run db:wait && npm run seed && npm run dev`
-- Mở `http://localhost:5173` (client) và `http://localhost:4000` (server health).
+- Ưu tiên production-local: tạo `.env.production` theo `docs/deployment.md`, rồi `docker compose -f compose.production.yaml --env-file .env.production up -d --build`.
+- Seed demo là thao tác phá dữ liệu hiện có; chỉ chạy `npm run seed` khi đã xác nhận đúng database demo.
+- Mở `http://localhost:8080` và kiểm tra `http://localhost:8080/healthz`.
 - Trên điện thoại cùng mạng Wi-Fi, mở `<IP-máy>:5173/t/<token-bàn-01>`. Lấy token từ log khi seed.
 - Mở sẵn:
   - 1 tab guest trên điện thoại (hoặc tab ẩn danh).
   - 1 tab guest thứ hai trên trình duyệt khác.
   - 1 tab staff `/staff/kds` (login `staff.a@maycafe.vn / MayCafe@2025`).
-  - 1 tab admin `/admin/dashboard`.
+  - 1 tab admin `/admin/operations`.
 
 ## Kịch bản
 
@@ -23,10 +24,13 @@
 | 5:00–5:45 | Mở thiết bị thứ hai vào cùng bàn, đặt thêm 1 món; chứng minh hai đơn riêng, giỏ riêng | Đa thiết bị |
 | 5:45–6:30 | Khách gửi "Yêu cầu thanh toán"; Staff chuyển phiên sang CHECKOUT, xem bill, thu tiền, phiên đóng | Vòng đời phiên |
 | 6:30–7:00 | Mở dashboard, lọc 30 ngày, KPI, biểu đồ ngày/giờ, top sản phẩm | Báo cáo từ dữ liệu thật |
-| 7:00–7:30 | Tắt `AI_MODE` chuyển `fallback`, hỏi lại → response có nhãn "Gợi ý theo menu" | Fallback minh bạch |
+| 7:00–7:30 | Mở Operations: instance/dependency/alert có timestamp, dữ liệu thiếu ghi rõ | Observability thật |
+| 7:30–8:00 | Hỏi AI ở `AI_MODE=fallback` → response ghi rõ fallback; nêu key live hiện bị provider từ chối 401 | Fallback minh bạch, không giả live |
 
 ## Phương án dự phòng khi mất mạng
 
-- Có thể dùng LAN hoặc HTTPS ngrok.
+- Có thể dùng LAN; nếu dùng tunnel/HTTPS phải cập nhật đúng origin, cookie Secure và proxy WebSocket theo `docs/deployment.md`.
 - AI fallback luôn hoạt động không cần internet ngoài.
 - Realtime: nếu socket mất kết nối, UI vẫn lấy dữ liệu qua REST (TanStack Query refetch mỗi 8–30s tùy trang).
+
+Camera/in QR thật chưa nằm trong kết quả nghiệm thu hiện tại. Khi test sau, dùng domain/IP mà điện thoại truy cập được và xác nhận cookie, redirect `/t/<token>` → `/menu`, Socket.IO reconnect và receipt sau thanh toán.

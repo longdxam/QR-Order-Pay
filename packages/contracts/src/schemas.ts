@@ -60,8 +60,60 @@ export type OrderStatus = z.infer<typeof orderStatusSchema>;
 export const paymentStatusSchema = z.enum(['UNPAID', 'PAID', 'REFUNDED']);
 export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 
+export const paymentMethodSchema = z.enum(['CASH', 'BANK_TRANSFER', 'OTHER']);
+export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
+
+export const paymentRequestSchema = z.object({
+  amount: moneyVndSchema,
+  method: paymentMethodSchema,
+  expectedVersion: z.number().int().nonnegative(),
+  note: z.string().max(280).optional(),
+});
+export type PaymentRequest = z.infer<typeof paymentRequestSchema>;
+
 export const tableSessionStatusSchema = z.enum(['OPEN', 'CHECKOUT', 'CLOSED']);
 export type TableSessionStatus = z.infer<typeof tableSessionStatusSchema>;
+
+export const tableSummarySchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+  capacity: z.number().int().positive().optional(),
+});
+
+export const joinTableResponseSchema = z.object({
+  guestSessionId: z.string(),
+  participantId: z.string(),
+  tableSessionId: z.string(),
+  created: z.boolean(),
+  table: tableSummarySchema.extend({ capacity: z.number().int().positive() }),
+  tableSession: z.object({
+    id: z.string(),
+    status: tableSessionStatusSchema,
+    startedAt: z.union([z.string(), z.date().transform((value) => value.toISOString())]),
+  }),
+});
+export type JoinTableResponse = z.infer<typeof joinTableResponseSchema>;
+
+export const currentTableSessionResponseSchema = z.discriminatedUnion('active', [
+  z.object({
+    active: z.literal(true),
+    tableSessionId: z.string(),
+    participantId: z.string(),
+    status: tableSessionStatusSchema.optional(),
+    table: tableSummarySchema.omit({ capacity: true }).nullable(),
+  }),
+  z.object({
+    active: z.literal(false),
+    receiptAvailable: z.boolean(),
+  }),
+]);
+export type CurrentTableSessionResponse = z.infer<typeof currentTableSessionResponseSchema>;
+
+export const updateTableSessionStatusRequestSchema = z.object({
+  status: tableSessionStatusSchema,
+  expectedVersion: z.number().int().nonnegative(),
+});
 
 export const roleSchema = z.enum(['ADMIN', 'STAFF']);
 export type Role = z.infer<typeof roleSchema>;
@@ -217,10 +269,138 @@ export const aiRecommendResponseSchema = z.object({
   latencyMs: z.number().int().optional(),
 });
 
+export const menuSearchIntentSchema = z.object({
+  normalizedQuery: z.string(),
+  keywords: z.array(z.string()),
+  requirements: z.object({
+    noCaffeine: z.boolean(),
+    noDairy: z.boolean(),
+    includedGroups: z.array(z.enum(['coffee', 'tea', 'fruit'])),
+    excludedGroups: z.array(z.enum(['coffee', 'tea', 'fruit'])),
+    budget: z
+      .object({ maxVnd: moneyVndSchema, inclusive: z.boolean(), scope: z.literal('item') })
+      .nullable(),
+  }),
+  preferences: z.object({
+    lowSugar: z.boolean(),
+    flavors: z.array(z.enum(['sour', 'bitter', 'sweet', 'light', 'rich'])),
+  }),
+});
+export type MenuSearchIntent = z.infer<typeof menuSearchIntentSchema>;
+
+export const menuSearchRequestSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+  filters: z
+    .object({
+      maxBudget: z.number().int().positive().nullable().optional(),
+      noCaffeine: z.boolean().optional(),
+      noDairy: z.boolean().optional(),
+    })
+    .optional(),
+});
+export type MenuSearchRequest = z.infer<typeof menuSearchRequestSchema>;
+
+export const menuSearchResponseSchema = z.object({
+  mode: z.enum(['fallback', 'llm']),
+  intent: menuSearchIntentSchema,
+  message: z.string(),
+  items: z.array(
+    z.object({
+      productId: z.string(),
+      variantId: z.string().nullable(),
+      name: z.string(),
+      description: z.string(),
+      image: z.string(),
+      unitPrice: moneyVndSchema,
+      reason: z.string(),
+    }),
+  ),
+  latencyMs: z.number().int().nonnegative(),
+});
+export type MenuSearchResponse = z.infer<typeof menuSearchResponseSchema>;
+
+export const anomalyDetectorSchema = z.enum([
+  'HTTP_ERROR_RATE',
+  'HTTP_LATENCY_P95',
+  'PREPARATION_P95',
+  'CANCELLATION_RATE',
+]);
+export const anomalyStateSchema = z.enum(['OK', 'INSUFFICIENT_DATA', 'ALERT']);
+export const anomalySeveritySchema = z.enum(['INFO', 'WARNING', 'CRITICAL']);
+export const anomalyAlertStatusSchema = z.enum(['OPEN', 'ACKNOWLEDGED', 'CLOSED']);
+
+export const anomalyExplanationSchema = z.object({
+  mode: z.enum(['llm', 'fallback']),
+  summary: z.string().min(1).max(500),
+  evidence: z.array(z.string().min(1).max(300)).max(8),
+  hypotheses: z.array(z.string().min(1).max(300)).max(5),
+  checks: z.array(z.string().min(1).max(300)).max(8),
+});
+export type AnomalyExplanation = z.infer<typeof anomalyExplanationSchema>;
+
+export const anomalyEvaluationSchema = z.object({
+  detector: anomalyDetectorSchema,
+  target: z.string(),
+  state: anomalyStateSchema,
+  severity: anomalySeveritySchema,
+  windowStart: z.string().datetime(),
+  windowEnd: z.string().datetime(),
+  observedValue: z.number().nullable(),
+  thresholdValue: z.number(),
+  baselineValue: z.number().nullable(),
+  sampleCount: z.number().int().nonnegative(),
+  baselineSampleCount: z.number().int().nonnegative(),
+  method: z.string(),
+  evidence: z.record(z.unknown()),
+});
+export type AnomalyEvaluation = z.infer<typeof anomalyEvaluationSchema>;
+
+export const anomalyAlertSchema = anomalyEvaluationSchema.extend({
+  id: z.string(),
+  status: anomalyAlertStatusSchema,
+  firstDetectedAt: z.string().datetime(),
+  lastDetectedAt: z.string().datetime(),
+  acknowledgedAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  explanation: anomalyExplanationSchema,
+});
+export type AnomalyAlert = z.infer<typeof anomalyAlertSchema>;
+
+export const anomalyDashboardResponseSchema = z.object({
+  observedAt: z.string().datetime(),
+  lastRunAt: z.string().datetime().nullable(),
+  evaluations: z.array(anomalyEvaluationSchema),
+  alerts: z.array(anomalyAlertSchema),
+  schedule: z.object({
+    intervalMs: z.number().int().nonnegative(),
+    windowMinutes: z.number().int().nonnegative(),
+    baselineMinutes: z.number().int().nonnegative(),
+  }),
+});
+export type AnomalyDashboardResponse = z.infer<typeof anomalyDashboardResponseSchema>;
+
+export const updateAnomalyStatusRequestSchema = z.object({
+  status: z.enum(['ACKNOWLEDGED', 'CLOSED']),
+});
+
 export const loginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6).max(200),
 });
+
+export const authUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  role: roleSchema,
+});
+export type AuthUser = z.infer<typeof authUserSchema>;
+
+export const authResponseSchema = z.object({
+  accessToken: z.string().min(1),
+  user: authUserSchema,
+});
+export type AuthResponse = z.infer<typeof authResponseSchema>;
 
 export const openTableSessionRequestSchema = z.object({
   tableId: z.string(),
@@ -279,5 +459,6 @@ export const dashboardOverviewSchema = z.object({
     }),
   ),
 });
+export type DashboardOverview = z.infer<typeof dashboardOverviewSchema>;
 
 export * from './schemas.js';

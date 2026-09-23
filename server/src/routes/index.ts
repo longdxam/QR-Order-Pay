@@ -12,18 +12,35 @@ import { loadGuest, loadReceiptGuest, requireGuest, guestCsrfGuard } from '../mi
 import { currentReceipt } from '../controllers/receiptController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
+import { createRateLimitStore } from '../infrastructure/redis.js';
 
 export const apiRouter = Router();
 
 // Rate limit là biện pháp bảo vệ production; trong test (NODE_ENV=test) nó bị vô hiệu theo cùng cách
 // morgan bị tắt ở app.ts, vì mọi request của bộ test đến từ cùng một IP và sẽ chạm trần một cách giả tạo.
-const rateLimitOrPassthrough = (max: number): RequestHandler =>
-  config.env === 'test'
-    ? (_req, _res, next) => next()
-    : expressRateLimit({ windowMs: 60_000, max, standardHeaders: true, legacyHeaders: false });
+const rateLimitOrPassthrough = (max: number, prefix: string): RequestHandler => {
+  if (config.env === 'test') return (_req, _res, next) => next();
+  let limiter: RequestHandler | null = null;
+  return (req, res, next) => {
+    try {
+      limiter ??= expressRateLimit({
+        windowMs: 60_000,
+        max,
+        standardHeaders: true,
+        legacyHeaders: false,
+        store: createRateLimitStore(prefix),
+        passOnStoreError: false,
+      });
+      limiter(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  };
+};
 
-const authLimiter = rateLimitOrPassthrough(30);
-const guestMutationLimiter = rateLimitOrPassthrough(60);
+const authLimiter = rateLimitOrPassthrough(config.rateLimits.authPerMinute, 'auth');
+const guestMutationLimiter = rateLimitOrPassthrough(config.rateLimits.guestMutationPerMinute, 'guest-mutation');
+const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
 
 // auth
 apiRouter.post('/auth/login', authLimiter, auth.login);
@@ -36,6 +53,7 @@ apiRouter.get('/auth/me', requireAuth, auth.me);
 apiRouter.get('/categories', menu.listMenu);
 apiRouter.get('/products', menu.listMenu);
 apiRouter.get('/products/featured', menu.listFeaturedMenu);
+apiRouter.post('/menu/search', rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'menu-search'), menu.search);
 
 // table session public + guest
 apiRouter.post('/table-sessions/join', loadGuest, guestCsrfGuard, guestMutationLimiter, tableSession.join);
@@ -55,7 +73,7 @@ apiRouter.post('/receipts/orders/:id/review', guestCsrfGuard, guestMutationLimit
 apiRouter.post('/service-requests', loadGuest, guestCsrfGuard, requireGuest, serviceRequest.create);
 
 // AI
-apiRouter.post('/ai/recommendations', loadGuest, guestCsrfGuard, requireGuest, ai.recommend);
+apiRouter.post('/ai/recommendations', aiLimiter, loadGuest, guestCsrfGuard, requireGuest, ai.recommend);
 
 // staff/admin
 apiRouter.get('/staff/tables', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffTables);
@@ -75,6 +93,9 @@ apiRouter.post('/staff/service-requests/:id/resolve', requireAuth, requireRole('
 
 // admin
 apiRouter.get('/admin/reports/overview', requireAuth, requireRole('ADMIN'), admin.reportsOverview);
+apiRouter.get('/admin/operations/summary', requireAuth, requireRole('ADMIN'), admin.operations);
+apiRouter.get('/admin/anomalies', requireAuth, requireRole('ADMIN'), admin.anomalies);
+apiRouter.patch('/admin/anomalies/:id/status', requireAuth, requireRole('ADMIN'), admin.setAnomalyStatus);
 apiRouter.get('/admin/products', requireAuth, requireRole('ADMIN'), admin.listProducts);
 apiRouter.post('/admin/products', requireAuth, requireRole('ADMIN'), admin.createProduct);
 apiRouter.patch('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin.updateProduct);
@@ -97,5 +118,5 @@ apiRouter.get('/admin/reviews', requireAuth, requireRole('ADMIN'), admin.listRev
 
 // health
 apiRouter.get('/health', (_req, res) => {
-  res.json({ success: true, data: { ok: true, uptime: process.uptime() } });
+  res.json({ success: true, data: { ok: true, uptime: process.uptime(), instanceId: config.instanceId } });
 });

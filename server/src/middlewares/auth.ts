@@ -9,13 +9,11 @@ export interface AuthedUser {
   name: string;
 }
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AuthedUser;
-      requestId?: string;
-      guest?: { id: string; tableSessionId: string; participantId: string };
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: AuthedUser;
+    requestId?: string;
+    guest?: { id: string; tableSessionId: string; participantId: string };
   }
 }
 

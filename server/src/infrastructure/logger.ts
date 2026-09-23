@@ -7,7 +7,7 @@ export const logger = pino({
     paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]', '*.password', '*.token', '*.apiKey', '*.secret'],
     censor: '[REDACTED]',
   },
-  base: { service: 'maycafe-server' },
+  base: { service: 'maycafe-server', instance: config.instanceId },
 });
 
 export type Logger = typeof logger;

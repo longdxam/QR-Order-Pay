@@ -8,8 +8,9 @@ import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/Modal';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
-import { ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
-import { useToast } from '../../components/ui/Toast';
+import { ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useToast } from '../../components/ui/useToast';
 
 interface Table {
   _id: string;

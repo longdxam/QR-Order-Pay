@@ -53,8 +53,9 @@ export class HttpAIProvider implements AIProvider {
         signal,
       });
       if (!res.ok) {
-        const text = await safeText(res);
-        this.logger.warn({ status: res.status, text: text.slice(0, 200) }, 'ai provider failed');
+        // Provider error bodies may echo credentials or prompt fragments. Keep only bounded metadata.
+        await res.body?.cancel();
+        this.logger.warn({ status: res.status }, 'ai provider failed');
         throw new Error(`AI provider returned ${res.status}`);
       }
       const data = (await res.json()) as {
@@ -66,13 +67,5 @@ export class HttpAIProvider implements AIProvider {
     } finally {
       clearTimeout(timer);
     }
-  }
-}
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '';
   }
 }

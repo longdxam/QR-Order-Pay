@@ -7,6 +7,7 @@ import { transitionByStaff } from '../services/orderService.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import { publishGuest, publishStaff } from '../realtime/socket.js';
 import { tableRepository } from '../repositories/tableRepository.js';
+import { recordBusinessEvent, recordOrderStageDuration } from '../infrastructure/metrics.js';
 
 function notifyOrder(order: Awaited<ReturnType<typeof getOrderForGuest>>, event: 'order.created' | 'order.statusChanged'): void {
   const payload = { orderId: order.id, tableSessionId: order.tableSessionId.toString(), status: order.status };
@@ -29,7 +30,10 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
       items: input.items,
       note: input.note,
     });
-    if (result.created) notifyOrder(result.order, 'order.created');
+    if (result.created) {
+      notifyOrder(result.order, 'order.created');
+      recordBusinessEvent('order_created');
+    }
     res.status(result.created ? 201 : 200).json({ success: true, data: { order: result.order, created: result.created } });
   } catch (e) {
     next(e);
@@ -42,6 +46,7 @@ export async function cancel(req: Request, res: Response, next: NextFunction): P
     const id = String(req.params['id'] ?? '');
     const order = await cancelOrderByGuest(id, req.guest.participantId);
     notifyOrder(order, 'order.statusChanged');
+    recordBusinessEvent('order_cancelled');
     res.json({ success: true, data: { order } });
   } catch (e) {
     next(e);
@@ -123,10 +128,29 @@ export async function staffTransition(req: Request, res: Response, next: NextFun
     if (!body.status) throw new ValidationError('Thiếu trạng thái.');
     const order = await transitionByStaff(id, body.status as never, { id: req.user.id }, body.reason);
     notifyOrder(order, 'order.statusChanged');
+    recordStageDuration(order);
+    if (order.status === 'CANCELLED') recordBusinessEvent('order_cancelled');
+    if (order.status === 'SERVED') recordBusinessEvent('order_served');
     res.json({ success: true, data: { order } });
   } catch (e) {
     next(e);
   }
+}
+
+function recordStageDuration(order: Awaited<ReturnType<typeof transitionByStaff>>): void {
+  const history = order.statusHistory;
+  const transition = history.at(-1);
+  const previous = history.at(-2);
+  if (!transition?.at || !previous?.at) return;
+  const stage = transition.to === 'CONFIRMED'
+    ? 'acceptance'
+    : transition.to === 'READY'
+      ? 'preparation'
+      : transition.to === 'SERVED'
+        ? 'service'
+        : null;
+  if (!stage) return;
+  recordOrderStageDuration(stage, (transition.at.getTime() - previous.at.getTime()) / 1_000);
 }
 
 export async function staffConfirmReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -135,6 +159,7 @@ export async function staffConfirmReceipt(req: Request, res: Response, next: Nex
     const id = String(req.params['id'] ?? '');
     const order = await transitionByStaff(id, 'CONFIRMED', { id: req.user.id });
     notifyOrder(order, 'order.statusChanged');
+    recordStageDuration(order);
     res.json({ success: true, data: { order } });
   } catch (e) {
     next(e);

@@ -4,20 +4,12 @@ import { QrCode, Sparkles } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { api, getErrorCode, getErrorMessage, unwrap } from '../../lib/api';
-import { useToast } from '../../components/ui/Toast';
-import { useDocumentTitle } from '../../components/ui/EmptyState';
+import { useToast } from '../../components/ui/useToast';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCart } from '../../store/cart';
 import { disconnectSocket } from '../../lib/socket';
-
-interface JoinResult {
-  guestSessionId: string;
-  participantId: string;
-  tableSessionId: string;
-  created: boolean;
-  table: { id: string; code: string; name: string; capacity: number };
-  tableSession: { id: string; status: string; startedAt: string };
-}
+import type { JoinTableResponse } from '@may-cafe/contracts';
 
 export function JoinPage(): JSX.Element {
   useDocumentTitle('Vào bàn');
@@ -38,7 +30,9 @@ export function JoinPage(): JSX.Element {
     try {
       let tableToken = t.trim();
       if (tableToken.includes('/t/')) tableToken = tableToken.split('/t/')[1]!.split(/[?#]/)[0]!;
-      const joined = unwrap<JoinResult>(await api.post('/table-sessions/join', { tableToken }));
+      const joined = unwrap<JoinTableResponse>(
+        await api.post('/table-sessions/join', { tableToken }),
+      );
       disconnectSocket();
       const previousSessionId = useCart.getState().tableSessionId;
       if (previousSessionId !== null && previousSessionId !== joined.tableSessionId) {
@@ -109,8 +103,9 @@ export function JoinPage(): JSX.Element {
           </Button>
         </form>
         <div className="mt-5 rounded-xl border border-dashed border-foreground/15 p-3 text-xs text-muted-foreground">
-          Trong bản demo, dán token QR in ra khi chạy <code className="font-mono">npm run seed</code> hoặc
-          dán liên kết <code className="font-mono">/t/&lt;token&gt;</code> vào trình duyệt.
+          Trong bản demo, dán token QR in ra khi chạy{' '}
+          <code className="font-mono">npm run seed</code> hoặc dán liên kết{' '}
+          <code className="font-mono">/t/&lt;token&gt;</code> vào trình duyệt.
         </div>
       </div>
     </div>

@@ -10,6 +10,36 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /admin/anomalies:
+    get:
+      summary: Trạng thái detector và cảnh báo vận hành cho ADMIN
+      description: Trả bốn evaluation gần nhất, tối đa 50 alert, lịch job và thời điểm chạy. GET không kích hoạt detector hoặc LLM.
+      responses:
+        '200': { description: Detector state, evidence, explanation và vòng đời alert }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Chỉ ADMIN }
+  /admin/anomalies/{id}/status:
+    patch:
+      summary: Xác nhận hoặc đóng cảnh báo, đồng thời ghi AuditLog
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [ACKNOWLEDGED, CLOSED] }
+      responses:
+        '200': { description: Alert đã cập nhật }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Alert không tồn tại hoặc transition không hợp lệ }
+        '422': { description: Body không hợp lệ }
   /admin/reviews:
     get:
       summary: Danh sách đánh giá khách hàng cho ADMIN
@@ -108,6 +138,32 @@ paths:
         '200': { description: OK }
   /products/featured:
     get: { summary: Món signature, responses: { '200': { description: OK } } }
+  /menu/search:
+    post:
+      summary: Tìm menu bằng câu tiếng Việt và bộ lọc có cấu trúc
+      description: |
+        Chuẩn hóa không dấu/lỗi gõ nhẹ, áp dụng điều kiện cứng tại backend rồi xếp hạng menu thật.
+        `dưới` là giới hạn nghiêm ngặt; `không quá`/`tối đa` là giới hạn bao gồm. Budget tính cho một món.
+        Chế độ hiện tại là `fallback`; kết quả rỗng không được tự thay bằng món vi phạm điều kiện.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string, minLength: 1, maxLength: 200 }
+                filters:
+                  type: object
+                  properties:
+                    maxBudget: { type: integer, nullable: true, minimum: 1 }
+                    noCaffeine: { type: boolean }
+                    noDairy: { type: boolean }
+      responses:
+        '200': { description: Intent đã hiểu, mode, thông báo, latency và tối đa 12 món hợp lệ }
+        '422': { description: Query hoặc bộ lọc không hợp lệ }
+        '429': { description: Vượt giới hạn tần suất }
   /table-sessions/join:
     post:
       summary: Khách vào bàn bằng token QR
@@ -319,7 +375,8 @@ paths:
               type: object
               required: [status]
               properties:
-                status: { type: string, enum: [PENDING, CONFIRMED, PREPARING, READY, SERVED, CANCELLED] }
+                status:
+                  { type: string, enum: [PENDING, CONFIRMED, PREPARING, READY, SERVED, CANCELLED] }
                 reason: { type: string, maxLength: 280 }
       responses:
         '200': { description: OK }
@@ -333,7 +390,10 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: 'data gồm { session, created }; created=false khi bàn đã có phiên (không còn 409)' }
+        '200':
+          {
+            description: 'data gồm { session, created }; created=false khi bàn đã có phiên (không còn 409)',
+          }
   /staff/table-sessions/{id}/status:
     patch:
       summary: Đổi trạng thái phiên
@@ -356,7 +416,11 @@ paths:
         '200': { description: OK }
         '409': { description: Phiên đã thay đổi }
   /staff/table-sessions/{id}/bill:
-    get: { summary: Xem bill phiên (đọc snapshot Bill bất biến khi phiên đã CLOSED), responses: { '200': { description: OK } } }
+    get:
+      {
+        summary: Xem bill phiên (đọc snapshot Bill bất biến khi phiên đã CLOSED),
+        responses: { '200': { description: OK } },
+      }
   /staff/table-sessions/{id}/payments:
     post:
       summary: Thu tiền & đóng phiên (chốt Bill bất biến)
@@ -390,10 +454,12 @@ paths:
       parameters:
         - in: query
           name: from
-          schema: { type: string, format: date-time }
+          description: Ngày bắt đầu bao gồm, theo Asia/Ho_Chi_Minh
+          schema: { type: string, format: date }
         - in: query
           name: to
-          schema: { type: string, format: date-time }
+          description: Ngày kết thúc bao gồm, theo Asia/Ho_Chi_Minh
+          schema: { type: string, format: date }
       responses:
         '200': { description: OK }
   /admin/products:

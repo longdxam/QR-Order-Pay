@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Coffee, LayoutDashboard, UtensilsCrossed, Layers, Sparkles, Table2, Users, LogOut, MessageSquareText } from 'lucide-react';
+import { Activity, Coffee, LayoutDashboard, UtensilsCrossed, Layers, Sparkles, Table2, Users, LogOut, MessageSquareText } from 'lucide-react';
 import { useAuth } from '../features/auth/useAuth';
 import { Badge } from '../components/ui/Badge';
 import { useQuery } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { api, unwrap } from '../lib/api';
 
 const NAV = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+  { to: '/admin/operations', label: 'Vận hành', icon: <Activity className="h-4 w-4" /> },
   { to: '/admin/products', label: 'Món', icon: <UtensilsCrossed className="h-4 w-4" /> },
   { to: '/admin/categories', label: 'Danh mục', icon: <Layers className="h-4 w-4" /> },
   { to: '/admin/toppings', label: 'Topping', icon: <Sparkles className="h-4 w-4" /> },

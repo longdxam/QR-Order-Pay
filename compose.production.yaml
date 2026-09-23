@@ -1,0 +1,131 @@
+name: maycafe-production
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_production_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/init-replica.js:ro
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().ok } catch (e) {
+            if (e.codeName === 'NotYetInitialized' || e.codeName === 'InvalidReplicaSetConfig') rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]})
+            else throw e
+          }
+        "
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_production_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server-a: &server
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    restart: unless-stopped
+    environment: &server-environment
+      NODE_ENV: production
+      PORT: 4000
+      TRUST_PROXY_HOPS: 1
+      SHUTDOWN_TIMEOUT_MS: 10000
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+      SERVER_ORIGIN: ${PUBLIC_APP_URL:-http://localhost:8080}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGODB_URI: mongodb://mongo:27017/${MONGO_DATABASE:-maycafe}?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      INSTANCE_ID: server-a
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-30}
+      RATE_LIMIT_GUEST_MUTATION_MAX: ${RATE_LIMIT_GUEST_MUTATION_MAX:-60}
+      RATE_LIMIT_MENU_SEARCH_MAX: ${RATE_LIMIT_MENU_SEARCH_MAX:-120}
+      RATE_LIMIT_AI_MAX: ${RATE_LIMIT_AI_MAX:-20}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-30d}
+      GUEST_AUTO_OPEN: ${GUEST_AUTO_OPEN:-true}
+      SESSION_IDLE_TIMEOUT_MIN: ${SESSION_IDLE_TIMEOUT_MIN:-60}
+      AI_MODE: ${AI_MODE:-fallback}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-15000}
+      ANOMALY_ENABLED: ${ANOMALY_ENABLED:-true}
+      ANOMALY_INTERVAL_MS: ${ANOMALY_INTERVAL_MS:-60000}
+      ANOMALY_WINDOW_MIN: ${ANOMALY_WINDOW_MIN:-15}
+      ANOMALY_BASELINE_MIN: ${ANOMALY_BASELINE_MIN:-60}
+      ANOMALY_MIN_SAMPLES: ${ANOMALY_MIN_SAMPLES:-20}
+      ANOMALY_ERROR_RATE: ${ANOMALY_ERROR_RATE:-0.1}
+      ANOMALY_LATENCY_P95_MS: ${ANOMALY_LATENCY_P95_MS:-1000}
+      ANOMALY_PREPARATION_P95_SECONDS: ${ANOMALY_PREPARATION_P95_SECONDS:-900}
+      ANOMALY_CANCELLATION_RATE: ${ANOMALY_CANCELLATION_RATE:-0.25}
+      ANOMALY_BASELINE_MULTIPLIER: ${ANOMALY_BASELINE_MULTIPLIER:-2}
+      ANOMALY_COOLDOWN_MIN: ${ANOMALY_COOLDOWN_MIN:-30}
+      ANOMALY_AI_MAX_PER_RUN: ${ANOMALY_AI_MAX_PER_RUN:-3}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    stop_grace_period: 15s
+
+  server-b:
+    <<: *server
+    environment:
+      <<: *server-environment
+      INSTANCE_ID: server-b
+
+  worker:
+    <<: *server
+    command: ["node", "server/dist/src/worker.js"]
+    environment:
+      <<: *server-environment
+      INSTANCE_ID: worker-1
+    healthcheck:
+      disable: true
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      server-a:
+        condition: service_healthy
+      server-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mongo_production_data:
+  redis_production_data:

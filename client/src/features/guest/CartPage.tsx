@@ -1,15 +1,16 @@
 import { useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CurrentSession } from '../../layouts/GuestLayout';
+import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
 import { getAxiosError } from '../../lib/api';
 import { Trash2, ShoppingBag } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { useCart, cartTotals } from '../../store/cart';
 import { api, generateIdempotencyKey, getErrorMessage, unwrap, vnd } from '../../lib/api';
-import { useToast } from '../../components/ui/Toast';
-import { EmptyState, useDocumentTitle } from '../../components/ui/EmptyState';
+import { useToast } from '../../components/ui/useToast';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 
 export function CartPage(): JSX.Element {
   useDocumentTitle('Giỏ hàng');
@@ -21,7 +22,11 @@ export function CartPage(): JSX.Element {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const submission = useRef<{ payload: string; key: string } | null>(null);
-  const sessionQuery = useQuery({ queryKey: ['guest-session'], queryFn: async () => unwrap(await api.get<CurrentSession>('/table-sessions/current')) });
+  const sessionQuery = useQuery({
+    queryKey: ['guest-session'],
+    queryFn: async () =>
+      unwrap(await api.get<CurrentTableSessionResponse>('/table-sessions/current')),
+  });
 
   const { subtotal } = cartTotals(items);
 
@@ -39,7 +44,8 @@ export function CartPage(): JSX.Element {
         })),
       };
       const signature = JSON.stringify({ session: useCart.getState().tableSessionId, payload });
-      if (submission.current?.payload !== signature) submission.current = { payload: signature, key: generateIdempotencyKey() };
+      if (submission.current?.payload !== signature)
+        submission.current = { payload: signature, key: generateIdempotencyKey() };
       return unwrap(
         await api.post('/orders', payload, {
           headers: { 'Idempotency-Key': submission.current.key },
@@ -47,7 +53,11 @@ export function CartPage(): JSX.Element {
       );
     },
     onSuccess: () => {
-      toast({ title: 'Đã gửi đơn tới bếp', description: 'Bạn có thể theo dõi tiến độ ở trang Đơn.', tone: 'success' });
+      toast({
+        title: 'Đã gửi đơn tới bếp',
+        description: 'Bạn có thể theo dõi tiến độ ở trang Đơn.',
+        tone: 'success',
+      });
       clear();
       submission.current = null;
       queryClient.invalidateQueries({ queryKey: ['my-orders'] });
@@ -95,7 +105,9 @@ export function CartPage(): JSX.Element {
                   {it.toppingIds.length > 0 ? (
                     <p className="text-xs text-muted-foreground">Topping: {it.toppingIds.length}</p>
                   ) : null}
-                  {it.note ? <p className="text-xs italic text-muted-foreground">"{it.note}"</p> : null}
+                  {it.note ? (
+                    <p className="text-xs italic text-muted-foreground">"{it.note}"</p>
+                  ) : null}
                 </div>
                 <button
                   onClick={() => remove(it.clientId)}
@@ -107,11 +119,19 @@ export function CartPage(): JSX.Element {
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => update(it.clientId, { quantity: Math.max(1, it.quantity - 1) })}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => update(it.clientId, { quantity: Math.max(1, it.quantity - 1) })}
+                  >
                     −
                   </Button>
                   <span className="w-6 text-center text-sm">{it.quantity}</span>
-                  <Button size="sm" variant="outline" onClick={() => update(it.clientId, { quantity: Math.min(50, it.quantity + 1) })}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => update(it.clientId, { quantity: Math.min(50, it.quantity + 1) })}
+                  >
                     +
                   </Button>
                 </div>
@@ -135,8 +155,20 @@ export function CartPage(): JSX.Element {
           <span>Tổng</span>
           <span>{vnd(subtotal)}</span>
         </div>
-        {sessionQuery.data?.status === 'CHECKOUT' ? <p className="text-sm text-muted-foreground">Bàn đang thanh toán, vui lòng nhờ nhân viên mở lại để gọi thêm món.</p> : null}
-        <Button className="w-full" onClick={() => placeMutation.mutate()} disabled={placeMutation.isPending || !sessionQuery.data?.active || sessionQuery.data.status !== 'OPEN'}>
+        {sessionQuery.data?.active && sessionQuery.data.status === 'CHECKOUT' ? (
+          <p className="text-sm text-muted-foreground">
+            Bàn đang thanh toán, vui lòng nhờ nhân viên mở lại để gọi thêm món.
+          </p>
+        ) : null}
+        <Button
+          className="w-full"
+          onClick={() => placeMutation.mutate()}
+          disabled={
+            placeMutation.isPending ||
+            !sessionQuery.data?.active ||
+            sessionQuery.data.status !== 'OPEN'
+          }
+        >
           {placeMutation.isPending ? 'Đang gửi đơn...' : 'Gửi đơn tới bếp'}
         </Button>
       </Card>

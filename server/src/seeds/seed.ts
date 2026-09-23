@@ -33,8 +33,7 @@ const CATEGORIES = [
   { name: 'Bánh ngọt', slug: 'banh' },
 ];
 
-type Seed = number;
-let SEED = 20260101;
+const SEED = 20260101;
 function rng(): () => number {
   let s = SEED;
   return () => {
@@ -556,9 +555,9 @@ export async function seed(): Promise<void> {
       publicTokenHash: sha256(publicToken),
       isActive: true,
     });
-    // we need the unhashed token to demo; print to stdout
-    // eslint-disable-next-line no-console
-    console.log(`Table ${i.toString().padStart(2, '0')} token: ${publicToken}`);
+    // Demo-only credential: show it to the operator, but never send it through
+    // the structured application logger where logs may be retained centrally.
+    process.stdout.write(`Table ${i.toString().padStart(2, '0')} token: ${publicToken}\n`);
   }
   await TableModel.insertMany(tables);
 
@@ -568,7 +567,6 @@ export async function seed(): Promise<void> {
   if (!staffUser) throw new Error('staff user not found');
 
   const orderStatuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'] as const;
-  const paymentStatuses = ['UNPAID', 'PAID', 'REFUNDED'] as const;
   const orders: unknown[] = [];
   const payments: unknown[] = [];
 
@@ -679,11 +677,15 @@ export async function seed(): Promise<void> {
   }
 
   await disconnectMongo();
-  // eslint-disable-next-line no-console
-  console.log('\nSeed done.');
-  console.log('Demo accounts (password: %s):', STAFF_PASSWORD);
-  console.log(' - admin@maycafe.vn (ADMIN)');
-  console.log(' - staff.a@maycafe.vn (STAFF)');
-  console.log(' - staff.b@maycafe.vn (STAFF)');
-  console.log('Demo QR tokens were printed above.');
+  logger.info('Seed done.');
+  process.stdout.write(
+    [
+      `Demo accounts (password: ${STAFF_PASSWORD}):`,
+      ' - admin@maycafe.vn (ADMIN)',
+      ' - staff.a@maycafe.vn (STAFF)',
+      ' - staff.b@maycafe.vn (STAFF)',
+      'Demo QR tokens were printed above.',
+      '',
+    ].join('\n'),
+  );
 }

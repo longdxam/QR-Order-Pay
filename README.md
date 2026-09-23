@@ -9,6 +9,7 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 - Quét QR / nhập mã → vào phiên bàn; bàn trống thì khách tự mở phiên, không cần chờ nhân viên.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
+- Tìm kiếm menu bằng câu tiếng Việt có/không dấu, typo nhẹ, ngân sách và ràng buộc caffeine/sữa; kết quả rỗng minh bạch và có bộ lọc sửa tay.
 - AI Barista gợi ý món từ menu thật theo sở thích & ngân sách (có fallback minh bạch khi không có API key).
 - Giỏ hàng theo thiết bị, idempotency khi gửi đơn.
 - KDS (Kitchen Display) với 4 cột trạng thái: Chờ xác nhận → Đã nhận → Đang pha → Sẵn sàng → Đã phục vụ.
@@ -17,15 +18,19 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 - Hóa đơn riêng theo thiết bị và đánh giá sau thanh toán, không cấp lại quyền đặt món.
 - Admin tạo ảnh QR để tải PNG/in; khách có thể dán token hoặc liên kết QR để vào bàn.
 - Dashboard doanh thu (30 ngày), biểu đồ ngày/giờ, top sản phẩm.
+- Dashboard vận hành riêng cho ADMIN: dependency, hàng đợi, socket, lỗi HTTP, tài nguyên và thời gian công đoạn.
+- Detector bất thường định kỳ cho lỗi/độ trễ/pha chế/hủy đơn, có baseline, “chưa đủ dữ liệu”, bằng chứng, cooldown và giải thích fallback an toàn.
+- PWA giữ giao diện và giỏ khi mất mạng, hiển thị trạng thái kết nối; đơn chỉ được gửi khi online.
+- Dashboard lọc theo ngày, xuất CSV và in/PDF; thống kê toàn bộ đơn đã thanh toán theo múi giờ Việt Nam.
 - Đánh yêu cầu gọi nhân viên và yêu cầu thanh toán.
 - Phân quyền ADMIN/STAFF/GUEST kiểm tra cả HTTP và socket.
 
 ## Stack
 
-- **Server**: Express + Mongoose + TypeScript, JWT, bcryptjs, Socket.IO, Zod, Pino.
+- **Server**: Node.js 24 LTS, Express + Mongoose + TypeScript, JWT, bcryptjs, Socket.IO + Redis adapter, Zod, Pino, Prometheus metrics.
 - **Client**: Vite + React + TypeScript, Tailwind, Radix UI, TanStack Query, Zustand, Recharts, Lucide.
 - **AI**: OpenAI-compatible (mặc định) với fallback rule-based dựa trên menu.
-- **Tests**: Vitest + Supertest.
+- **Tests**: Vitest + Supertest + Playwright + k6; GitHub Actions chạy quality/integration.
 
 ## Cài đặt nhanh
 
@@ -57,26 +62,39 @@ Khi seed, mỗi bàn sẽ in ra một token QR. Dùng token đó tại `/t/<toke
 
 Khi Staff thu đủ tiền, phiên được đóng và **chốt thành `Bill` bất biến** (snapshot đơn/giá/topping/tên món và các khoản đã thu) trong cùng transaction. Bàn lập tức trở lại trạng thái tự do: khách quét lại QR sẽ có phiên mới và đặt được món ngay, không cần nhân viên can thiệp. Bản ghi `Bill` chỉ ghi một lần (unique theo `tableSessionId`), không có API sửa/xóa.
 
-> Nếu quán muốn giữ quyền kiểm soát của nhân viên, đặt `GUEST_AUTO_OPEN=false`: khách quét QR lúc bàn chưa mở phiên sẽ nhận `403` với thông báo *"Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."* như hành vi cũ.
+> Nếu quán muốn giữ quyền kiểm soát của nhân viên, đặt `GUEST_AUTO_OPEN=false`: khách quét QR lúc bàn chưa mở phiên sẽ nhận `403` với thông báo _"Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."_ như hành vi cũ.
 
 ## Cấu hình phiên bàn
 
-| Biến | Mặc định | Ý nghĩa |
-| --- | --- | --- |
-| `GUEST_AUTO_OPEN` | `true` | Khách quét QR tự mở phiên khi bàn trống. `false` = quay lại hành vi cũ (403 "Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."). |
-| `SESSION_IDLE_TIMEOUT_MIN` | `60` | Tự đóng phiên tự mở (`source: 'GUEST'`) không có đơn nào sau N phút, ghi `closedReason: 'IDLE'`. `0` = tắt sweeper. |
+| Biến                       | Mặc định | Ý nghĩa                                                                                                                            |
+| -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GUEST_AUTO_OPEN`          | `true`   | Khách quét QR tự mở phiên khi bàn trống. `false` = quay lại hành vi cũ (403 "Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."). |
+| `SESSION_IDLE_TIMEOUT_MIN` | `60`     | Tự đóng phiên tự mở (`source: 'GUEST'`) không có đơn nào sau N phút, ghi `closedReason: 'IDLE'`. `0` = tắt sweeper.                |
 
 ## Scripts
 
-| Lệnh | Mô tả |
-| --- | --- |
-| `npm run dev` | Chạy client + server song song |
-| `npm run build` | Build production cả client + server |
-| `npm run typecheck` | TypeScript typecheck toàn bộ |
-| `npm run lint` | ESLint client + server |
-| `npm run test` | Unit + integration tests |
-| `npm run seed` | Seed lại dữ liệu demo |
-| `npm run db:up` / `db:down` | Khởi/dừng MongoDB |
+| Lệnh                                          | Mô tả                                                                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `npm run dev`                                 | Chạy client + server song song                                                          |
+| `npm run build`                               | Build production cả client + server                                                     |
+| `npm run typecheck`                           | TypeScript typecheck toàn bộ                                                            |
+| `npm run lint`                                | ESLint client + server                                                                  |
+| `npm run test`                                | Unit + integration tests                                                                |
+| `npm run test:e2e`                            | Playwright responsive/browser suite; cần production build đang chạy và biến E2E phù hợp |
+| `npm run seed`                                | Seed lại dữ liệu demo                                                                   |
+| `npm -w @may-cafe/server run seed:benchmark`  | Reset database benchmark riêng và dựng lại index                                        |
+| `npm -w @may-cafe/server run check:benchmark` | Kiểm tra bất biến dữ liệu sau load test                                                 |
+| `npm run db:up` / `db:down`                   | Khởi/dừng MongoDB                                                                       |
+
+## Production build local bằng container
+
+Tạo `.env.production` với hai JWT secret khác nhau, mỗi secret tối thiểu 32 ký tự, sau đó chạy:
+
+```bash
+docker compose -f compose.production.yaml --env-file .env.production up -d --build
+```
+
+Ứng dụng được phục vụ tại `http://localhost:8080` qua Nginx; API và Socket.IO dùng cùng origin. Topology local-production gồm hai API backend, một worker, MongoDB, Redis và Nginx. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình HTTPS, health check, backup và rollback tại `docs/deployment.md`; xem số tải thực đo tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
 
 ## Cấu trúc thư mục
 
@@ -86,6 +104,7 @@ Khi Staff thu đủ tiền, phiên được đóng và **chốt thành `Bill` b�
 ├── server/                 # Express + Mongoose
 ├── packages/contracts/     # Zod schema + DTO dùng chung
 ├── docs/                   # tài liệu dự án
+├── scripts/load/           # k6 benchmark scripts
 ├── scripts/mongo-init.js   # replica set bootstrap
 ├── compose.yaml            # MongoDB replica set
 └── .env.example
@@ -100,12 +119,14 @@ Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-d
 - CSRF guard cho mutation của guest theo Origin/Referer.
 - Ownership kiểm tra ở service: guest không đọc/huỷ đơn của thiết bị khác.
 - Idempotency key bắt buộc khi tạo đơn và thanh toán.
-- Rate limit cho login, mutation guest và AI.
+- Shared Redis rate limit cho login, mutation guest, menu search và AI.
 - Structured logging với request ID.
+- Raw `/metrics` chỉ ở private backend network; trang `/admin/operations` có phân quyền. Xem [docs/observability.md](docs/observability.md).
+- Cảnh báo bất thường chỉ ADMIN truy cập; xác nhận/đóng có audit. Xem [docs/anomaly-detection.md](docs/anomaly-detection.md).
 
 ## Hạn chế đã biết
 
-- AI Barista fallback hoạt động đầy đủ với từ khoá tiếng Việt phổ biến (chua, đắng, ngọt, không caffeine, không sữa, ít ngọt, trái cây). Chế độ LLM cần `AI_API_KEY`.
+- Tìm kiếm menu P4A hiện dùng pipeline xác định (`mode: fallback`), không gọi LLM và không cần API key. AI Barista là luồng gợi ý riêng; key đã cung cấp bị provider trả 401 trong smoke test nên live AI chưa được xác nhận.
 - Thanh toán chỉ hỗ trợ "xác nhận tại quầy" trong P0.
-- QR là tĩnh; bản nâng cấp P2 sẽ hỗ trợ xoay token thường xuyên.
-  Hiện admin đã đổi token thủ công và tải được ảnh QR; chưa có xoay theo lịch.
+- QR là tĩnh; admin đổi token thủ công và tải được ảnh QR, chưa có xoay theo lịch. Camera/in QR thật được để kiểm thử sau.
+- Menu đạt cao nhất 90 RPS theo ngưỡng đã chốt trên Docker Desktop local; 600–700 RPS không đạt. Đây không phải cam kết năng lực cloud.

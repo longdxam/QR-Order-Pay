@@ -1,25 +1,7 @@
 import * as ToastPrimitive from '@radix-ui/react-toast';
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
-
-interface ToastItem {
-  id: string;
-  title: string;
-  description?: string;
-  tone?: 'success' | 'danger' | 'info';
-}
-
-interface ToastApi {
-  toast: (input: Omit<ToastItem, 'id'>) => void;
-}
-
-const ToastContext = createContext<ToastApi | null>(null);
-
-export function useToast(): ToastApi {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('ToastProvider missing');
-  return ctx;
-}
+import { ToastContext, type ToastApi, type ToastItem } from './useToast';
 
 export function ToastProvider({ children }: { children: ReactNode }): JSX.Element {
   const [items, setItems] = useState<ToastItem[]>([]);

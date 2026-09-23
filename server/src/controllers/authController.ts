@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { login as loginSvc, refresh as refreshSvc, logout as logoutSvc, logoutAll as logoutAllSvc } from '../services/authService.js';
-import { loginRequestSchema } from '@may-cafe/contracts';
+import { loginRequestSchema, authResponseSchema } from '@may-cafe/contracts';
 import { setRefreshCookie, clearRefreshCookie } from './cookieHelpers.js';
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -13,7 +13,8 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       ip: req.ip ?? '',
     });
     setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
-    res.json({ success: true, data: { accessToken: result.accessToken, user: result.user } });
+    const data = authResponseSchema.parse({ accessToken: result.accessToken, user: result.user });
+    res.json({ success: true, data });
   } catch (e) {
     next(e);
   }
@@ -32,7 +33,8 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       ip: req.ip ?? '',
     });
     setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
-    res.json({ success: true, data: { accessToken: result.accessToken, user: result.user } });
+    const data = authResponseSchema.parse({ accessToken: result.accessToken, user: result.user });
+    res.json({ success: true, data });
   } catch (e) {
     next(e);
   }

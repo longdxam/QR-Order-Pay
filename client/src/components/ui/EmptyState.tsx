@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode } from 'react';
 
 interface EmptyStateProps {
   title: string;
@@ -37,13 +37,4 @@ export function ErrorState({ message, onRetry }: ErrorStateProps): JSX.Element {
       }
     />
   );
-}
-
-export function useDocumentTitle(title: string): void {
-  useEffect(() => {
-    document.title = `${title} — Mây Café`;
-    return () => {
-      document.title = 'Mây Café — QR Ordering & AI Barista';
-    };
-  }, [title]);
 }

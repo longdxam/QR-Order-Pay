@@ -4,8 +4,9 @@ import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
-import { useToast } from '../../components/ui/Toast';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useToast } from '../../components/ui/useToast';
 import { getSocket } from '../../lib/socket';
 import { Check } from 'lucide-react';
 

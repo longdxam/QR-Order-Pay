@@ -5,8 +5,9 @@ import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
-import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
+import { useToast } from '../../components/ui/useToast';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSocket } from '../../lib/socket';
@@ -35,8 +36,6 @@ interface Order {
   createdAt: string;
   statusHistory: Array<{ from: string | null; to: string; at: string }>;
 }
-
-const STATUS_FLOW = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED'] as const;
 
 export function OrdersPage(): JSX.Element {
   useDocumentTitle('Đơn của tôi');

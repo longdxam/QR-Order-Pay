@@ -2,25 +2,16 @@
 
 ## Tổng quan
 
-Hệ thống MERN phân tầng rõ ràng:
+Hệ thống là modular monolith phân tầng, chạy nhiều process nhưng dùng chung code và data stores:
 
 ```
-React client  ──HTTP/Socket──►  Express API
-                                  │
-                                  ▼
-                          Controllers (HTTP)
-                                  │
-                                  ▼
-                          Services (business)
-                          ┌───────┴───────┐
-                          ▼               ▼
-                    Repositories      Providers (AI)
-                          │               │
-                          ▼               ▼
-                     Mongoose ──► MongoDB replica set
-                          │
-                          ▼
-                  UnitOfWork / transactions
+React client ──► Nginx ──┬──► Express API A ──┐
+                         └──► Express API B ──┼──► MongoDB replica set
+                               │              ├──► Redis
+                               └─ Socket.IO ──┘
+
+                         Worker ──────────────┘
+                         (sweeper + anomaly scheduler)
 ```
 
 Một request đặt món đi qua các tầng:
@@ -77,11 +68,13 @@ Staff dùng chung `ensureActiveSession` qua `POST /api/v1/staff/tables/:tableId/
 | `/api/v1/orders` (POST) | `loadGuest` + `guestCsrfGuard` + `guestMutationLimiter` + `requireGuest` |
 | `/api/v1/staff/*` | `requireAuth` + `requireRole('STAFF','ADMIN')` |
 | `/api/v1/admin/*` | `requireAuth` + `requireRole('ADMIN')` |
-| `/api/v1/ai/*` | `loadGuest` + in-memory rate limit 30/5 phút |
+| `/api/v1/ai/*` | `loadGuest` + shared Redis rate limit (mặc định 20/phút) |
 
 ## Quyết định & đánh đổi
 
-- **Express độc lập với Socket.IO** chứ không phải Next.js-only. Socket.IO có middleware xác thực riêng, đối chiếu với `GuestSession`/`RefreshSession`.
+- **Express độc lập với Socket.IO** chứ không phải Next.js-only. Socket.IO có middleware xác thực riêng, đối chiếu với `GuestSession`/`RefreshSession`, và dùng Redis adapter để room/event đi qua A/B.
+- **Một worker riêng** chạy các job định kỳ. API process không chạy sweeper/detector, tránh nhân đôi tác dụng khi scale.
+- **Redis shared state** giữ limiter và HTTP anomaly bucket; không giữ giá/quyền/trạng thái nghiệp vụ. MongoDB vẫn là nguồn chuẩn.
 - **Không dùng DI framework** — DI bằng constructor/factory. Repository là object có method, dễ stub trong test.
 - **UnitOfWork** đơn giản: `mongoose.startSession()` + `withTransaction`. Repository nhận session tùy chọn.
 - **Idempotency**: bắt buộc header `Idempotency-Key` cho POST đơn và thanh toán. Hash payload để phát hiện gửi lại khác payload.
@@ -101,6 +94,7 @@ Staff dùng chung `ensureActiveSession` qua `POST /api/v1/staff/tables/:tableId/
 server/src/
 ├── app.ts                 # Express setup, xuất app cho test
 ├── server.ts              # HTTP + Socket.IO + lifecycle
+├── worker.ts              # scheduler/sweeper duy nhất
 ├── config/                # env loader
 ├── routes/                # REST endpoints
 ├── controllers/           # HTTP I/O
@@ -109,7 +103,7 @@ server/src/
 ├── models/                # Mongoose schemas
 ├── providers/             # external integrations (AI)
 ├── realtime/              # Socket.IO setup + publishers
-├── infrastructure/        # mongo, logger, UnitOfWork
+├── infrastructure/        # mongo, redis, metrics, logger, UnitOfWork
 ├── middlewares/           # auth, guest, error
 ├── errors/                # AppError + subclasses
 ├── seeds/                 # seed dữ liệu demo

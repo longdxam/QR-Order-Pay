@@ -72,8 +72,8 @@ export class AIService {
       description: p.description,
       basePrice: p.basePrice,
       variants: p.variants.map((v) => ({ id: v._id?.toString() ?? null, name: v.name, price: v.price })),
-      caffeine: !!p.ingredientMetadata?.caffeine,
-      dairy: !!p.ingredientMetadata?.dairy,
+      caffeine: p.ingredientMetadata?.caffeine ?? null,
+      dairy: p.ingredientMetadata?.dairy ?? null,
       flavorProfile: p.ingredientMetadata?.flavorProfile ?? [],
       tags: p.tags ?? [],
     }));
@@ -226,7 +226,8 @@ function normalizePreferences(input: RecommendInput): RecommendInput {
     maxBudget: input.maxBudget ?? (budget ? Number(budget[1]!.replace(',', '.')) * (/^(k|nghìn|ngàn)$/.test(budget[2] ?? '') ? 1000 : 1) : undefined),
     preferences: {
       ...input.preferences,
-      noCaffeine: input.preferences?.noCaffeine || /không (?:có |uống )?(?:caffeine|cà phê)/.test(prompt),
+      // "không cà phê" loại nhóm coffee, không đồng nghĩa "không caffeine" (trà/matcha vẫn có thể chứa caffeine).
+      noCaffeine: input.preferences?.noCaffeine || /(?:không (?:có |uống )?(?:caffeine|cafein)|decaf)/.test(prompt),
       noDairy: input.preferences?.noDairy || /không (?:có |uống )?sữa/.test(prompt),
       lowSugar: input.preferences?.lowSugar || /ít (?:ngọt|đường)/.test(prompt),
     },

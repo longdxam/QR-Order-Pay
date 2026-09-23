@@ -3,13 +3,17 @@ import { overview } from '../services/dashboardService.js';
 import { listAdminCategories, listAdminProducts, listAdminToppings } from '../services/menuService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { userRepository } from '../repositories/userRepository.js';
-import { ValidationError } from '../errors/AppError.js';
+import { NotFoundError, ValidationError } from '../errors/AppError.js';
 import { productRepository } from '../repositories/productRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
 import { publishMenuChange } from '../realtime/socket.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
 import { hashPassword } from '../utils/crypto.js';
+import { operationsSummary } from '../services/operationsService.js';
+import { anomalyDashboard, updateAnomalyStatus } from '../services/anomalyService.js';
+import { updateAnomalyStatusRequestSchema } from '@may-cafe/contracts';
+import { auditRepository } from '../repositories/auditRepository.js';
 
 export async function reportsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -17,6 +21,45 @@ export async function reportsOverview(req: Request, res: Response, next: NextFun
     const to = parseDate(req.query.to);
     const data = await overview(from, to);
     res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function operations(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await operationsSummary();
+    req.log.info({ requestId: req.id, operation: 'admin.operations.read' }, 'operations summary viewed');
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function anomalies(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await anomalyDashboard();
+    res.json({ success: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function setAnomalyStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = updateAnomalyStatusRequestSchema.parse(req.body);
+    const id = String(req.params['id'] ?? '');
+    const alert = await updateAnomalyStatus(id, input.status, req.user!.id);
+    if (!alert) throw new NotFoundError('Không tìm thấy cảnh báo.');
+    await auditRepository.log({
+      actorType: 'USER',
+      actorId: req.user!.id,
+      action: input.status === 'ACKNOWLEDGED' ? 'anomaly.acknowledged' : 'anomaly.closed',
+      entityType: 'AnomalyAlert',
+      entityId: id,
+      metadata: { detector: alert.detector, previousWindowEnd: alert.windowEnd },
+    });
+    res.json({ success: true, data: { alert } });
   } catch (e) {
     next(e);
   }

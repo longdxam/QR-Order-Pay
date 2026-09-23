@@ -3,17 +3,16 @@ import { confirmPayment } from '../services/paymentService.js';
 import { NotFoundError, ValidationError } from '../errors/AppError.js';
 import { buildBill } from '../services/paymentService.js';
 import { closeSessionSockets, publishSession, publishStaff } from '../realtime/socket.js';
+import { paymentRequestSchema } from '@may-cafe/contracts';
+import { recordBusinessEvent } from '../infrastructure/metrics.js';
 
 export async function confirm(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.user) throw new NotFoundError();
     const id = String(req.params['id'] ?? '');
-    const body = req.body as { amount?: number; method?: 'CASH' | 'BANK_TRANSFER' | 'OTHER'; expectedVersion?: number; note?: string };
+    const body = paymentRequestSchema.parse(req.body);
     const idempotencyKey = req.headers['idempotency-key'];
     if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 8) throw new ValidationError('Thiếu Idempotency-Key.');
-    if (typeof body.amount !== 'number' || typeof body.expectedVersion !== 'number' || !body.method) {
-      throw new ValidationError('Thiếu thông tin thanh toán.');
-    }
     const result = await confirmPayment({
       tableSessionId: id,
       expectedVersion: body.expectedVersion,
@@ -24,6 +23,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
       note: body.note,
     });
     if (!result.replayed) {
+      recordBusinessEvent('payment_confirmed');
       const payload = { tableSessionId: id, status: 'CLOSED' };
       publishSession(id, 'payment.confirmed', payload);
       publishStaff('payment.confirmed', payload);

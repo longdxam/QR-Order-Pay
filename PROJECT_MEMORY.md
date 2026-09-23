@@ -1,6 +1,6 @@
 # Bộ nhớ dự án — Mây Café
 
-Cập nhật: 17/09/2026.
+Cập nhật: 23/09/2026.
 
 ## Ý định và phạm vi của người dùng
 
@@ -52,6 +52,8 @@ Cập nhật: 17/09/2026.
 - AI có ô ngân sách và chọn không caffeine/không sữa; fallback hiểu một số mẫu tiếng Việt.
 - AI lọc menu/variant khả dụng và điều kiện bắt buộc; không tự trả món trái ràng buộc khi không có kết quả.
 - Chọn món AI mở bảng tùy chỉnh trước khi thêm giỏ.
+- Trang menu có tìm kiếm tiếng Việt qua `POST /menu/search`: hỗ trợ không dấu/typo giới hạn, nhóm món, vị/ít ngọt, budget mỗi món (`dưới` khác `không quá`) và điều kiện caffeine/sữa. Backend lọc/xếp hạng menu thật; UI debounce 350 ms, hủy request cũ, hiện intent và cho sửa bộ lọc rồi mở lại `ProductDetailModal`.
+- `không cà phê` chỉ loại nhóm cà phê, không đồng nghĩa `không caffeine`; metadata thiếu không được coi là đáp ứng `không caffeine`/`không sữa`. Search hiện luôn ghi `mode: fallback`; chưa chạy LLM live.
 
 ### Realtime và yêu cầu phục vụ
 
@@ -99,20 +101,29 @@ Cập nhật: 17/09/2026.
 - client/src/features/ai/AISheet.tsx
 - client/src/features/admin/Tables.tsx
 
-## Kiểm chứng ngày 17/09/2026
+## Kiểm chứng gần nhất — 22/09/2026
 
-- Typecheck server + client: PASS.
-- Integration server: 26/26 PASS — 18 test trong `orderFlow.test.ts` và 8 test trong `sessionAutoOpen.test.ts`, chạy trên MongoMemoryReplSet thật.
+- Typecheck server + client + contracts: PASS.
+- Lint server + client: PASS, không còn lỗi/cảnh báo và không tắt rule để che lỗi.
+- Unit server: 58/58 PASS; client: 14/14 PASS; integration server: 28/28 PASS.
+- Production build: PASS; Vite còn cảnh báo bundle JS chính 989,87 kB (gzip 291,75 kB).
+- Refresh access token staff đã có single-flight, retry một lần, kiểm soát race logout; có 6 test client chuyên biệt.
+- Auth/payment contract dùng chung đã được cả client và server tiêu thụ; requestId client được kiểm tra định dạng/độ dài.
+- P2 production-local đã được build và chạy bằng Docker Engine 29.7.2: project riêng `maycafe-production` có MongoDB/Node/Nginx healthy, chỉ Nginx publish cổng 8080. Frontend, deep-link, API, readiness và WebSocket cùng-origin đã được kiểm tra.
+- P3 observability đã hoàn thành production-local: Node.js 24 LTS, structured log không trùng Morgan, Prometheus metrics nội bộ, Admin `/admin/operations`, nhãn route cardinality-safe và payment replay không tăng counter. Lỗi kiểm soát `p3-controlled-error` đã đối chiếu log/dashboard.
+- P4A search đã hoàn thành local: 25/25 unit (13/13 Top-1, 12/12 ràng buộc) và integration API qua MongoDB tạm đạt; kết quả fallback/live được ghi riêng trong `docs/ai-evaluation.md`.
+- P4B đã hoàn thành local: scheduler detector cho HTTP error/p95, preparation p95 và cancellation rate; baseline/min-sample/threshold cấu hình, alert MongoDB dedupe+cooldown, AI/fallback explanation, ADMIN ACK/CLOSE có audit. HTTP window còn là instance-local nên chưa dùng cho multi-instance trước P5.
+- Luồng container đã PASS trên volume riêng: seed → QR join → order → pha chế → checkout → payment → Bill → receipt; graceful SIGTERM exit 0 khoảng 0,5 giây và restart healthy. Chưa deploy cloud/HTTPS và chưa gọi đây là high availability.
+- E2E curl 14/14 bên dưới là lịch sử ngày 17/09. Playwright production build đã được chạy mới ngày 22/09 và đạt 9/9 ở ba viewport; xem phần P5/P6 cuối file.
+- Integration server: 29/29 PASS — 21 test trong `orderFlow.test.ts` và 8 test trong `sessionAutoOpen.test.ts`, chạy trên MongoMemoryReplSet thật.
 - `server/vitest.config.ts` phải tách mỗi file test sang process riêng (`isolate: true`, `singleFork: false`, `maxForks: 1`): nhiều file test dùng chung một mongoose instance gây `OverwriteModelError`.
 - E2E curl trên server thật + MongoDB thật: 14/14 PASS — join bàn trống 200 `created:true` → đặt đơn 201 → thu tiền 201 kèm `billId` → gọi lại 200 cùng `billId` → quét lại QR ra phiên mới rồi đặt đơn 201; cookie cũ 401; receipt không lộ field nội bộ.
 - Browser QA: PASS — khách vào thẳng `/menu` thấy tên bàn và đặt được đơn qua UI; trang staff hiện badge "Tự mở".
 - Test bao phủ thêm: tự mở phiên + audit khi quét QR bàn trống, replay thanh toán kèm `billId`, đóng phiên rồi mở phiên mới, sweeper idle đóng phiên + thu hồi guest session.
-- Test unit server chạy ở bước xác minh cuối; chưa ghi số ở đây.
-- Chưa chạy lại production build và test UI component trong lần này (lần trước: build PASS, Vite còn cảnh báo bundle JS lớn hơn 500 kB; UI 4/4 PASS).
-- Lint chưa đạt: client chưa có ESLint config; server còn lỗi có sẵn trong auth.ts (namespace) và seed.ts (unused/console/prefer-const). Không tắt rule để che lỗi.
-- Chưa gọi AI live bên ngoài; chỉ kiểm chứng logic fallback/ràng buộc nội bộ.
+- Test unit/server, UI client, integration, lint, typecheck và build đã được chạy lại ngày 22/09/2026 như số liệu phía trên.
+- AI live đã được gọi thử có giới hạn nhưng provider từ chối key với HTTP 401; chỉ fallback/ràng buộc nội bộ được xác nhận đạt, chưa có kết quả LLM live hợp lệ.
 - Integration dùng database tạm riêng; riêng E2E thủ công có tạo dữ liệu thật trong DB demo (xem mục "Việc còn lại và ranh giới").
-- Npm có báo dependency vulnerabilities; chưa áp dụng npm audit fix --force để tránh nâng cấp phá tương thích.
+- `npm audit` hiện 0 vulnerability sau khi nâng Vite 8, Vitest 5, React Router 7 và UUID 14; không dùng `npm audit fix --force`.
 
 ## Chạy và demo
 
@@ -134,13 +145,13 @@ Biến môi trường mới trong `.env.example`: `GUEST_AUTO_OPEN=true` (cho kh
 
 ## Việc còn lại và ranh giới
 
-- Kiểm tra trực quan ở 375/768/1440px, quét ảnh QR thực, test mất mạng và demo trên hai thiết bị.
-- Dọn cấu hình/lỗi lint sẵn có; tách bundle nếu muốn.
-- CRUD quản trị đầy đủ, lịch sử đơn admin, dashboard bộ lọc/export, voucher, upload ảnh, PWA chưa thuộc đợt hoàn thiện luồng này.
-- Chưa triển khai tự refresh access token ở frontend; token staff hiện theo cơ chế persist cũ, có thể phải đăng nhập lại khi hết hạn.
+- Playwright tự động ở 375/768/1440 đã đạt; PWA reload offline đã có smoke test. Còn quét ảnh QR/camera thật, kiểm tra trực quan thủ công và chạy ca browser hai thiết bị trên backend production-local khi Docker hoạt động.
+- Lint hiện đạt 0 lỗi/cảnh báo. Route-level lazy loading đưa entry client xuống 382,54 kB (gzip 117,26 kB); chunk lớn nhất là Dashboard 385,02 kB (gzip 102,55 kB), đều dưới ngưỡng 500 kB.
+- Dashboard đã có lọc ngày, CSV và in/lưu PDF; aggregation không còn cắt ở 100 đơn. Lịch sử đơn admin, voucher và upload ảnh là mở rộng sản phẩm ngoài luồng cốt lõi hiện tại.
+- Đã triển khai tự refresh access token staff ở frontend; access token vẫn chỉ giữ trong memory, refresh token ở cookie HttpOnly.
 - Không xem docs cũ hay số lượng tính năng trong README là bằng chứng đã test: ưu tiên file này và docs/test-report.md.
 - Index tableSession mới one_active_session_per_table bảo đảm chỉ một OPEN/CHECKOUT mỗi bàn. Với DB cũ có dữ liệu trùng phiên hoạt động, cần xử lý dữ liệu trước khi tạo index; không tự xóa dữ liệu.
-- Phiên bản API OpenAPI đã bổ sung staff tables và receipt endpoints. Hợp đồng response mới hiện được khai báo tại client/controller, chưa đưa hết vào packages/contracts.
+- Phiên bản API OpenAPI đã bổ sung staff tables và receipt endpoints. Contracts chung hiện bao phủ thêm join/current table session và request chuyển trạng thái; vẫn chưa chuẩn hóa mọi response quản trị cũ.
 - E2E thủ công 17/09/2026 đã tạo dữ liệu thật trong DB demo: bàn `B03` đã thu tiền, bàn `B04` còn 1 đơn PENDING `MCX29XD` kèm phiên mới do auto-open. Người dùng tự dọn nếu cần; không tự xóa dữ liệu.
 - Các câu hỏi §11 của issue đã chốt: Q1 mặc định `GUEST_AUTO_OPEN=true` kèm công tắc; Q2 bật idle timeout 60 phút; Q3 vẫn cho nhiều guest session song song theo thiết bị (giữ nguyên); Q4 `Bill` dùng cho `staffBill`, còn `/receipts/current` vẫn tính từ `Order` nhưng đã lọc field nội bộ; Q5 không thêm van "xác nhận đơn đầu tiên".
 - Các finding khác trong `audit_2026-09-16.md` §12 nằm ngoài phạm vi issue này, mới chỉ ghi nhận chứ chưa sửa.
@@ -149,3 +160,36 @@ Biến môi trường mới trong `.env.example`: `GUEST_AUTO_OPEN=true` (cho kh
 
 - qrcode API và Promise toDataURL: https://github.com/soldair/node-qrcode
 - Socket.IO client options/cookies: https://socket.io/docs/v4/client-options/
+
+## Cập nhật P5/P6 mới nhất — 22/09/2026
+
+Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live chưa thực hiện.
+
+- Production-local hiện có Nginx + `server-a` + `server-b` + `worker-1` + MongoDB replica set một node + Redis AOF. Socket.IO Redis adapter phát event/revocation khác instance; Redis rate-limit dùng chung cho auth, guest mutation, search và AI. Scheduler/sweeper chỉ chạy trong worker.
+- Failover local: 20/20 request qua B khi A dừng, tối đa khoảng 1.036 ms. Redis outage để read menu hoạt động, readiness `degraded`, mutation không tự bỏ limiter. Đây không phải HA cả máy/cloud.
+- Load test k6 dùng DB `maycafe_benchmark`, 200 sản phẩm. Menu fixed hai backend đạt cao nhất 90 RPS (p95 96,48 ms); 100 RPS p95 3,26 s; ramp 600–700 không đạt. Guest 20 VU/60 s có 0 lỗi nhưng write p95 4,15 s nên không đạt ngưỡng. Realtime 100/100, connect p95 324,05 ms.
+- Load test phát hiện `dropDatabase()` của benchmark seed xóa unique index và cho tạo nhiều phiên active. Seed nay import mọi model + `syncIndexes()` trước dữ liệu; `check:benchmark` xác nhận đúng một active session, không trùng idempotency key, sai tổng hay trạng thái. Không dùng kết quả trước sửa làm bằng chứng.
+- Playwright production build đạt 9/9 ở 375×812, 768×1024 và 1440×900 cho join/login/menu sau link QR mô phỏng; không tràn ngang/page error. Camera/in QR thật vẫn để test sau theo yêu cầu người dùng.
+- GitHub CI nằm ở `.github/workflows/ci.yml`, dùng Node 24/npm ci và chạy lint, typecheck, server/client tests, integration, build. Chưa có remote Actions run cho thay đổi chưa commit/push.
+- AI live smoke đã thử 3 recommendation + 1 anomaly explanation với key trong `apikey.txt`, provider trả 401 cả bốn. Fallback an toàn hoạt động; key bị từ chối phải thay trước khi gọi AI live là đạt. `apikey.txt` bị Git ignore; logger không ghi provider error body.
+- Báo cáo nguồn chuẩn: `docs/performance-report.md`, `docs/test-report.md`, `docs/deployment.md`, `docs/upgrade-progress.md`, `docs/ai-evaluation.md`.
+- Cloud chưa deploy. Cần người dùng chốt provider/account có quyền, region, ngân sách, domain/DNS, Mongo/Redis managed hay tự quản, secrets production và quyền repo cho CD. Không tự tạo tài nguyên có phí.
+
+## Điểm tiếp tục ở phiên làm việc sau
+
+### Cập nhật cải tiến còn lại — 23/09/2026
+
+- Client dùng lazy route; entry production giảm từ khoảng 990 kB xuống 382,54 kB (gzip 117,26 kB), không còn cảnh báo chunk >500 kB.
+- PWA production có manifest/service worker, precache theo Vite asset manifest, reload offline đạt; API và Socket.IO không bao giờ được cache. UI báo mất mạng/kết nối lại và giỏ vẫn persist để người dùng tự thử gửi lại.
+- Dashboard hỗ trợ khoảng ngày, CSV và in/PDF. Backend dùng MongoDB `$facet` trên toàn bộ đơn PAID, nhóm theo `Asia/Ho_Chi_Minh`; integration 105 đơn khóa hồi quy giới hạn phân trang cũ.
+- Contracts chung bổ sung join/current table session và request transition. Script root build contracts trước dev/typecheck/test để checkout sạch và CI không phụ thuộc `dist` cũ.
+- Vite 8.3.0, Vitest 5.0.1, React Router 7.18.4 và UUID 14.0.2; `npm audit` 0 vulnerability. Vitest config đã đổi khỏi `poolOptions` bị loại bỏ.
+- CI có thêm audit và browser smoke production frontend. Playwright mới: 11 ca; trên preview không backend đạt 7, skip 4 ca cần `E2E_TABLE_TOKEN`; offline reload đạt. Docker Desktop đang tắt nên chưa chạy lại API-backed 11/11.
+- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server unit 58/58, client 14/14, integration 29/29, build PASS. Không chạy lại benchmark tải vì thay đổi không nhằm tăng throughput.
+
+- Xem mục “Cập nhật P5/P6 mới nhất” và `docs/upgrade-progress.md` trước; không chạy lại benchmark nặng nếu không có thay đổi liên quan hiệu năng.
+- Production-local đã từng đạt ở `http://localhost:8080`, nhưng Docker Desktop đang tắt ngày 23/09/2026 nên hiện không phục vụ. Khi bật lại cần rebuild code P7 rồi chạy smoke API-backed; không suy diễn trạng thái cũ là trạng thái hiện tại.
+- Toàn bộ kiểm tra cuối: lint PASS, typecheck PASS, server unit 58/58, client 14/14, integration 28/28, Playwright 9/9, build PASS. Cross-instance smoke trên image cuối PASS.
+- Việc cần người dùng cung cấp tiếp: key AI hợp lệ nếu muốn test live; hoặc lựa chọn cloud/account/region/budget/domain nếu muốn deploy thật. Không yêu cầu lại camera/in QR cho tới khi người dùng muốn thực hiện bước đó.
+- Workflow GitHub mới chỉ nằm trong worktree. Trước khi đánh giá CI remote cần review, commit và push; hiện chưa được phép tự commit/push.
+- Không ghi hoặc in nội dung `apikey.txt`. File này và `.cache/load` đang được Git ignore.

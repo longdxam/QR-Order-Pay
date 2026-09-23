@@ -3,24 +3,36 @@ import { Card } from '../../components/ui/Card';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
-import { ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LineChart, Line, CartesianGrid } from 'recharts';
-import { useMemo } from 'react';
-
-interface Overview {
-  totalRevenue: number;
-  orderCount: number;
-  averageOrderValue: number;
-  topProducts: Array<{ productId: string; name: string; quantity: number; revenue: number }>;
-  revenueByDay: Array<{ date: string; revenue: number; orders: number }>;
-  revenueByHour: Array<{ hour: number; revenue: number }>;
-}
+import { ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  LineChart,
+  Line,
+  CartesianGrid,
+} from 'recharts';
+import { useMemo, useState } from 'react';
+import type { DashboardOverview } from '@may-cafe/contracts';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Download, Printer } from 'lucide-react';
 
 export function AdminDashboard(): JSX.Element {
   useDocumentTitle('Dashboard');
+  const [range, setRange] = useState(defaultDateRange);
   const overviewQuery = useQuery({
-    queryKey: ['admin-overview'],
-    queryFn: async () => unwrap(await api.get<Overview>('/admin/reports/overview')),
+    queryKey: ['admin-overview', range.from, range.to],
+    queryFn: async () =>
+      unwrap(
+        await api.get<DashboardOverview>(
+          `/admin/reports/overview?from=${range.from}&to=${range.to}`,
+        ),
+      ),
     refetchInterval: 60_000,
   });
 
@@ -36,18 +48,74 @@ export function AdminDashboard(): JSX.Element {
     );
   }
   if (overviewQuery.isError) {
-    return <ErrorState message={getErrorMessage(overviewQuery.error)} onRetry={() => overviewQuery.refetch()} />;
+    return (
+      <ErrorState
+        message={getErrorMessage(overviewQuery.error)}
+        onRetry={() => overviewQuery.refetch()}
+      />
+    );
   }
   const data = overviewQuery.data!;
   return (
     <div className="space-y-4">
-      <h1 className="font-display text-2xl font-semibold">Tổng quan 30 ngày</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
+        <div>
+          <h1 className="font-display text-2xl font-semibold">Tổng quan kinh doanh</h1>
+          <p className="text-sm text-muted-foreground">
+            Số liệu đơn đã thanh toán, theo múi giờ Việt Nam.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs font-medium">
+            Từ ngày
+            <Input
+              type="date"
+              required
+              value={range.from}
+              max={range.to}
+              onChange={(event) => {
+                if (event.target.value)
+                  setRange((current) => ({ ...current, from: event.target.value }));
+              }}
+              className="mt-1 w-40"
+            />
+          </label>
+          <label className="text-xs font-medium">
+            Đến ngày
+            <Input
+              type="date"
+              required
+              value={range.to}
+              min={range.from}
+              onChange={(event) => {
+                if (event.target.value)
+                  setRange((current) => ({ ...current, to: event.target.value }));
+              }}
+              className="mt-1 w-40"
+            />
+          </label>
+          <Button variant="outline" onClick={() => exportOverviewCsv(data, range)}>
+            <Download className="h-4 w-4" /> CSV
+          </Button>
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" /> In / PDF
+          </Button>
+        </div>
+      </div>
+
+      <h2 className="font-display text-lg font-semibold">
+        Từ {formatDisplayDate(range.from)} đến {formatDisplayDate(range.to)}
+      </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard title="Doanh thu" value={vnd(data.totalRevenue)} tone="success" />
         <KpiCard title="Số đơn" value={data.orderCount.toString()} tone="info" />
         <KpiCard title="Giá trị TB/đơn" value={vnd(data.averageOrderValue)} tone="success" />
-        <KpiCard title="Sản phẩm bán chạy" value={(data.topProducts[0]?.name ?? '—')} tone="warning" />
+        <KpiCard
+          title="Sản phẩm bán chạy"
+          value={data.topProducts[0]?.name ?? '—'}
+          tone="warning"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -107,7 +175,66 @@ export function AdminDashboard(): JSX.Element {
   );
 }
 
-function KpiCard({ title, value, tone }: { title: string; value: string; tone: 'info' | 'success' | 'warning' }): JSX.Element {
+function defaultDateRange(): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - 29);
+  return { from: formatInputDate(from), to: formatInputDate(to) };
+}
+
+function formatInputDate(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(value: string): string {
+  const [year, month, day] = value.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function exportOverviewCsv(data: DashboardOverview, range: { from: string; to: string }): void {
+  const rows: Array<Array<string | number>> = [
+    ['Báo cáo Mây Café', `${range.from} - ${range.to}`],
+    ['Doanh thu', data.totalRevenue],
+    ['Số đơn', data.orderCount],
+    ['Giá trị trung bình/đơn', data.averageOrderValue],
+    [],
+    ['Doanh thu theo ngày'],
+    ['Ngày', 'Doanh thu', 'Số đơn'],
+    ...data.revenueByDay.map((item) => [item.date, item.revenue, item.orders]),
+    [],
+    ['Top sản phẩm'],
+    ['Sản phẩm', 'Số lượng', 'Doanh thu'],
+    ...data.topProducts.map((item) => [item.name, item.quantity, item.revenue]),
+  ];
+  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `may-cafe-${range.from}-${range.to}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function csvCell(value: string | number): string {
+  const raw = String(value);
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
+function KpiCard({
+  title,
+  value,
+  tone,
+}: {
+  title: string;
+  value: string;
+  tone: 'info' | 'success' | 'warning';
+}): JSX.Element {
   return (
     <Card className="p-4 space-y-1">
       <Badge tone={tone}>{title}</Badge>

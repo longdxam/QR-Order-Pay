@@ -9,6 +9,9 @@ import type { Role } from '@may-cafe/contracts';
 import { verifyAccessToken } from '../utils/crypto.js';
 import { GUEST_COOKIE } from '../middlewares/guest.js';
 import { UserModel } from '../models/User.js';
+import { socketConnected, socketDisconnected } from '../infrastructure/metrics.js';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { socketRedisClients } from '../infrastructure/redis.js';
 
 interface ServerToClientEvents {
   'order.created': (payload: unknown) => void;
@@ -34,6 +37,8 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
       callback(null, !origin || [config.publicAppUrl, config.serverOrigin].includes(origin));
     },
   });
+  const redis = socketRedisClients();
+  if (redis) io.adapter(createAdapter(redis.publisher, redis.subscriber));
 
   io.use(async (socket, next) => {
     try {
@@ -79,12 +84,15 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
     if (data.role === 'ADMIN' || data.role === 'STAFF') {
       socket.join('staff');
       socket.join(`staff:${data.userId}`);
+      socketConnected('staff');
     } else if (data.tableSessionId && data.participantId) {
       socket.join(`guest:${data.tableSessionId}:${data.participantId}`);
       socket.join(`session:${data.tableSessionId}`);
+      socketConnected('guest');
     }
     socket.on('disconnect', () => {
-      // rooms cleaned automatically
+      if (data.role === 'ADMIN' || data.role === 'STAFF') socketDisconnected('staff');
+      else if (data.tableSessionId && data.participantId) socketDisconnected('guest');
     });
   });
 

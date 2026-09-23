@@ -35,6 +35,27 @@ Client  ─► POST /api/v1/ai/recommendations
 
 Timeout `AI_TIMEOUT_MS` (mặc định 15 giây). Lỗi timeout hoặc HTTP không 2xx → fallback.
 
+## P4A — tìm kiếm menu bằng tiếng Việt
+
+Tìm kiếm chính trên trang menu dùng một pipeline xác định, tách biệt với AI Barista:
+
+```
+query (tối đa 200 ký tự)
+  → bỏ dấu + sửa một số lỗi gõ trong từ điển giới hạn
+  → MenuSearchIntent đã kiểm tra bằng Zod
+  → điều kiện cứng: nhóm loại trừ, budget, caffeine, dairy, availability
+  → xếp hạng: từ khóa, nhóm, khẩu vị, ít ngọt, featured, giá
+  → tối đa 12 món từ database
+```
+
+- `dưới 40 nghìn` là `< 40.000đ`; `không quá`/`tối đa` là `<= 40.000đ`. Budget luôn áp dụng cho một món với size khả dụng rẻ nhất.
+- `không cà phê` chỉ loại nhóm cà phê. Chỉ `không caffeine`, `không cafein` hoặc `decaf` mới bật ràng buộc caffeine.
+- Với `không caffeine`/`không sữa`, metadata phải xác nhận chính xác `false`; dữ liệu thiếu không được xem là an toàn.
+- Món ngừng bán, lưu trữ hoặc không còn size hợp lệ bị loại trước khi xếp hạng. Không có kết quả thì trả rỗng và nói rõ, không tự chèn món gần đúng.
+- Client debounce 350 ms, truyền `AbortSignal` để hủy request cũ và cho phép người dùng sửa trực tiếp budget/caffeine/dairy.
+
+Chế độ hiện tại luôn là `fallback`, không cần API key và không được trình bày như kết quả AI live. Nếu sau này dùng LLM, LLM chỉ phân tích intent hoặc viết lời giải thích; backend vẫn sở hữu toàn bộ lọc, xếp hạng, ID và giá.
+
 ## Prompt
 
 ```
@@ -101,4 +122,4 @@ AI_BASE_URL=https://api.openai.com/v1
 
 ## Đánh giá
 
-Xem `docs/ai-evaluation.md` để biết 15+ tình huống kiểm thử và kết quả quan sát.
+Xem `docs/ai-evaluation.md` để biết ma trận 25 kiểm thử P4A và phạm vi AI Barista đã/chưa được kiểm chứng.

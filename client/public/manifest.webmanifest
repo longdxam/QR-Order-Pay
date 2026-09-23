@@ -1,0 +1,19 @@
+{
+  "name": "Mây Café — Gọi món tại bàn",
+  "short_name": "Mây Café",
+  "description": "Quét QR, gọi món và theo dõi đơn tại Mây Café.",
+  "lang": "vi",
+  "start_url": "/t",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF7F2",
+  "theme_color": "#285943",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

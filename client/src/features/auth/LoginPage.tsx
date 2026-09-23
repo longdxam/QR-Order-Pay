@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { useAuth, type AuthUser } from './useAuth';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../components/ui/useToast';
 
 export function LoginPage(): JSX.Element {
   const navigate = useNavigate();

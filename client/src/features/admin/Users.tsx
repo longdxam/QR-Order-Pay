@@ -8,8 +8,9 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
-import { useToast } from '../../components/ui/Toast';
-import { ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
+import { useToast } from '../../components/ui/useToast';
+import { ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 
 interface AdminUser {
   id: string;

@@ -6,9 +6,10 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Skeleton } from '../../components/ui/Skeleton';
-import { ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../components/ui/useToast';
 
 interface Variant {
   _id?: string;

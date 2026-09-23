@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
 import { connectStaffSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
 import { Badge } from '../components/ui/Badge';
-import { useToast } from '../components/ui/Toast';
+import { useToast } from '../components/ui/useToast';
 import { api, unwrap } from '../lib/api';
 import {
   isSoundEnabled,

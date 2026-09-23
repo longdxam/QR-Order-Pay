@@ -5,8 +5,10 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { api, generateIdempotencyKey, getErrorMessage, unwrap, vnd } from '../../lib/api';
-import { useToast } from '../../components/ui/Toast';
-import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
+import { paymentMethodSchema, paymentRequestSchema, type PaymentMethod } from '@may-cafe/contracts';
+import { useToast } from '../../components/ui/useToast';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 
 interface Table { _id: string; code: string; name: string; capacity: number; isActive: boolean }
 interface SessionItem {
@@ -64,7 +66,7 @@ function SessionCard({ item }: { item: SessionItem }): JSX.Element {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [method, setMethod] = useState('CASH');
+  const [method, setMethod] = useState<PaymentMethod>('CASH');
   const attempt = useRef<{ signature: string; key: string } | null>(null);
   const bill = useQuery({
     queryKey: ['staff-bill', session._id],
@@ -82,7 +84,7 @@ function SessionCard({ item }: { item: SessionItem }): JSX.Element {
   const payment = useMutation({
     mutationFn: async () => {
       if (!bill.data) throw new Error('Chưa tải được hóa đơn.');
-      const payload = { amount: bill.data.total, method, expectedVersion: session.version };
+      const payload = paymentRequestSchema.parse({ amount: bill.data.total, method, expectedVersion: session.version });
       const signature = JSON.stringify(payload);
       if (attempt.current?.signature !== signature) attempt.current = { signature, key: generateIdempotencyKey() };
       return api.post(`/staff/table-sessions/${session._id}/payments`, payload, { headers: { 'Idempotency-Key': attempt.current.key } });
@@ -110,7 +112,10 @@ function SessionCard({ item }: { item: SessionItem }): JSX.Element {
         {unpaid.map((o) => <div key={o._id} className="border-b pb-2"><p className="font-semibold">{o.code}</p>{o.items.map((it, i) => <p key={i} className="flex justify-between gap-3 text-sm"><span>{it.quantity} × {it.nameSnapshot}</span><span>{vnd(it.lineTotal)}</span></p>)}</div>)}
         <p className="text-lg font-semibold">Tổng phải thu: {vnd(bill.data?.total ?? 0)}</p>
         <label className="block text-sm">Phương thức thanh toán
-          <select value={method} disabled={payment.isPending} onChange={(e) => setMethod(e.target.value)} className="mt-1 w-full border rounded p-2">
+          <select value={method} disabled={payment.isPending} onChange={(e) => {
+            const parsed = paymentMethodSchema.safeParse(e.target.value);
+            if (parsed.success) setMethod(parsed.data);
+          }} className="mt-1 w-full border rounded p-2">
             <option value="CASH">Tiền mặt</option><option value="BANK_TRANSFER">Chuyển khoản — nhân viên kiểm tra</option><option value="OTHER">Khác</option>
           </select>
         </label>

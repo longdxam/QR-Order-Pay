@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap, vnd, getErrorMessage } from '../../lib/api';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { EmptyState, ErrorState, useDocumentTitle } from '../../components/ui/EmptyState';
-import { useToast } from '../../components/ui/Toast';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useToast } from '../../components/ui/useToast';
 
 interface ReceiptOrder {
   _id: string; code: string; total: number;

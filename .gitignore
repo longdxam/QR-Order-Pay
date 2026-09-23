@@ -18,6 +18,7 @@ coverage/
 .env
 .env.*
 !.env.example
+apikey.txt
 
 # Logs
 *.log
