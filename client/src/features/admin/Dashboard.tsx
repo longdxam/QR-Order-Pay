@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '../../components/ui/Card';
-import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
+import { getErrorMessage, vnd } from '../../lib/api';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { ErrorState } from '../../components/ui/EmptyState';
@@ -17,22 +17,20 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { useMemo, useState } from 'react';
-import type { DashboardOverview } from '@may-cafe/contracts';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Download, Printer } from 'lucide-react';
+import { createOverviewReport } from '../../lib/reportJobs';
+import { useToast } from '../../components/ui/useToast';
 
 export function AdminDashboard(): JSX.Element {
   useDocumentTitle('Dashboard');
   const [range, setRange] = useState(defaultDateRange);
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
   const overviewQuery = useQuery({
     queryKey: ['admin-overview', range.from, range.to],
-    queryFn: async () =>
-      unwrap(
-        await api.get<DashboardOverview>(
-          `/admin/reports/overview?from=${range.from}&to=${range.to}`,
-        ),
-      ),
+    queryFn: ({ signal }) => createOverviewReport(range, 'json', signal),
     refetchInterval: 60_000,
   });
 
@@ -94,8 +92,27 @@ export function AdminDashboard(): JSX.Element {
               className="mt-1 w-40"
             />
           </label>
-          <Button variant="outline" onClick={() => exportOverviewCsv(data, range)}>
-            <Download className="h-4 w-4" /> CSV
+          <Button
+            variant="outline"
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                const csv = await createOverviewReport(range, 'csv');
+                downloadOverviewCsv(csv, range);
+                toast({ title: 'Đã tạo báo cáo CSV bằng worker', tone: 'success' });
+              } catch (error) {
+                toast({
+                  title: 'Không thể xuất báo cáo',
+                  description: getErrorMessage(error),
+                  tone: 'danger',
+                });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            <Download className="h-4 w-4" /> {exporting ? 'Đang tạo...' : 'CSV'}
           </Button>
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> In / PDF
@@ -194,22 +211,7 @@ function formatDisplayDate(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
-function exportOverviewCsv(data: DashboardOverview, range: { from: string; to: string }): void {
-  const rows: Array<Array<string | number>> = [
-    ['Báo cáo Mây Café', `${range.from} - ${range.to}`],
-    ['Doanh thu', data.totalRevenue],
-    ['Số đơn', data.orderCount],
-    ['Giá trị trung bình/đơn', data.averageOrderValue],
-    [],
-    ['Doanh thu theo ngày'],
-    ['Ngày', 'Doanh thu', 'Số đơn'],
-    ...data.revenueByDay.map((item) => [item.date, item.revenue, item.orders]),
-    [],
-    ['Top sản phẩm'],
-    ['Sản phẩm', 'Số lượng', 'Doanh thu'],
-    ...data.topProducts.map((item) => [item.name, item.quantity, item.revenue]),
-  ];
-  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+function downloadOverviewCsv(csv: string, range: { from: string; to: string }): void {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
@@ -218,12 +220,6 @@ function exportOverviewCsv(data: DashboardOverview, range: { from: string; to: s
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function csvCell(value: string | number): string {
-  const raw = String(value);
-  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
-  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 function KpiCard({

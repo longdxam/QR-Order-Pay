@@ -21,5 +21,7 @@ RUN npm -w @may-cafe/contracts run build && npm -w @may-cafe/client run build
 FROM nginx:1.27-alpine
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY docker/nginx/maycafe-common.inc /etc/nginx/conf.d/maycafe-common.inc
+COPY docker/nginx/maycafe-guest-proxy.inc /etc/nginx/conf.d/maycafe-guest-proxy.inc
+COPY docker/nginx/maycafe-internal-proxy.inc /etc/nginx/conf.d/maycafe-internal-proxy.inc
 COPY --from=build /app/client/dist /usr/share/nginx/html
 EXPOSE 8080 8081 8082

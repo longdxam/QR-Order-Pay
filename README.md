@@ -94,7 +94,7 @@ Tạo `.env.production` với hai JWT secret khác nhau, mỗi secret tối thi�
 docker compose -f compose.production.yaml --env-file .env.production up -d --build
 ```
 
-Production-local được tách thành ba portal qua cùng Nginx: Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Mỗi portal dùng API/Socket.IO cùng origin và Nginx chặn route/API gọi chéo vai trò; backend vẫn kiểm tra JWT/role. Topology gồm hai API backend, một worker, MongoDB, Redis và Nginx. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình HTTPS, health check, backup và rollback tại `docs/deployment.md`; xem số tải thực đo tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
+Production-local được tách thành ba portal qua cùng Nginx: Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Guest đi vào pool `server-guest-a/b`; Staff và Admin đi vào pool ưu tiên `server-internal-a/b`. Mỗi portal dùng API/Socket.IO cùng origin và Nginx chặn route/API gọi chéo vai trò; backend vẫn kiểm tra JWT/role. Worker riêng xử lý báo cáo/CSV, thông báo realtime, sweeper và anomaly scheduler; menu công khai được cache ngắn hạn trong Redis và tự đổi generation khi catalog thay đổi. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình resource limit, health check, backup và rollback tại `docs/deployment.md`; xem số tải baseline tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
 
 ## Cấu trúc thư mục
 
@@ -119,7 +119,7 @@ Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-d
 - CSRF guard cho mutation của guest theo Origin/Referer.
 - Ownership kiểm tra ở service: guest không đọc/huỷ đơn của thiết bị khác.
 - Idempotency key bắt buộc khi tạo đơn và thanh toán.
-- Shared Redis rate limit cho login, mutation guest, menu search và AI.
+- Shared Redis rate limit cho login, mutation guest, join, gọi món theo bàn, yêu cầu phục vụ, menu search và AI; Nginx có thêm burst/connection limit cho cổng Guest.
 - Structured logging với request ID.
 - Raw `/metrics` chỉ ở private backend network; trang `/admin/operations` có phân quyền. Xem [docs/observability.md](docs/observability.md).
 - Cảnh báo bất thường chỉ ADMIN truy cập; xác nhận/đóng có audit. Xem [docs/anomaly-detection.md](docs/anomaly-detection.md).

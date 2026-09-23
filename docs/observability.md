@@ -1,6 +1,6 @@
 # Observability và dashboard vận hành
 
-Cập nhật: 22/09/2026. Phạm vi hiện tại là hai API process, một worker, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
+Cập nhật: 23/09/2026. Phạm vi hiện tại là hai API Guest, hai API Internal, một worker, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
 
 ## Điểm truy cập và phân quyền
 
@@ -40,4 +40,4 @@ Anomaly HTTP là luồng riêng với Prometheus: mỗi API ghi số mẫu, tổ
 - Gửi lỗi kiểm soát 404 với `x-request-id: p3-controlled-error`: log tìm được đúng request ID, route `unmatched`, status 404; `clientErrors` trên Admin summary tăng từ 3 lên 4.
 - Admin summary trả `mongodbReady=true`, dữ liệu hàng đợi thật từ MongoDB và `scope=instance`/`scope=database` rõ ràng.
 - Unit test kiểm tra route labels không chứa ID/URL thật, socket gauge không âm và stage metrics; integration test xác nhận payment replay không tăng `payment_confirmed` lần hai.
-- Với hai backend, event Socket.IO và thu hồi phiên đi qua Redis đã được kiểm chứng khác instance; rate limit login dùng chung cho A/B. Chỉ worker chạy scheduler nên không nhân đôi cảnh báo/job.
+- Với bốn backend chia hai pool, event Socket.IO và thu hồi phiên đi qua Redis adapter; worker phát notification qua Redis emitter. Rate limit và menu cache dùng chung giữa các pool. Chỉ worker chạy queue/scheduler nên không nhân đôi report hay cảnh báo.

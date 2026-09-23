@@ -2,7 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { confirmPayment } from '../services/paymentService.js';
 import { NotFoundError, ValidationError } from '../errors/AppError.js';
 import { buildBill } from '../services/paymentService.js';
-import { closeSessionSockets, publishSession, publishStaff } from '../realtime/socket.js';
+import { closeSessionSockets } from '../realtime/socket.js';
+import { notifySession, notifyStaff } from '../services/notificationService.js';
 import { paymentRequestSchema } from '@may-cafe/contracts';
 import { recordBusinessEvent } from '../infrastructure/metrics.js';
 
@@ -25,10 +26,12 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
     if (!result.replayed) {
       recordBusinessEvent('payment_confirmed');
       const payload = { tableSessionId: id, status: 'CLOSED' };
-      publishSession(id, 'payment.confirmed', payload);
-      publishStaff('payment.confirmed', payload);
-      publishStaff('tableSession.statusChanged', payload);
-      publishStaff('serviceRequest.resolved', payload);
+      await Promise.all([
+        notifySession(id, 'payment.confirmed', payload),
+        notifyStaff('payment.confirmed', payload),
+        notifyStaff('tableSession.statusChanged', payload),
+        notifyStaff('serviceRequest.resolved', payload),
+      ]);
       closeSessionSockets(id);
     }
     res.status(result.replayed ? 200 : 201).json({ success: true, data: { payment: result.payment, orderIds: result.orderIds, replayed: result.replayed, billId: result.billId } });

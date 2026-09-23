@@ -144,7 +144,17 @@ Idle-session sweeper và anomaly scheduler được chuyển khỏi API process 
 
 Redis outage được xử lý có chủ ý: read menu vẫn hoạt động, readiness trả `degraded`, còn endpoint mutation có shared limiter trả lỗi thay vì tự fail-open. Đây là ưu tiên an toàn; Redis vì vậy là dependency vận hành quan trọng dù MongoDB mới là dependency quyết định HTTP readiness 503.
 
-**Đã kiểm chứng:** chia request 10/10 qua A/B; limiter 30 lần dùng chung; event và remote socket revocation khác instance; failover 20/20 request sau khi dừng A; chỉ một worker khởi động. MongoDB vẫn là replica set một node và toàn stack cùng một Docker host, nên không gọi là high availability.
+**Đã kiểm chứng trên topology hai API ban đầu:** chia request 10/10 qua A/B; limiter 30 lần dùng chung; event và remote socket revocation khác instance; failover 20/20 request sau khi dừng A; chỉ một worker khởi động. MongoDB vẫn là replica set một node và toàn stack cùng một Docker host, nên không gọi là high availability.
+
+## AD-013 — Tách pool Guest/Internal và chuyển việc nền sang Redis queue
+
+**Quyết định:** cổng Guest chỉ proxy vào `server-guest-a/b`; Staff/Admin chỉ proxy vào `server-internal-a/b`. Compose áp CPU/RAM limit và cho Internal `cpu_shares` cao hơn Guest. Guest dùng limiter Redis theo bàn cộng burst/connection limit ở Nginx. Menu public cache Redis theo generation. Report JSON/CSV và notification realtime đi qua hai queue riêng; worker luôn drain notification trước report, retry tối đa rồi đưa job lỗi vào dead-letter.
+
+**Lý do:** tách cổng đơn thuần không ngăn traffic QR chiếm Node process của nhân viên. Pool/resource class riêng giữ capacity nội bộ tốt hơn trên cùng host; limiter theo bàn chính xác hơn limiter IP trong mạng Wi-Fi NAT. Queue loại aggregation/export khỏi request process và tránh notification trong worker cũ bị no-op vì worker không sở hữu Socket.IO server.
+
+**Đánh đổi:** bốn API process dùng thêm RAM; MongoDB, Redis, Nginx và host vẫn là tài nguyên chung nên không phải hard isolation hay HA. Report UI phụ thuộc worker/Redis và có timeout rõ ràng. Cache menu fail-open về MongoDB để giữ read availability; mutation limiter vẫn không fail-open.
+
+**Đã kiểm chứng 23/09/2026:** health trên `8080` trả `trafficClass=guest`, `8081/8082` trả `internal`; JSON/CSV report job hoàn tất; realtime queue drain sạch; menu tạo cache key Redis; burst 100 request chỉ trả 200/429; join cùng token thử nghiệm trả 20×404 rồi 2×429; cross-portal routes vẫn 404. Nginx dùng Docker DNS resolve động; sau recreate backend mà không restart Nginx, 12/12 request mỗi cổng vẫn vào đúng traffic class.
 
 ## AD-011 — Benchmark seed phải dựng lại index sau khi reset database (P5B)
 

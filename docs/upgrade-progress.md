@@ -90,11 +90,11 @@ Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ 
 - Detector+target được khử trùng theo bucket unique và cooldown. ADMIN xem, đánh dấu đã xem/đóng trên dashboard operations; thao tác ghi AuditLog.
 - LLM chỉ giải thích aggregate cho alert mới với schema và hạn mức; timeout/off/no key dùng fallback, alert vẫn tồn tại. Không có quyền nghiệp vụ.
 - Synthetic: 4/4 anomaly được nhận đúng, 0/4 false alert ở cửa sổ bình thường, 4/4 detector ít mẫu trả chưa đủ dữ liệu; provider timeout fallback đạt. Integration xác nhận quyền, cooldown dedupe, ACK và audit.
-- HTTP window vẫn theo instance; P5 phải chuyển scheduler/aggregate sang worker/store dùng chung trước khi scale hai backend.
+- Ghi chú lịch sử trước P5: HTTP window từng theo instance; hiện aggregate đã ở Redis và scheduler chỉ chạy trong worker.
 
 ## Nghiệm thu P5A đa instance — 22/09/2026
 
-- Compose chạy Nginx, hai API backend, một worker, MongoDB replica set một node và Redis AOF. Socket.IO dùng Redis adapter; limiter auth/guest/search/AI dùng Redis store; AI không còn limiter memory cục bộ.
+- Compose chạy Nginx, hai API Guest, hai API Internal, một worker, MongoDB replica set một node và Redis AOF. Internal có CPU priority cao hơn Guest; mỗi nhóm có CPU/RAM limit. Socket.IO dùng Redis adapter/emitter; limiter auth/join/order/service/search/AI dùng Redis store.
 - HTTP anomaly aggregate được ghi bucket phút vào Redis và chỉ worker chạy detector/sweeper. Dashboard phân biệt dependency MongoDB/Redis và instance.
 - 20 request được chia 10/10 cho A/B. Shared auth limiter trả 30×401 rồi 5×429. Guest socket nối A nhận event và remote revocation từ mutation qua B.
 - Sau khi dừng A, 20/20 request được B phục vụ, trung bình khoảng 102 ms và tối đa 1.036 ms; không tuyên bố zero downtime. Redis outage: menu đọc 200, readiness degraded, mutation được bảo vệ không fail-open.
@@ -119,6 +119,7 @@ Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ 
 
 - Tách toàn bộ route bằng `React.lazy`; entry production còn 382,54 kB (gzip 117,26 kB), chunk lớn nhất 385,02 kB, không còn cảnh báo 500 kB.
 - PWA cache toàn bộ asset production từ Vite manifest, hỗ trợ reload offline; API mutation và Socket.IO bị loại khỏi service-worker cache. Có banner offline/reconnected và Playwright khóa hồi quy cache `Vary`.
+- P8 congestion isolation (23/09): cổng Guest/Internal có upstream pool riêng; Guest có Nginx burst/connection limit và limiter theo bàn; menu public cache Redis có generation invalidation. Dashboard/CSV và notification realtime chạy qua worker queue có retry/dead-letter. Runtime smoke xác nhận pool routing, 200/429 dưới burst, report JSON/CSV và notification drain.
 - Dashboard có lọc ngày, CSV, in/PDF; backend aggregation toàn bộ đơn PAID theo múi giờ Việt Nam, không còn sai lệch do repository giới hạn 100 dòng. Integration 105 đơn đạt.
 - Shared contracts bổ sung join/current table session và transition request; root scripts luôn build contracts trước dev/typecheck/test, tránh CI dùng `dist` cũ không được Git theo dõi.
 - Nâng Vite/Vitest/React Router/UUID lên bản vá; `npm audit` từ 8 vulnerability (có 1 critical, 1 high) về 0. Toàn bộ lint/typecheck/unit/integration/build đạt.

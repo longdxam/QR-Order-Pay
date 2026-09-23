@@ -4,7 +4,7 @@ import { Activity, Coffee, LayoutDashboard, UtensilsCrossed, Layers, Sparkles, T
 import { useAuth } from '../features/auth/useAuth';
 import { Badge } from '../components/ui/Badge';
 import { useQuery } from '@tanstack/react-query';
-import { api, unwrap } from '../lib/api';
+import { createOverviewReport } from '../lib/reportJobs';
 
 const NAV = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -30,7 +30,7 @@ export function AdminLayout(): JSX.Element {
 
   const overviewQuery = useQuery({
     queryKey: ['admin-overview-quick'],
-    queryFn: async () => unwrap<{ orderCount: number; totalRevenue: number }>(await api.get('/admin/reports/overview')),
+    queryFn: ({ signal }) => createOverviewReport({}, 'json', signal),
     refetchInterval: 60_000,
   });
 

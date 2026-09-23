@@ -53,6 +53,14 @@ function bool(name: string, fallback: boolean): boolean {
   return v === 'true' || v === '1';
 }
 
+function trafficClass(): 'guest' | 'internal' | 'unified' {
+  const value = required('TRAFFIC_CLASS', 'unified');
+  if (value !== 'guest' && value !== 'internal' && value !== 'unified') {
+    throw new Error(`Invalid TRAFFIC_CLASS=${value}`);
+  }
+  return value;
+}
+
 const environment = required('NODE_ENV', 'development');
 const publicAppUrl = required('PUBLIC_APP_URL', 'http://localhost:5173');
 const serverOrigin = required('SERVER_ORIGIN', 'http://localhost:4000');
@@ -82,13 +90,23 @@ export const config = {
   cookieSecure: bool('COOKIE_SECURE', false),
   logLevel: required('LOG_LEVEL', 'info'),
   instanceId: process.env.INSTANCE_ID?.trim() || hostname(),
+  trafficClass: trafficClass(),
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/maycafe?replicaSet=rs0&directConnection=true'),
   redisUrl: required('REDIS_URL', 'redis://127.0.0.1:6379'),
   rateLimits: {
     authPerMinute: positiveInt('RATE_LIMIT_AUTH_MAX', 30),
     guestMutationPerMinute: positiveInt('RATE_LIMIT_GUEST_MUTATION_MAX', 60),
+    guestJoinPerMinute: positiveInt('RATE_LIMIT_GUEST_JOIN_MAX', 20),
+    guestOrderPerMinute: positiveInt('RATE_LIMIT_GUEST_ORDER_MAX', 12),
+    guestServicePerMinute: positiveInt('RATE_LIMIT_GUEST_SERVICE_MAX', 6),
     menuSearchPerMinute: positiveInt('RATE_LIMIT_MENU_SEARCH_MAX', 120),
     aiPerMinute: positiveInt('RATE_LIMIT_AI_MAX', 20),
+  },
+  menuCacheTtlSeconds: positiveInt('MENU_CACHE_TTL_SECONDS', 60),
+  backgroundJobs: {
+    pollIntervalMs: positiveInt('BACKGROUND_JOB_POLL_MS', 250),
+    maxAttempts: positiveInt('BACKGROUND_JOB_MAX_ATTEMPTS', 3),
+    resultTtlSeconds: positiveInt('BACKGROUND_JOB_RESULT_TTL_SECONDS', 900),
   },
   jwtAccessSecret: authSecret('JWT_ACCESS_SECRET', 'dev-access-secret'),
   jwtRefreshSecret: authSecret('JWT_REFRESH_SECRET', 'dev-refresh-secret'),

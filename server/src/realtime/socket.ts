@@ -47,6 +47,7 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
         .find((part) => part.startsWith(`${GUEST_COOKIE}=`))?.slice(GUEST_COOKIE.length + 1);
       const role = socket.handshake.auth?.role as Role | undefined;
       if (role === 'STAFF' || role === 'ADMIN') {
+        if (config.trafficClass === 'guest') return next(new Error('UNAUTHENTICATED'));
         if (!token) return next(new Error('UNAUTHENTICATED'));
         const payload = verifyAccessToken(token);
         const user = await UserModel.findById(payload.sub);
@@ -56,6 +57,7 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
         return next();
       }
       if (guestToken) {
+        if (config.trafficClass === 'internal') return next(new Error('UNAUTHENTICATED'));
         const hash = sha256(guestToken);
         const guest = await guestSessionRepository.findActiveByTokenHash(hash);
         if (!guest) return next(new Error('UNAUTHENTICATED'));

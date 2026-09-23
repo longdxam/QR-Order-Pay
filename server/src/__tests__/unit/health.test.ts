@@ -18,6 +18,7 @@ describe('health endpoints', () => {
     expect(readyResponse.body).toEqual({
       status: 'ready',
       instanceId: expect.any(String),
+      trafficClass: 'unified',
       dependencies: { mongodb: 'ready', redis: 'ready' },
     });
 
@@ -26,6 +27,7 @@ describe('health endpoints', () => {
     expect(unavailableResponse.body).toEqual({
       status: 'not_ready',
       instanceId: expect.any(String),
+      trafficClass: 'unified',
       dependencies: { mongodb: 'unavailable', redis: 'ready' },
     });
 
@@ -34,6 +36,7 @@ describe('health endpoints', () => {
     expect(failedResponse.body).toEqual({
       status: 'not_ready',
       instanceId: expect.any(String),
+      trafficClass: 'unified',
       dependencies: { mongodb: 'unavailable', redis: 'unavailable' },
     });
 
@@ -42,6 +45,7 @@ describe('health endpoints', () => {
     expect(degradedResponse.body).toEqual({
       status: 'degraded',
       instanceId: expect.any(String),
+      trafficClass: 'unified',
       dependencies: { mongodb: 'ready', redis: 'unavailable' },
     });
   });

@@ -2,13 +2,18 @@
 
 ## Production build local qua reverse proxy
 
-Cấu hình `compose.production.yaml` chạy sáu service:
+Cấu hình `compose.production.yaml` chạy tám service:
 
 - `web`: Nginx phục vụ cùng một React production build qua ba portal tách biệt: Guest `8080`, Staff `8081`, Admin `8082`; mỗi cổng chỉ proxy nhóm API đúng vai trò.
-- `server-a`, `server-b`: hai Node.js 24 LTS chạy Express/Socket.IO; Nginx round-robin REST và giữ Socket.IO sticky theo địa chỉ client.
-- `worker`: cùng image Node.js nhưng chỉ chạy idle-session sweeper và anomaly scheduler; không phục vụ HTTP.
+- `server-guest-a`, `server-guest-b`: pool Node.js 24 LTS chỉ nhận traffic từ portal Guest qua Nginx.
+- `server-internal-a`, `server-internal-b`: pool Node.js 24 LTS riêng cho Staff/Admin, có `cpu_shares` cao gấp ba pool Guest để được ưu tiên khi CPU tranh chấp.
+- `worker`: cùng image Node.js nhưng không phục vụ HTTP; xử lý hàng đợi báo cáo/CSV, thông báo realtime, idle-session sweeper và anomaly scheduler.
 - `mongo`: MongoDB 7 replica set một node; không publish cổng ra host trong cấu hình này.
-- `redis`: Redis 7 dùng AOF; làm Socket.IO adapter, rate-limit store và kho aggregate HTTP theo phút; không publish cổng ra host.
+- `redis`: Redis 7 dùng AOF; làm Socket.IO adapter/emitter, hàng đợi worker có retry/dead-letter, cache menu, rate-limit store và kho aggregate HTTP theo phút; không publish cổng ra host.
+
+Pool Guest và Internal dùng chung MongoDB/Redis nhưng không dùng chung Node process. Compose giới hạn mặc định mỗi API ở `0.75 CPU / 384 MiB`; Guest có `cpu_shares=512`, Internal có `cpu_shares=1536`. Worker và Nginx cũng có giới hạn riêng. Có thể chỉnh các biến `GUEST_API_*`, `INTERNAL_API_*`, `WORKER_*`, `WEB_*` trong môi trường theo cấu hình máy.
+
+Nginx 1.27 dùng Docker DNS resolver động cho bốn upstream. Khi một backend container được recreate và đổi IP, mapping Guest/Internal được cập nhật mà không cần restart Nginx; app-level traffic guard vẫn trả 404 nếu proxy bị cấu hình gọi chéo.
 
 Compose đặt project name cố định `maycafe-production`, tách container/network/volume khỏi `compose.yaml` dùng cho môi trường dev.
 
@@ -43,6 +48,12 @@ Các portal local:
 
 Nginx trả `404` nếu gọi Staff/Admin API từ cổng Guest hoặc gọi chéo API giữa hai portal nội bộ. Backend vẫn kiểm tra JWT và role; tách cổng chỉ là thêm một lớp cô lập, không thay thế phân quyền. Refresh cookie dùng tên riêng theo portal để Staff và Admin có thể đăng nhập đồng thời trên cùng máy.
 
+Traffic Guest có hai lớp chống spam: Nginx giới hạn burst/connection theo guest cookie (fallback theo IP trước khi có cookie), còn Express + Redis giới hạn join theo token bàn, gọi món theo `tableSessionId`, và yêu cầu phục vụ theo bàn. Mặc định: join `20/phút`, gọi món `12/phút`, yêu cầu phục vụ `6/phút`; tất cả có thể chỉnh bằng biến `RATE_LIMIT_GUEST_*`.
+
+Menu/sản phẩm công khai được cache Redis mặc định 60 giây. Mọi thay đổi product/category/topping từ Admin tăng cache generation ngay, nên request kế tiếp không đọc catalog cũ. Nếu Redis lỗi, menu vẫn đọc trực tiếp MongoDB; mutation được bảo vệ không tự fail-open.
+
+Dashboard Admin dùng hàng đợi worker qua `POST /api/v1/admin/reports/overview/jobs` và poll `GET /api/v1/admin/reports/jobs/:id`. Cả JSON và CSV đều được tạo ngoài API process, kết quả giữ mặc định 15 phút. Thông báo realtime cũng vào queue ưu tiên cao hơn report; worker phát qua Socket.IO Redis emitter. Job lỗi được retry rồi chuyển dead-letter.
+
 Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu demo, thực hiện có chủ ý sau khi kiểm tra đúng database; seed sẽ thay dữ liệu hiện có.
 
 ## Health và shutdown
@@ -54,9 +65,9 @@ Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu d
 
 ## Metrics và vận hành
 
-- Prometheus scrape `GET /metrics` trực tiếp từ từng service `server-a`/`server-b` trong private network. Nginx không proxy endpoint này.
+- Prometheus scrape `GET /metrics` trực tiếp từ bốn service `server-guest-*`/`server-internal-*` trong private network. Nginx không proxy endpoint này.
 - Admin xem số liệu vận hành tại `/admin/operations`; API `/api/v1/admin/operations/summary` bắt buộc vai trò `ADMIN`.
-- Có thể đặt `INSTANCE_ID`; Compose gán `server-a`, `server-b`, `worker-1` để log/metric phân biệt rõ.
+- Có thể đặt `INSTANCE_ID`; Compose gán `server-guest-a/b`, `server-internal-a/b`, `worker-1` để log/metric phân biệt rõ. Health API trả thêm `trafficClass=guest|internal` để kiểm tra routing.
 - Quy tắc tổng hợp, định nghĩa metric và cách tránh cộng trùng số liệu database nằm tại [observability.md](observability.md).
 
 ## HTTPS/cloud
@@ -71,16 +82,16 @@ Khi đặt sau load balancer hoặc reverse proxy HTTPS:
 
 Repository hiện mới có cấu hình production local. Chưa có bằng chứng đã triển khai cloud hoặc HTTPS thật.
 
-## Kết quả production-local ngày 22/09/2026
+## Kết quả production-local cập nhật 23/09/2026
 
 - Image server Node.js 24 LTS và web build thành công trên Docker Engine 29.7.2.
-- MongoDB, Redis, hai backend và web healthy; worker chạy riêng một bản. Nginx publish `8080`, các dependency/backend chỉ ở mạng nội bộ Compose.
+- MongoDB, Redis, bốn backend và web healthy; worker chạy riêng một bản. Nginx publish `8080-8082`, các dependency/backend chỉ ở mạng nội bộ Compose.
 - Frontend, SPA deep-link, REST proxy, readiness và Socket.IO WebSocket đã hoạt động qua cùng origin.
 - Luồng seed → QR → order → KDS states → checkout → payment → Bill → receipt đã PASS trên volume riêng.
 - SIGTERM đóng backend sạch với exit code 0 trong khoảng 0,5 giây và restart trở lại healthy.
-- 20 request health được chia 10/10 qua A/B. Dừng A rồi gửi 20 request: 20/20 được B phục vụ, trung bình khoảng 102 ms, tối đa 1.036 ms sau khi cấu hình retry proxy; đây là failover local, không phải zero downtime hay HA cả máy.
-- Shared Redis limiter: 35 lần login sai qua hai backend cho kết quả 30×401 và 5×429. Redis dừng thì menu đọc vẫn 200, mutation được bảo vệ không silently fail-open, readiness báo degraded.
-- Smoke test cross-instance: guest socket nối A nhận event từ mutation qua B; thu hồi session ở B làm socket A bị ngắt.
+- Baseline topology hai API ngày 22/09: 20 request health chia 10/10 qua A/B; khi dừng A, 20/20 request được B phục vụ. Đây là số lịch sử trước khi tách Guest/Internal, không dùng để khẳng định throughput topology mới.
+- Shared Redis limiter đã được kiểm tra ở cả baseline auth và topology mới: burst Guest chỉ trả 200/429; join cùng hash token bàn đạt đúng ngưỡng 20/phút. Redis dừng thì menu đọc fallback MongoDB, còn mutation không silently fail-open.
+- Socket.IO Redis adapter đã qua smoke cross-instance; topology mới bổ sung Redis emitter từ worker và queue notification được drain sạch, không có dead-letter sau payload hợp lệ.
 
 Đây là bằng chứng chạy local container, không phải bằng chứng cloud deployment, HTTPS hay high availability.
 

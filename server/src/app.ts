@@ -64,7 +64,7 @@ export function buildApp(options: BuildAppOptions = {}): express.Express {
   app.use(express.json({ limit: '256kb' }));
   app.use(cookieParser());
   app.get('/healthz', (_req, res) => {
-    res.json({ status: 'ok', instanceId: config.instanceId });
+    res.json({ status: 'ok', instanceId: config.instanceId, trafficClass: config.trafficClass });
   });
   app.get('/readyz', async (_req, res) => {
     let mongoReady = false;
@@ -79,6 +79,7 @@ export function buildApp(options: BuildAppOptions = {}): express.Express {
     res.status(mongoReady ? 200 : 503).json({
       status: mongoReady ? (redisReady ? 'ready' : 'degraded') : 'not_ready',
       instanceId: config.instanceId,
+      trafficClass: config.trafficClass,
       dependencies: {
         mongodb: mongoReady ? 'ready' : 'unavailable',
         redis: redisReady ? 'ready' : 'unavailable',

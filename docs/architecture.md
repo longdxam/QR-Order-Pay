@@ -5,13 +5,11 @@
 Hệ thống là modular monolith phân tầng, chạy nhiều process nhưng dùng chung code và data stores:
 
 ```
-React client ──► Nginx ──┬──► Express API A ──┐
-                         └──► Express API B ──┼──► MongoDB replica set
-                               │              ├──► Redis
-                               └─ Socket.IO ──┘
-
-                         Worker ──────────────┘
-                         (sweeper + anomaly scheduler)
+Guest :8080 ──► Nginx ──► Guest API A/B ─────┐
+Staff :8081 ──► Nginx ─┐                     ├──► MongoDB replica set
+Admin :8082 ──► Nginx ─┴► Internal API A/B ─┤
+                                             ├──► Redis
+Worker ◄── report/realtime queues ───────────┘
 ```
 
 Một request đặt món đi qua các tầng:
@@ -19,7 +17,7 @@ Một request đặt món đi qua các tầng:
 1. **Route** `/api/v1/orders` (`server/src/routes/index.ts`) gắn middleware:
    - `loadGuest` đọc cookie `mc_guest`, sinh `req.guest` (id, tableSessionId, participantId) hoặc null.
    - `guestCsrfGuard` kiểm tra Origin/Referer.
-   - `guestMutationLimiter` rate limit theo IP.
+   - `guestOrderLimiter` dùng Redis và khóa theo `tableSessionId` (fallback IP trước khi có guest).
    - `requireGuest` chặn nếu chưa có phiên.
 2. **Controller** `orderController.place` (`server/src/controllers/orderController.ts`):
    - Parse body với Zod schema `placeOrderRequestSchema`.
@@ -37,7 +35,7 @@ Một request đặt món đi qua các tầng:
    - Tạo đơn trong `unitOfWork.withTransaction` (đảm bảo atomicity).
    - Audit log.
 4. **Repository** `orderRepository.createWithSession` truyền `ClientSession` xuống Mongoose.
-5. **Realtime:** Sau commit, controller có thể gọi `publishSession` để emit `order.created` (P1 hoàn thiện).
+5. **Realtime:** Sau commit, controller đưa notification job vào Redis; worker phát qua Socket.IO Redis emitter. Khi Redis chưa sẵn sàng trong dev/test, service fallback sang emitter trực tiếp.
 6. **Models** `OrderModel` validate schema, index `(tableSessionId, idempotencyKey)` unique.
 
 ## Luồng vào bàn (join)
@@ -46,7 +44,7 @@ Một request đặt món đi qua các tầng:
 
 1. `loadGuest` — đọc cookie `mc_guest` (nếu có) để biết phiên hiện tại.
 2. `guestCsrfGuard` — kiểm tra Origin/Referer.
-3. `guestMutationLimiter` — rate limit 60 request/phút theo IP, tránh tạo `GuestSession` không giới hạn.
+3. `guestJoinLimiter` — rate limit mặc định 20 request/phút theo hash token bàn (fallback hash IP), tránh tạo `GuestSession` không giới hạn và không lưu token thô trong Redis key.
 4. Controller `tableSession.join` → `ensureActiveSession({ tableId, actor: { type: 'GUEST' } })`.
 
 Hành vi:
@@ -64,8 +62,9 @@ Staff dùng chung `ensureActiveSession` qua `POST /api/v1/staff/tables/:tableId/
 | Route | Middleware |
 | --- | --- |
 | `/api/v1/auth/*` | `authLimiter` (rate limit 30/phút) |
-| `/api/v1/table-sessions/join` (POST) | `loadGuest` + `guestCsrfGuard` + `guestMutationLimiter` |
-| `/api/v1/orders` (POST) | `loadGuest` + `guestCsrfGuard` + `guestMutationLimiter` + `requireGuest` |
+| `/api/v1/table-sessions/join` (POST) | `loadGuest` + `guestCsrfGuard` + `guestJoinLimiter` |
+| `/api/v1/orders` (POST) | `loadGuest` + `guestCsrfGuard` + `guestOrderLimiter` theo bàn + `requireGuest` |
+| `/api/v1/service-requests` (POST) | `loadGuest` + `guestCsrfGuard` + `guestServiceLimiter` theo bàn + `requireGuest` |
 | `/api/v1/staff/*` | `requireAuth` + `requireRole('STAFF','ADMIN')` |
 | `/api/v1/admin/*` | `requireAuth` + `requireRole('ADMIN')` |
 | `/api/v1/ai/*` | `loadGuest` + shared Redis rate limit (mặc định 20/phút) |
@@ -73,8 +72,9 @@ Staff dùng chung `ensureActiveSession` qua `POST /api/v1/staff/tables/:tableId/
 ## Quyết định & đánh đổi
 
 - **Express độc lập với Socket.IO** chứ không phải Next.js-only. Socket.IO có middleware xác thực riêng, đối chiếu với `GuestSession`/`RefreshSession`, và dùng Redis adapter để room/event đi qua A/B.
-- **Một worker riêng** chạy các job định kỳ. API process không chạy sweeper/detector, tránh nhân đôi tác dụng khi scale.
-- **Redis shared state** giữ limiter và HTTP anomaly bucket; không giữ giá/quyền/trạng thái nghiệp vụ. MongoDB vẫn là nguồn chuẩn.
+- **Hai backend pool riêng** cô lập CPU/process cho Guest và Internal. Compose giới hạn tài nguyên và ưu tiên CPU Internal; MongoDB/Redis vẫn dùng chung nên đây chưa phải cô lập hạ tầng hoàn toàn.
+- **Một worker riêng** xử lý notification/report queue và các job định kỳ. API process không chạy report nặng, sweeper hay detector.
+- **Redis shared state** giữ queue, cache menu generation, limiter và HTTP anomaly bucket; không giữ giá/quyền/trạng thái nghiệp vụ. MongoDB vẫn là nguồn chuẩn.
 - **Không dùng DI framework** — DI bằng constructor/factory. Repository là object có method, dễ stub trong test.
 - **UnitOfWork** đơn giản: `mongoose.startSession()` + `withTransaction`. Repository nhận session tùy chọn.
 - **Idempotency**: bắt buộc header `Idempotency-Key` cho POST đơn và thanh toán. Hash payload để phát hiện gửi lại khác payload.
@@ -94,7 +94,7 @@ Staff dùng chung `ensureActiveSession` qua `POST /api/v1/staff/tables/:tableId/
 server/src/
 ├── app.ts                 # Express setup, xuất app cho test
 ├── server.ts              # HTTP + Socket.IO + lifecycle
-├── worker.ts              # scheduler/sweeper duy nhất
+├── worker.ts              # report/notification queue + scheduler/sweeper
 ├── config/                # env loader
 ├── routes/                # REST endpoints
 ├── controllers/           # HTTP I/O

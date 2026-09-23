@@ -6,8 +6,8 @@
 | ----------------------------------------- | ------------------------------------------------------------------- |
 | `npm run lint`                            | PASS — server và client, 0 lỗi/0 cảnh báo                           |
 | `npm run typecheck`                       | PASS — client, server, contracts                                    |
-| `npm run test:server`                     | PASS — 58/58 unit test                                              |
-| `npm run test:client`                     | PASS — 14/14 test trên 3 file                                       |
+| `npm run test:server`                     | PASS — 61/61 unit test                                              |
+| `npm run test:client`                     | PASS — 15/15 test trên 3 file                                       |
 | `npm run test:integration`                | PASS — 29/29 test trên MongoMemoryReplSet tạm                       |
 | `npm run test:e2e` (frontend preview mới) | PASS 7, SKIP 4 cần API/token — responsive và PWA offline reload đạt |
 | `npm run build`                           | PASS — contracts, server và client production build                 |
@@ -34,19 +34,22 @@ Route-level code splitting đưa entry client xuống 382,54 kB, gzip 117,26 kB.
 - Suite mới có 11 ca. Lượt frontend preview ngày 23/09 đạt 7 ca không cần backend, gồm reload PWA khi offline rồi nhận trạng thái kết nối lại; 4 ca menu/hai thiết bị được skip vì Docker/API benchmark không chạy.
 - Runtime Browser tích hợp ban đầu không khởi tạo được kernel assets (`os error 3`), nên dùng Playwright trong repo làm fallback có thể tái chạy. Không coi đây là kiểm tra trực quan thủ công trên nhiều browser engine.
 
-## Production container — đã kiểm chứng 22/09/2026
+## Production container — đã kiểm chứng 23/09/2026
 
 - Docker Engine 29.7.2: build thành công image Node.js 24 LTS và Nginx 1.27.
-- `mongo`, `redis`, `server-a`, `server-b`, `web`: healthy; `worker` chạy entrypoint job riêng trong project Compose `maycafe-production`.
+- `mongo`, `redis`, `server-guest-a/b`, `server-internal-a/b`, `web`: healthy; `worker` chạy entrypoint job riêng trong project Compose `maycafe-production`.
 - HTTP được tách portal: Guest `8080`, Staff `8081`, Admin `8082`; deep-link đúng portal trả 200. Ma trận smoke xác nhận route/API gọi chéo trả 404, còn API đúng portal vẫn áp dụng 401/403 theo JWT/role.
 - Staff/Admin login qua origin riêng trả 200 và dùng hai cookie `mc_refresh_staff`/`mc_refresh_admin`, không ghi đè nhau trên cùng host.
+- Health API xác nhận `8080 → trafficClass=guest`, `8081/8082 → trafficClass=internal`. Docker inspect xác nhận mỗi API giới hạn 0,75 CPU/384 MiB; Internal có `cpu_shares=1536`, Guest `512`.
+- Menu public sinh cache key Redis. Burst 100 request Guest cho 22×200 và 78×429, không có 5xx; join cùng token thử nghiệm cho 20×404 và 2×429, chứng minh limiter shared theo token bàn.
+- Worker hoàn tất report JSON (17 ngày dữ liệu) và CSV (859 ký tự); realtime smoke job được xử lý với queue/processing/dead-letter đều về 0.
 - `/readyz` trong backend trả 200 với MongoDB `ready`; WebSocket kết nối qua Nginx bằng transport `websocket`.
 - Luồng production-local đạt: QR join → order → bốn trạng thái → checkout → payment → Bill snapshot → receipt đúng tổng tiền.
 - SIGTERM: server exit code 0 sau khoảng 495 ms và healthy lại sau restart.
 - P3: raw metrics chỉ truy cập nội bộ; Admin operations đúng quyền. Lỗi kiểm soát 404 được đối chiếu cùng requestId trong log và làm client-error counter tăng đúng một.
 - Seed và luồng kiểm tra chỉ dùng volume production-local riêng; không ghi vào database dev/demo hiện có.
-- P5A: REST chia 10/10 qua A/B; 30 auth attempt dùng chung limiter rồi 5 request tiếp theo nhận 429; cross-instance Socket event/revocation PASS; dừng A cho 20/20 request đi qua B, tối đa 1.036 ms; Redis outage giữ menu read 200 và readiness degraded.
-- P5B: fixed menu đạt đến 90 RPS (p95 96,48 ms), không đạt từ 100 RPS và không đạt mục tiêu ramp 600–700. Guest 20 VU không lỗi dữ liệu nhưng write p95 4,15 giây, vượt ngưỡng 1 giây. Realtime 100/100 kết nối, p95 324,05 ms. Chi tiết ở `performance-report.md`.
+- P5A baseline cũ: REST chia 10/10 qua hai backend; shared limiter, cross-instance Socket và failover đều PASS. Topology hiện đã đổi sang hai pool, nên số failover cũ không được dùng để khẳng định hiệu năng pool mới.
+- P5B baseline trước khi tách pool: fixed menu đạt đến 90 RPS (p95 96,48 ms), không đạt từ 100 RPS và không đạt mục tiêu ramp 600–700. Guest 20 VU không lỗi dữ liệu nhưng write p95 4,15 giây, vượt ngưỡng 1 giây. Realtime 100/100 kết nối, p95 324,05 ms. Chưa chạy lại k6 đầy đủ sau thay đổi; chi tiết ở `performance-report.md`.
 - Load test phát hiện benchmark seed làm mất unique index sau `dropDatabase`; đã sửa seed dựng lại index. Lượt chính thức sau sửa giữ đúng một phiên active cho 20/100 guest đồng thời và không dùng số liệu cũ bị sai bất biến.
 - AI live smoke gửi ba recommendation + một anomaly explanation nhưng provider trả 401; bốn ca fallback an toàn. Chưa có bằng chứng AI live hợp lệ.
 
@@ -56,4 +59,4 @@ Route-level code splitting đưa entry client xuống 382,54 kB, gzip 117,26 kB.
 - AI live hợp lệ: key hiện tại bị provider từ chối 401; cần key mới rồi chạy lại smoke test.
 - Cloud deployment và HTTPS thật. GitHub Actions run #1 trên commit `b61a8f0` đã PASS cả ba job; đây không phải bằng chứng cloud runtime.
 - Quét trình duyệt khác Chromium, network throttling chi tiết và rà soát trực quan bằng mắt vẫn là bước bổ sung.
-- Ca browser hai thiết bị mới chưa chạy lại trên production-local vì Docker Desktop đang tắt; ownership/hai participant vẫn được integration MongoDB thật bao phủ.
+- Ca browser hai thiết bị vẫn skip vì chưa truyền `E2E_TABLE_TOKEN`; ownership/hai participant vẫn được integration MongoDB thật bao phủ. Docker production-local đang chạy.

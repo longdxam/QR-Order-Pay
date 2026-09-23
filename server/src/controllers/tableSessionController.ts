@@ -30,10 +30,9 @@ import { RECEIPT_COOKIE } from '../middlewares/guest.js';
 import {
   closeGuestSockets,
   closeSessionSockets,
-  publishSession,
-  publishStaff,
 } from '../realtime/socket.js';
 import { recordBusinessEvent } from '../infrastructure/metrics.js';
+import { notifySession, notifyStaff } from '../services/notificationService.js';
 
 export async function join(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -59,7 +58,7 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
     const result = await joinAsGuest(input.tableToken);
     if (result.created) {
       recordBusinessEvent('table_session_created');
-      publishStaff('tableSession.statusChanged', {
+      await notifyStaff('tableSession.statusChanged', {
         tableSessionId: result.tableSession.id,
         status: result.tableSession.status,
         source: 'GUEST',
@@ -176,7 +175,7 @@ export async function staffOpen(req: Request, res: Response, next: NextFunction)
     }
     const { session, created } = await openSession(tableId, req.user.id);
     if (created) recordBusinessEvent('table_session_created');
-    publishStaff('tableSession.statusChanged', {
+    await notifyStaff('tableSession.statusChanged', {
       tableSessionId: session.id,
       status: session.status,
     });
@@ -197,11 +196,13 @@ export async function staffTransition(
     const { status, expectedVersion } = updateTableSessionStatusRequestSchema.parse(req.body);
     const updated = await transition(id, expectedVersion, status, req.user.id);
     const payload = { tableSessionId: id, status: updated.status };
-    publishStaff('tableSession.statusChanged', payload);
-    publishSession(id, 'tableSession.statusChanged', payload);
+    await Promise.all([
+      notifyStaff('tableSession.statusChanged', payload),
+      notifySession(id, 'tableSession.statusChanged', payload),
+    ]);
     if (updated.status === 'CLOSED') closeSessionSockets(id);
     if (updated.status === 'CLOSED')
-      publishStaff('serviceRequest.resolved', { tableSessionId: id });
+      await notifyStaff('serviceRequest.resolved', { tableSessionId: id });
     res.json({ success: true, data: { session: updated } });
   } catch (e) {
     next(e);

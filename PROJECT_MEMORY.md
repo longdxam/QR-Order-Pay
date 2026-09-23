@@ -165,7 +165,7 @@ Biến môi trường mới trong `.env.example`: `GUEST_AUTO_OPEN=true` (cho kh
 
 Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live chưa thực hiện.
 
-- Production-local hiện có Nginx + `server-a` + `server-b` + `worker-1` + MongoDB replica set một node + Redis AOF. Socket.IO Redis adapter phát event/revocation khác instance; Redis rate-limit dùng chung cho auth, guest mutation, search và AI. Scheduler/sweeper chỉ chạy trong worker.
+- Baseline P5 ngày 22/09 dùng Nginx + `server-a` + `server-b` + `worker-1`; số tải/failover bên dưới thuộc topology cũ này. Từ 23/09 production-local đã thay bằng hai pool riêng `server-guest-a/b` và `server-internal-a/b`, cùng `worker-1`, MongoDB replica set một node và Redis AOF.
 - Failover local: 20/20 request qua B khi A dừng, tối đa khoảng 1.036 ms. Redis outage để read menu hoạt động, readiness `degraded`, mutation không tự bỏ limiter. Đây không phải HA cả máy/cloud.
 - Load test k6 dùng DB `maycafe_benchmark`, 200 sản phẩm. Menu fixed hai backend đạt cao nhất 90 RPS (p95 96,48 ms); 100 RPS p95 3,26 s; ramp 600–700 không đạt. Guest 20 VU/60 s có 0 lỗi nhưng write p95 4,15 s nên không đạt ngưỡng. Realtime 100/100, connect p95 324,05 ms.
 - Load test phát hiện `dropDatabase()` của benchmark seed xóa unique index và cho tạo nhiều phiên active. Seed nay import mọi model + `syncIndexes()` trước dữ liệu; `check:benchmark` xác nhận đúng một active session, không trùng idempotency key, sai tổng hay trạng thái. Không dùng kết quả trước sửa làm bằng chứng.
@@ -185,11 +185,14 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Contracts chung bổ sung join/current table session và request transition. Script root build contracts trước dev/typecheck/test để checkout sạch và CI không phụ thuộc `dist` cũ.
 - Vite 8.3.0, Vitest 5.0.1, React Router 7.18.4 và UUID 14.0.2; `npm audit` 0 vulnerability. Vitest config đã đổi khỏi `poolOptions` bị loại bỏ.
 - CI có thêm audit và browser smoke production frontend. Playwright có 11 ca; production-local ba portal đạt 7 ca độc lập dữ liệu, skip 4 ca cần `E2E_TABLE_TOKEN`; offline reload đạt.
-- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server unit/client/integration PASS, build PASS. Không chạy lại benchmark tải vì thay đổi không nhằm tăng throughput.
+- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server 61 unit/client 15/integration 29 PASS, build PASS, Playwright 7 PASS/4 SKIP. Chưa chạy lại benchmark k6 đầy đủ; chỉ smoke congestion/routing/worker trên topology mới.
 - Production-local tách Guest `8080`, Staff `8081`, Admin `8082` trên cùng Nginx. Proxy chặn route/API gọi chéo; CORS/Socket cho phép đúng ba origin và refresh-cookie Staff/Admin tách tên để đăng nhập đồng thời.
+- Traffic `8080` chỉ vào pool Guest; `8081/8082` chỉ vào pool Internal. Bốn API container có CPU/RAM limit; Internal dùng `cpu_shares=1536`, Guest `512`. Health API trả `trafficClass` để smoke routing. Nginx dùng Docker DNS `resolve` động để không giữ IP container cũ sau recreate; app-level guard chặn gọi chéo ngay cả khi bypass proxy.
+- Guest được giới hạn hai lớp: Nginx burst/connection trả 429 và shared Redis limiter theo token/phiên bàn (join 20/phút, order 12/phút, service request 6/phút mặc định). Menu public cache Redis 60 giây và invalidation bằng generation khi Admin sửa catalog.
+- Worker xử lý queue ưu tiên thông báo realtime trước report, hỗ trợ retry/dead-letter; Admin dashboard và CSV dùng report job async. Smoke local đã xác nhận JSON/CSV `COMPLETED`, realtime queue drain sạch và burst 100 request trả 200/429, không còn 503.
 
 - Xem mục “Cập nhật P5/P6 mới nhất” và `docs/upgrade-progress.md` trước; không chạy lại benchmark nặng nếu không có thay đổi liên quan hiệu năng.
-- Production-local hiện đang chạy healthy trên ba portal `8080`/`8081`/`8082`; health, login, cookie isolation và ma trận route/API đã smoke PASS ngày 23/09/2026.
+- Production-local hiện đang chạy healthy trên ba portal `8080`/`8081`/`8082`; Mongo/Redis, bốn API pool, web healthy và worker đang chạy. Health, login, cookie isolation, pool routing, worker jobs, rate limit và ma trận route/API đã smoke PASS ngày 23/09/2026.
 - Container web của project `maycafe-benchmark` đã dừng để nhường cổng `8081`; Mongo/Redis và volume benchmark không bị xóa, có thể khởi động lại với cổng khác.
 - Việc cần người dùng cung cấp tiếp: key AI hợp lệ nếu muốn test live; hoặc lựa chọn cloud/account/region/budget/domain nếu muốn deploy thật. Không yêu cầu lại camera/in QR cho tới khi người dùng muốn thực hiện bước đó.
 - Toàn bộ P1–P7 đã commit/push lên `main`; GitHub Actions run #1 (`35807566033`) PASS cả quality/build, integration và production frontend browser smoke.

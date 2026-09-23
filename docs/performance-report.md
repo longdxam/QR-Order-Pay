@@ -9,7 +9,7 @@ Cập nhật: 22/09/2026. Commit nền: `f540338`; worktree có thay đổi P1�
 | Máy host       | Windows 11 Home 10.0.26200; AMD Ryzen 7 5800HS; 16 logical processors; RAM 15,4 GiB                                |
 | Docker Desktop | Engine 29.7.2; VM được cấp 4 CPU và khoảng 5,79 GiB RAM                                                            |
 | Runtime        | Node.js 24.19.0; npm 11.17.0; image k6 `grafana/k6:latest`, k6 2.2.0                                               |
-| Ứng dụng       | Nginx → 2 Node backend → MongoDB 7 replica set một node + Redis 7 + 1 worker                                       |
+| Ứng dụng       | Baseline lịch sử: Nginx → 2 Node backend → MongoDB 7 replica set một node + Redis 7 + 1 worker                     |
 | Dataset        | Database riêng `maycafe_benchmark`, 200 sản phẩm tổng hợp, 1 bàn sức chứa 10.000, token chỉ dùng local             |
 | Máy tạo tải    | Container k6 chạy trên cùng Docker Desktop host; kết quả gồm cả tranh chấp CPU/RAM giữa generator và hệ thống đích |
 
@@ -71,4 +71,4 @@ Load test ban đầu đã phát hiện seed dùng `dropDatabase()` làm mất un
 
 Mục tiêu 600–700 RPS **không đạt** trên máy đo này. Năng lực bền vững đã chứng minh cho endpoint menu hiện tại là 90 RPS ở p95 96,48 ms; 100 RPS đã vượt ngưỡng. Realtime 100 kết nối đạt; guest write 20 VU không đạt ngưỡng latency dù không mất dữ liệu.
 
-Ưu tiên lần tối ưu tiếp theo: đo query bằng profiler, giảm số round-trip/projection của menu, thêm ETag/cache có invalidation theo thay đổi catalog, cân nhắc nén payload và chia trang/response nhẹ. Sau mỗi thay đổi phải chạy lại cùng dataset/ngưỡng; không dùng health endpoint hoặc cache giả để gán kết quả cho toàn hệ thống. Để tách giới hạn máy tạo tải, chạy k6 trên host/VM khác trước khi kết luận năng lực cloud.
+Từ 23/09/2026, production-local đã tách pool Guest/Internal, thêm resource limit, limiter theo bàn, Redis menu cache và worker queue. Vì topology khác baseline trên, các số RPS/p95 này chỉ dùng làm lịch sử; cần chạy lại cùng dataset/ngưỡng trước khi tuyên bố mức tăng throughput. Để tách giới hạn máy tạo tải, chạy k6 trên host/VM khác trước khi kết luận năng lực cloud.

@@ -2,18 +2,35 @@ import { productRepository } from '../repositories/productRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
 import { NotFoundError } from '../errors/AppError.js';
+import { config } from '../config/index.js';
+import { cacheGeneration, cachedJson, incrementCacheGeneration } from '../infrastructure/jsonCache.js';
+
+const MENU_CACHE_GENERATION_KEY = 'maycafe:cache:menu:generation';
 
 export async function listPublicMenu() {
-  const [categories, products, toppings] = await Promise.all([
-    categoryRepository.listActive(),
-    productRepository.listPublic({}),
-    toppingRepository.listAvailable(),
-  ]);
-  return { categories, products, toppings };
+  const generation = await cacheGeneration(MENU_CACHE_GENERATION_KEY);
+  return cachedJson(`maycafe:cache:menu:${generation}:full`, config.menuCacheTtlSeconds, async () => {
+    const [categories, products, toppings] = await Promise.all([
+      categoryRepository.listActive(),
+      productRepository.listPublic({}),
+      toppingRepository.listAvailable(),
+    ]);
+    return { categories, products, toppings };
+  });
 }
 
 export async function listFeatured(limit?: number) {
-  return productRepository.listFeatured(limit);
+  const normalizedLimit = Math.max(1, Math.min(limit ?? 6, 50));
+  const generation = await cacheGeneration(MENU_CACHE_GENERATION_KEY);
+  return cachedJson(
+    `maycafe:cache:menu:${generation}:featured:${normalizedLimit}`,
+    config.menuCacheTtlSeconds,
+    () => productRepository.listFeatured(normalizedLimit),
+  );
+}
+
+export async function invalidatePublicMenuCache(): Promise<void> {
+  await incrementCacheGeneration(MENU_CACHE_GENERATION_KEY);
 }
 
 export async function getProductDetail(id: string) {

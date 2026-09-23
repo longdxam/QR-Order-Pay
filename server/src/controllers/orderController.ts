@@ -5,14 +5,16 @@ import { submitReview } from '../services/reviewService.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { transitionByStaff } from '../services/orderService.js';
 import { orderRepository } from '../repositories/orderRepository.js';
-import { publishGuest, publishStaff } from '../realtime/socket.js';
+import { notifyGuest, notifyStaff } from '../services/notificationService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { recordBusinessEvent, recordOrderStageDuration } from '../infrastructure/metrics.js';
 
-function notifyOrder(order: Awaited<ReturnType<typeof getOrderForGuest>>, event: 'order.created' | 'order.statusChanged'): void {
+async function notifyOrder(order: Awaited<ReturnType<typeof getOrderForGuest>>, event: 'order.created' | 'order.statusChanged'): Promise<void> {
   const payload = { orderId: order.id, tableSessionId: order.tableSessionId.toString(), status: order.status };
-  publishStaff(event, payload);
-  publishGuest(order.tableSessionId.toString(), order.participantId, event, payload);
+  await Promise.all([
+    notifyStaff(event, payload),
+    notifyGuest(order.tableSessionId.toString(), order.participantId, event, payload),
+  ]);
 }
 
 export async function place(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -31,7 +33,7 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
       note: input.note,
     });
     if (result.created) {
-      notifyOrder(result.order, 'order.created');
+      await notifyOrder(result.order, 'order.created');
       recordBusinessEvent('order_created');
     }
     res.status(result.created ? 201 : 200).json({ success: true, data: { order: result.order, created: result.created } });
@@ -45,7 +47,7 @@ export async function cancel(req: Request, res: Response, next: NextFunction): P
     if (!req.guest) throw new ForbiddenError();
     const id = String(req.params['id'] ?? '');
     const order = await cancelOrderByGuest(id, req.guest.participantId);
-    notifyOrder(order, 'order.statusChanged');
+    await notifyOrder(order, 'order.statusChanged');
     recordBusinessEvent('order_cancelled');
     res.json({ success: true, data: { order } });
   } catch (e) {
@@ -127,7 +129,7 @@ export async function staffTransition(req: Request, res: Response, next: NextFun
     const body = req.body as { status?: string; reason?: string };
     if (!body.status) throw new ValidationError('Thiếu trạng thái.');
     const order = await transitionByStaff(id, body.status as never, { id: req.user.id }, body.reason);
-    notifyOrder(order, 'order.statusChanged');
+    await notifyOrder(order, 'order.statusChanged');
     recordStageDuration(order);
     if (order.status === 'CANCELLED') recordBusinessEvent('order_cancelled');
     if (order.status === 'SERVED') recordBusinessEvent('order_served');
@@ -158,7 +160,7 @@ export async function staffConfirmReceipt(req: Request, res: Response, next: Nex
     if (!req.user) throw new NotFoundError();
     const id = String(req.params['id'] ?? '');
     const order = await transitionByStaff(id, 'CONFIRMED', { id: req.user.id });
-    notifyOrder(order, 'order.statusChanged');
+    await notifyOrder(order, 'order.statusChanged');
     recordStageDuration(order);
     res.json({ success: true, data: { order } });
   } catch (e) {

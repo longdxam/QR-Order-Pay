@@ -4,7 +4,7 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { OrderModel } from '../models/Order.js';
-import { publishStaff } from '../realtime/socket.js';
+import { notifyStaff } from './notificationService.js';
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -45,7 +45,7 @@ export async function sweepIdleSessions(now: Date = new Date()): Promise<number>
         entityId: id,
         metadata: { tableId: candidate.tableId.toString() },
       });
-      publishStaff('tableSession.statusChanged', { tableSessionId: id, status: 'CLOSED' });
+      await notifyStaff('tableSession.statusChanged', { tableSessionId: id, status: 'CLOSED' });
       closedCount += 1;
     } catch (e) {
       logger.error({ err: e, tableSessionId: id }, 'failed to close idle table session');

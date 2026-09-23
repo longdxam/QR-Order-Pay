@@ -2,7 +2,7 @@ import { serviceRequestRepository } from '../repositories/serviceRequestReposito
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { publishSession, publishStaff } from '../realtime/socket.js';
+import { notifySession, notifyStaff } from './notificationService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 
 export async function createServiceRequest(input: {
@@ -26,7 +26,7 @@ export async function createServiceRequest(input: {
     entityId: created._id.toString(),
     metadata: { type: input.type },
   });
-  publishStaff('serviceRequest.created', { tableSessionId: input.tableSessionId });
+  await notifyStaff('serviceRequest.created', { tableSessionId: input.tableSessionId });
   return created;
 }
 
@@ -40,8 +40,10 @@ export async function resolve(id: string, staffId: string) {
     entityType: 'ServiceRequest',
     entityId: id,
   });
-  publishStaff('serviceRequest.resolved', { tableSessionId: updated.tableSessionId.toString() });
-  publishSession(updated.tableSessionId.toString(), 'serviceRequest.resolved', { type: updated.type });
+  await Promise.all([
+    notifyStaff('serviceRequest.resolved', { tableSessionId: updated.tableSessionId.toString() }),
+    notifySession(updated.tableSessionId.toString(), 'serviceRequest.resolved', { type: updated.type }),
+  ]);
   return updated;
 }
 

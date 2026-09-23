@@ -1,19 +1,20 @@
 import type { Request, Response, NextFunction } from 'express';
 import { overview } from '../services/dashboardService.js';
-import { listAdminCategories, listAdminProducts, listAdminToppings } from '../services/menuService.js';
+import { invalidatePublicMenuCache, listAdminCategories, listAdminProducts, listAdminToppings } from '../services/menuService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { userRepository } from '../repositories/userRepository.js';
-import { NotFoundError, ValidationError } from '../errors/AppError.js';
+import { AppError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { productRepository } from '../repositories/productRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
-import { publishMenuChange } from '../realtime/socket.js';
+import { notifyMenuChange } from '../services/notificationService.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
 import { hashPassword } from '../utils/crypto.js';
 import { operationsSummary } from '../services/operationsService.js';
 import { anomalyDashboard, updateAnomalyStatus } from '../services/anomalyService.js';
 import { updateAnomalyStatusRequestSchema } from '@may-cafe/contracts';
 import { auditRepository } from '../repositories/auditRepository.js';
+import { enqueueReportJob, getReportJobState } from '../infrastructure/backgroundQueue.js';
 
 export async function reportsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -23,6 +24,40 @@ export async function reportsOverview(req: Request, res: Response, next: NextFun
     res.json({ success: true, data });
   } catch (e) {
     next(e);
+  }
+}
+
+export async function createOverviewJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const from = parseDate(req.body?.from);
+    const to = parseDate(req.body?.to);
+    const requestedFormat = req.body?.format;
+    if (requestedFormat !== 'json' && requestedFormat !== 'csv') {
+      throw new ValidationError('Định dạng báo cáo phải là json hoặc csv.');
+    }
+    const state = await enqueueReportJob({
+      from: from?.toISOString() ?? null,
+      to: to?.toISOString() ?? null,
+      format: requestedFormat,
+    });
+    res.status(202).json({ success: true, data: state });
+  } catch (error) {
+    if ((error as Error).message === 'BACKGROUND_QUEUE_UNAVAILABLE') {
+      next(new AppError('BACKGROUND_QUEUE_UNAVAILABLE', 'Worker báo cáo tạm thời không khả dụng.', 503));
+      return;
+    }
+    next(error);
+  }
+}
+
+export async function reportJobStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params['id'] ?? '');
+    const state = await getReportJobState(id);
+    if (!state) throw new NotFoundError('Không tìm thấy tác vụ báo cáo hoặc kết quả đã hết hạn.');
+    res.json({ success: true, data: state });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -164,8 +199,8 @@ export async function createProduct(req: Request, res: Response, next: NextFunct
       isFeatured: body.isFeatured ?? false,
       sortOrder: body.sortOrder ?? 0,
     });
+    await menuChanged();
     res.status(201).json({ success: true, data: { product } });
-    publishMenuChange();
   } catch (e) {
     next(e);
   }
@@ -180,8 +215,8 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Không tìm thấy món.' } });
       return;
     }
+    await menuChanged();
     res.json({ success: true, data: { product } });
-    publishMenuChange();
   } catch (e) {
     next(e);
   }
@@ -191,7 +226,7 @@ export async function deleteProduct(req: Request, res: Response, next: NextFunct
   try {
     const id = String(req.params['id'] ?? '');
     const product = await productRepository.archive(id);
-    publishMenuChange();
+    await menuChanged();
     res.json({ success: true, data: { product } });
   } catch (e) {
     next(e);
@@ -203,6 +238,7 @@ export async function createCategory(req: Request, res: Response, next: NextFunc
     const body = req.body as { name?: string; slug?: string; sortOrder?: number };
     if (!body.name || !body.slug) throw new ValidationError('Thiếu tên hoặc slug.');
     const created = await categoryRepository.create({ name: body.name, slug: body.slug, sortOrder: body.sortOrder ?? 0 });
+    await menuChanged();
     res.status(201).json({ success: true, data: { category: created } });
   } catch (e) {
     next(e);
@@ -218,7 +254,7 @@ export async function updateCategory(req: Request, res: Response, next: NextFunc
       res.status(404).json({ success: false, error: { code: 'CATEGORY_NOT_FOUND', message: 'Không tìm thấy danh mục.' } });
       return;
     }
-    publishMenuChange();
+    await menuChanged();
     res.json({ success: true, data: { category: updated } });
   } catch (e) {
     next(e);
@@ -276,6 +312,7 @@ export async function createTopping(req: Request, res: Response, next: NextFunct
     const body = req.body as { name?: string; price?: number; isAvailable?: boolean };
     if (!body.name || typeof body.price !== 'number') throw new ValidationError('Thiếu tên hoặc giá topping.');
     const created = await toppingRepository.create({ name: body.name, price: body.price, isAvailable: body.isAvailable ?? true });
+    await menuChanged();
     res.status(201).json({ success: true, data: { topping: created } });
   } catch (e) {
     next(e);
@@ -287,11 +324,16 @@ export async function updateTopping(req: Request, res: Response, next: NextFunct
     const id = String(req.params['id'] ?? '');
     const body = (req.body ?? {}) as Record<string, unknown>;
     const topping = await toppingRepository.update(id, body);
-    publishMenuChange();
+    await menuChanged();
     res.json({ success: true, data: { topping } });
   } catch (e) {
     next(e);
   }
+}
+
+async function menuChanged(): Promise<void> {
+  await invalidatePublicMenuCache();
+  await notifyMenuChange();
 }
 
 function parseDate(v: unknown, nextDay = false): Date | undefined {
