@@ -15,18 +15,18 @@ Ngày bắt đầu: 20/09/2026. Điều phối CoDev theo `HUONG_DAN_DIEU_PHOI_C
 
 ## Giao việc và nghiệm thu
 
-| Gói | Phạm vi                                                          | Trạng thái                                                               |
-| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| P0  | CoDev khảo sát chỉ đọc; coordinator chạy baseline                | Hoàn thành                                                               |
-| P1  | Refresh token, request ID, hợp đồng API và lint nền              | Hoàn thành; nghiệm thu local 22/09/2026                                  |
-| P2  | Production containers, proxy, readiness và shutdown              | Đã nghiệm thu production-local 22/09/2026; chưa deploy cloud             |
-| P3  | Logs, metrics và dashboard operations                            | Hoàn thành production-local 22/09/2026                                   |
-| P4A | Tìm kiếm tiếng Việt có ràng buộc và đánh giá                     | Hoàn thành local và production-local 22/09/2026                          |
-| P4B | Detector, AI giải thích và cảnh báo                              | Hoàn thành local và production-local 22/09/2026                          |
-| P5A | Realtime/rate limit/worker nhiều instance                        | Hoàn thành production-local 22/09/2026                                   |
-| P5B | Load test và báo cáo thực đo                                     | Hoàn thành phép đo; không đạt 600–700 RPS                                |
-| P6  | CI, browser QA và tài liệu bàn giao                              | Hoàn thành local; CI chưa chạy trên GitHub remote, cloud/QR thật còn chờ |
-| P7  | Bundle, offline/PWA, dashboard, contracts và dependency security | Hoàn thành local 23/09/2026; chờ CI remote sau push                      |
+| Gói | Phạm vi                                                          | Trạng thái                                                    |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| P0  | CoDev khảo sát chỉ đọc; coordinator chạy baseline                | Hoàn thành                                                    |
+| P1  | Refresh token, request ID, hợp đồng API và lint nền              | Hoàn thành; nghiệm thu local 22/09/2026                       |
+| P2  | Production containers, proxy, readiness và shutdown              | Đã nghiệm thu production-local 22/09/2026; chưa deploy cloud  |
+| P3  | Logs, metrics và dashboard operations                            | Hoàn thành production-local 22/09/2026                        |
+| P4A | Tìm kiếm tiếng Việt có ràng buộc và đánh giá                     | Hoàn thành local và production-local 22/09/2026               |
+| P4B | Detector, AI giải thích và cảnh báo                              | Hoàn thành local và production-local 22/09/2026               |
+| P5A | Realtime/rate limit/worker nhiều instance                        | Hoàn thành production-local 22/09/2026                        |
+| P5B | Load test và báo cáo thực đo                                     | Hoàn thành phép đo; không đạt 600–700 RPS                     |
+| P6  | CI, browser QA và tài liệu bàn giao                              | Hoàn thành; GitHub Actions remote PASS, cloud/QR thật còn chờ |
+| P7  | Bundle, offline/PWA, dashboard, contracts và dependency security | Hoàn thành local và CI remote 23/09/2026                      |
 
 ## Quyết định điều phối
 
@@ -113,7 +113,7 @@ Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ 
 - Thêm GitHub Actions `.github/workflows/ci.yml`: Node 24 + `npm ci`, lint, typecheck, server/client unit, integration và production build; phân tách quality/integration job.
 - Playwright production build đạt 9/9 ở 375/768/1440 cho trang QR, login và menu sau link QR mô phỏng; không tràn ngang/page error. Quét camera/in QR thật được hoãn theo xác nhận người dùng.
 - AI live smoke chạy bốn request có giới hạn nhưng key hiện tại bị provider trả 401; fallback an toàn đạt, không tuyên bố live thành công. Logger không ghi provider error body.
-- Tài liệu deployment, observability, architecture decision, test, AI, performance, demo và PROJECT_MEMORY được cập nhật. Cloud chưa deploy vì chưa chốt provider/account/domain/ngân sách; CI remote chưa có run cho worktree chưa commit.
+- Tài liệu deployment, observability, architecture decision, test, AI, performance, demo và PROJECT_MEMORY được cập nhật. Ghi chú CI chưa chạy ở thời điểm P6 được thay thế bởi run #1 thành công ngày 23/09/2026. Cloud chưa deploy vì chưa chốt provider/account/domain/ngân sách.
 
 ## Nghiệm thu P7 — 23/09/2026
 
@@ -123,3 +123,4 @@ Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ 
 - Shared contracts bổ sung join/current table session và transition request; root scripts luôn build contracts trước dev/typecheck/test, tránh CI dùng `dist` cũ không được Git theo dõi.
 - Nâng Vite/Vitest/React Router/UUID lên bản vá; `npm audit` từ 8 vulnerability (có 1 critical, 1 high) về 0. Toàn bộ lint/typecheck/unit/integration/build đạt.
 - CI thêm dependency audit và Chromium production-frontend smoke. Docker Desktop tắt nên lượt local mới chỉ đạt 7 frontend ca và skip 4 ca cần backend/token; không tuyên bố API-backed 11/11.
+- Commit `b61a8f0` đã push lên `main`; GitHub Actions run `35807566033` PASS cả ba job quality/build, integration và browser smoke trên checkout sạch.

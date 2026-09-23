@@ -53,6 +53,6 @@ Route-level code splitting đưa entry client xuống 382,54 kB, gzip 117,26 kB.
 
 - Quét QR bằng camera thật và in QR thực tế.
 - AI live hợp lệ: key hiện tại bị provider từ chối 401; cần key mới rồi chạy lại smoke test.
-- Cloud deployment và HTTPS thật; workflow GitHub Actions mới chỉ có file cấu hình local, chưa có run trên remote commit chứa thay đổi này.
+- Cloud deployment và HTTPS thật. GitHub Actions run #1 trên commit `b61a8f0` đã PASS cả ba job; đây không phải bằng chứng cloud runtime.
 - Quét trình duyệt khác Chromium, network throttling chi tiết và rà soát trực quan bằng mắt vẫn là bước bổ sung.
 - Ca browser hai thiết bị mới chưa chạy lại trên production-local vì Docker Desktop đang tắt; ownership/hai participant vẫn được integration MongoDB thật bao phủ.

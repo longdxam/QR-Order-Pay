@@ -170,7 +170,7 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Load test k6 dùng DB `maycafe_benchmark`, 200 sản phẩm. Menu fixed hai backend đạt cao nhất 90 RPS (p95 96,48 ms); 100 RPS p95 3,26 s; ramp 600–700 không đạt. Guest 20 VU/60 s có 0 lỗi nhưng write p95 4,15 s nên không đạt ngưỡng. Realtime 100/100, connect p95 324,05 ms.
 - Load test phát hiện `dropDatabase()` của benchmark seed xóa unique index và cho tạo nhiều phiên active. Seed nay import mọi model + `syncIndexes()` trước dữ liệu; `check:benchmark` xác nhận đúng một active session, không trùng idempotency key, sai tổng hay trạng thái. Không dùng kết quả trước sửa làm bằng chứng.
 - Playwright production build đạt 9/9 ở 375×812, 768×1024 và 1440×900 cho join/login/menu sau link QR mô phỏng; không tràn ngang/page error. Camera/in QR thật vẫn để test sau theo yêu cầu người dùng.
-- GitHub CI nằm ở `.github/workflows/ci.yml`, dùng Node 24/npm ci và chạy lint, typecheck, server/client tests, integration, build. Chưa có remote Actions run cho thay đổi chưa commit/push.
+- GitHub CI nằm ở `.github/workflows/ci.yml`, dùng Node 24/npm ci và chạy audit, lint, typecheck, server/client tests, integration, build và browser smoke. Run #1 trên commit `b61a8f0` đã PASS cả ba job.
 - AI live smoke đã thử 3 recommendation + 1 anomaly explanation với key trong `apikey.txt`, provider trả 401 cả bốn. Fallback an toàn hoạt động; key bị từ chối phải thay trước khi gọi AI live là đạt. `apikey.txt` bị Git ignore; logger không ghi provider error body.
 - Báo cáo nguồn chuẩn: `docs/performance-report.md`, `docs/test-report.md`, `docs/deployment.md`, `docs/upgrade-progress.md`, `docs/ai-evaluation.md`.
 - Cloud chưa deploy. Cần người dùng chốt provider/account có quyền, region, ngân sách, domain/DNS, Mongo/Redis managed hay tự quản, secrets production và quyền repo cho CD. Không tự tạo tài nguyên có phí.
@@ -191,5 +191,5 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Production-local đã từng đạt ở `http://localhost:8080`, nhưng Docker Desktop đang tắt ngày 23/09/2026 nên hiện không phục vụ. Khi bật lại cần rebuild code P7 rồi chạy smoke API-backed; không suy diễn trạng thái cũ là trạng thái hiện tại.
 - Toàn bộ kiểm tra cuối: lint PASS, typecheck PASS, server unit 58/58, client 14/14, integration 28/28, Playwright 9/9, build PASS. Cross-instance smoke trên image cuối PASS.
 - Việc cần người dùng cung cấp tiếp: key AI hợp lệ nếu muốn test live; hoặc lựa chọn cloud/account/region/budget/domain nếu muốn deploy thật. Không yêu cầu lại camera/in QR cho tới khi người dùng muốn thực hiện bước đó.
-- Workflow GitHub mới chỉ nằm trong worktree. Trước khi đánh giá CI remote cần review, commit và push; hiện chưa được phép tự commit/push.
+- Toàn bộ P1–P7 đã commit/push lên `main`; GitHub Actions run #1 (`35807566033`) PASS cả quality/build, integration và production frontend browser smoke.
 - Không ghi hoặc in nội dung `apikey.txt`. File này và `.cache/load` đang được Git ignore.
