@@ -383,7 +383,7 @@ paths:
         '409': { description: State transition invalid hoặc race }
   /staff/tables/{tableId}/sessions:
     post:
-      summary: Mở phiên bàn (trả phiên hiện hữu nếu bàn đã có phiên)
+      summary: Khôi phục/mở phiên bàn nội bộ (không dùng trong luồng UI thông thường)
       parameters:
         - in: path
           name: tableId

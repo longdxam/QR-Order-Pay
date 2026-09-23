@@ -3,7 +3,8 @@
 ## 1. Tại sao QR tĩnh mà vẫn "an toàn"?
 
 - QR chỉ chứa token trỏ tới bàn, không phải JWT hay quyền.
-- Quyền đặt món chỉ được cấp khi Staff đã mở phiên (`TableSession.status = OPEN`).
+- QR hợp lệ cho phép khách tự tạo `TableSession.status = OPEN`; thao tác idempotent nên nhiều người quét đồng thời vẫn chỉ có một phiên hoạt động cho bàn.
+- Nhân viên không phải mở bàn trước, nhưng vẫn kiểm soát các bước checkout, xác nhận đã nhận tiền và đóng phiên.
 - Guest session là HttpOnly cookie, có TTL 12h, bị thu hồi khi phiên đóng.
 - Rate limit cho join theo IP.
 - Giới hạn đã biết: người không ngồi tại bàn có thể chụp QR. Bản P2 có thể thêm mã ngắn hiển thị tại bàn (mã staff đọc cho khách) hoặc xoay token định kỳ.

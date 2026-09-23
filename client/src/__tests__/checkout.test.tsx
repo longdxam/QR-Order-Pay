@@ -22,6 +22,19 @@ beforeEach(() => { vi.clearAllMocks(); useCart.getState().resetSession(); });
 afterEach(cleanup);
 
 describe('checkout interfaces', () => {
+  it('shows empty tables waiting for a guest QR instead of letting staff open a session', async () => {
+    mock.get.mockImplementation(async (url: string) => {
+      if (url === '/staff/tables') return response({ tables: [{ _id: 't1', name: 'Bàn 01', capacity: 4, isActive: true }] });
+      return response({ items: [] });
+    });
+
+    const qc = mount(<StaffTables />);
+    expect(await screen.findByText('Chờ khách quét QR')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Mở phiên/ })).toBeNull();
+    expect(mock.post).not.toHaveBeenCalled();
+    qc.clear();
+  });
+
   it('requires explicit confirmation and sends the actual bill amount and payment method', async () => {
     mock.get.mockImplementation(async (url: string) => {
       if (url === '/staff/tables') return response({ tables: [{ _id: 't1', name: 'Bàn 01', isActive: true }] });

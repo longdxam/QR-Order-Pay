@@ -63,7 +63,7 @@ Status code dùng: 200, 201, 204, 400, 401, 403, 404, 409, 422, 429, 500.
 - `PATCH /api/v1/staff/orders/:id/status` — body `{ status, reason? }`, kiểm tra state machine.
 - `POST /api/v1/staff/orders/:id/confirm` — shortcut sang CONFIRMED.
 - `GET  /api/v1/staff/table-sessions` — phiên OPEN/CHECKOUT (kèm `source` + `closedReason` để phân biệt phiên tự mở).
-- `POST /api/v1/staff/tables/:tableId/sessions` — mở phiên, trả `{ session, created }`. Bàn đã có phiên thì trả phiên hiện hữu (`created: false`) thay vì `409`; phiên đang `CHECKOUT` được revert về `OPEN`.
+- `POST /api/v1/staff/tables/:tableId/sessions` — endpoint khôi phục nội bộ cho Staff, không dùng trong luồng UI thông thường. Trả `{ session, created }`; bàn đã có phiên thì trả phiên hiện hữu (`created: false`), phiên đang `CHECKOUT` được revert về `OPEN`.
 - `PATCH /api/v1/staff/table-sessions/:id/status` — body `{ status, expectedVersion }`.
 - `GET  /api/v1/staff/table-sessions/:id/bill` — chi tiết bill; khi phiên `CLOSED` và đã có `Bill`, đọc snapshot bất biến (fallback tính động cho phiên cũ).
 - `POST /api/v1/staff/table-sessions/:id/payments` — header `Idempotency-Key`, body `{ amount, method, expectedVersion, note? }`; khi thu đủ tiền sẽ chốt `Bill` và trả `{ payment, orderIds, replayed, billId }`.

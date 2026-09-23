@@ -57,7 +57,14 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
       }
     }
     const result = await joinAsGuest(input.tableToken);
-    if (result.created) recordBusinessEvent('table_session_created');
+    if (result.created) {
+      recordBusinessEvent('table_session_created');
+      publishStaff('tableSession.statusChanged', {
+        tableSessionId: result.tableSession.id,
+        status: result.tableSession.status,
+        source: 'GUEST',
+      });
+    }
     setGuestCookie(res, result.guestToken);
     setReceiptCookie(res, result.receiptToken);
     res.json({

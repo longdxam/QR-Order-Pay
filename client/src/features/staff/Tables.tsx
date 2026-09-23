@@ -27,8 +27,6 @@ interface Bill {
 }
 export function StaffTables(): JSX.Element {
   useDocumentTitle('Bàn & phiên');
-  const { toast } = useToast();
-  const qc = useQueryClient();
   const sessions = useQuery({
     queryKey: ['staff-table-sessions'],
     queryFn: async () => unwrap(await api.get<{ items: SessionItem[] }>('/staff/table-sessions')),
@@ -38,26 +36,21 @@ export function StaffTables(): JSX.Element {
     queryKey: ['staff-tables'],
     queryFn: async () => unwrap(await api.get<{ tables: Table[] }>('/staff/tables')),
   });
-  const open = useMutation({
-    mutationFn: (id: string) => api.post(`/staff/tables/${id}/sessions`),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['staff-table-sessions'] }); toast({ title: 'Đã mở phiên bàn', tone: 'success' }); },
-    onError: (e) => toast({ title: 'Chưa mở được bàn', description: getErrorMessage(e), tone: 'danger' }),
-  });
   if (sessions.isLoading || tables.isLoading) return <p>Đang tải bàn...</p>;
   if (sessions.isError || tables.isError) return <ErrorState message={getErrorMessage(sessions.error ?? tables.error)} onRetry={() => { void sessions.refetch(); void tables.refetch(); }} />;
   const active = sessions.data?.items ?? [];
   const activeIds = new Set(active.map((s) => s.table._id));
   const empty = (tables.data?.tables ?? []).filter((t) => t.isActive && !activeIds.has(t._id));
   return <div className="space-y-6">
-    <div><h1 className="font-display text-2xl font-semibold">Bàn & phiên phục vụ</h1><p className="text-sm text-muted-foreground">Mở bàn, kiểm tra món và xác nhận tiền đã nhận trước khi đóng phiên.</p></div>
+    <div><h1 className="font-display text-2xl font-semibold">Bàn & phiên phục vụ</h1><p className="text-sm text-muted-foreground">Khách quét QR tại bàn để tự mở phiên. Nhân viên theo dõi món, hỗ trợ và xác nhận thanh toán.</p></div>
     <section><h2 className="font-semibold mb-3">Bàn đang phục vụ ({active.length})</h2>
-      {active.length === 0 ? <EmptyState title="Chưa có bàn đang phục vụ" description="Chọn một bàn trống để đón khách." /> :
+      {active.length === 0 ? <EmptyState title="Chưa có bàn đang phục vụ" description="Phiên sẽ tự xuất hiện khi khách quét QR tại bàn." /> :
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{active.map((item) => <SessionCard key={item.session._id} item={item} />)}</div>}
     </section>
     <section><h2 className="font-semibold mb-3">Bàn trống ({empty.length})</h2><div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {empty.map((t) => <button className="card p-4 text-left" key={t._id} disabled={open.isPending} onClick={() => open.mutate(t._id)}>
-        <p className="font-semibold">{t.name}</p><p className="text-sm text-muted-foreground">{t.capacity} chỗ</p><p className="mt-2 text-primary text-sm">Mở phiên →</p>
-      </button>)}
+      {empty.map((t) => <Card className="p-4" key={t._id}>
+        <p className="font-semibold">{t.name}</p><p className="text-sm text-muted-foreground">{t.capacity} chỗ</p><p className="mt-2 text-muted-foreground text-sm">Chờ khách quét QR</p>
+      </Card>)}
     </div></section>
   </div>;
 }

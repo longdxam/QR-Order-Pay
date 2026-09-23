@@ -76,7 +76,7 @@ export function AdminTables(): JSX.Element {
       <h1 className="font-display text-2xl font-semibold">Bàn & QR</h1>
       <p className="text-sm text-muted-foreground">
         Bấm <span className="font-semibold">Xoay QR</span> để cấp một liên kết mới cho bàn. Khách quét liên kết này bằng điện thoại
-        để vào phiên của bàn (chỉ Staff mở phiên thì khách mới đặt món được).
+        để tự mở phiên và gọi món; nhân viên không cần mở bàn trước.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

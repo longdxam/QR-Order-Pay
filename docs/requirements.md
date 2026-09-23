@@ -10,14 +10,14 @@
 
 | Mã | Use case | Actor | Mô tả ngắn |
 | --- | --- | --- | --- |
-| UC-01 | Quét QR / nhập mã vào bàn | Guest | Điền token QR, nhận phiên bàn do Staff mở. |
+| UC-01 | Quét QR / nhập mã vào bàn | Guest | Token hợp lệ tự mở phiên cho bàn trống hoặc tham gia phiên đang hoạt động. |
 | UC-02 | Xem menu & tùy chỉnh món | Guest | Chọn size, đường, đá, topping, ghi chú. |
 | UC-03 | Hỏi AI Barista | Guest | Nhập khẩu vị/ngân sách, nhận gợi ý có lý do. |
 | UC-04 | Đặt món | Guest | Gửi giỏ với idempotency, nhận trạng thái realtime. |
 | UC-05 | Huỷ đơn | Guest | Chỉ khi đơn còn PENDING. |
 | UC-06 | Yêu cầu nhân viên / thanh toán | Guest | Gửi yêu cầu, Staff nhận và xử lý. |
 | UC-07 | Đánh giá đơn | Guest | Sau khi đơn SERVED + PAID, 1–5 sao + nhận xét. |
-| UC-08 | Mở phiên bàn | Staff/Admin | Tạo TableSession OPEN cho bàn trống. |
+| UC-08 | Theo dõi phiên bàn | Staff/Admin | Xem realtime các phiên khách tự mở, bàn đang phục vụ và bàn trống. |
 | UC-09 | Tiếp nhận & chuyển trạng thái đơn | Staff | Theo state machine. |
 | UC-10 | Thu tiền & đóng phiên | Staff | Kiểm tra tổng, ghi Payment, đóng phiên. |
 | UC-11 | Quản lý menu | Admin | CRUD danh mục, món, topping, bật/tắt còn bán. |
