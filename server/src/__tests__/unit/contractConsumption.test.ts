@@ -24,6 +24,7 @@ vi.mock('../../services/authService.js', () => ({
 vi.mock('../../controllers/cookieHelpers.js', () => ({
   setRefreshCookie: vi.fn(),
   clearRefreshCookie: vi.fn(),
+  refreshCookieName: vi.fn(() => 'mc_refresh'),
 }));
 
 import { confirm as paymentConfirm } from '../../controllers/paymentController.js';

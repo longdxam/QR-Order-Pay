@@ -1,5 +1,12 @@
 FROM node:24-bookworm-slim AS build
 
+ARG VITE_GUEST_APP_URL
+ARG VITE_STAFF_APP_URL
+ARG VITE_ADMIN_APP_URL
+ENV VITE_GUEST_APP_URL=$VITE_GUEST_APP_URL
+ENV VITE_STAFF_APP_URL=$VITE_STAFF_APP_URL
+ENV VITE_ADMIN_APP_URL=$VITE_ADMIN_APP_URL
+
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY client/package.json client/package.json
@@ -13,5 +20,6 @@ RUN npm -w @may-cafe/contracts run build && npm -w @may-cafe/client run build
 
 FROM nginx:1.27-alpine
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx/maycafe-common.inc /etc/nginx/conf.d/maycafe-common.inc
 COPY --from=build /app/client/dist /usr/share/nginx/html
-EXPOSE 8080
+EXPOSE 8080 8081 8082

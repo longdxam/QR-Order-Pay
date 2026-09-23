@@ -94,7 +94,7 @@ Tạo `.env.production` với hai JWT secret khác nhau, mỗi secret tối thi�
 docker compose -f compose.production.yaml --env-file .env.production up -d --build
 ```
 
-Ứng dụng được phục vụ tại `http://localhost:8080` qua Nginx; API và Socket.IO dùng cùng origin. Topology local-production gồm hai API backend, một worker, MongoDB, Redis và Nginx. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình HTTPS, health check, backup và rollback tại `docs/deployment.md`; xem số tải thực đo tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
+Production-local được tách thành ba portal qua cùng Nginx: Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Mỗi portal dùng API/Socket.IO cùng origin và Nginx chặn route/API gọi chéo vai trò; backend vẫn kiểm tra JWT/role. Topology gồm hai API backend, một worker, MongoDB, Redis và Nginx. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình HTTPS, health check, backup và rollback tại `docs/deployment.md`; xem số tải thực đo tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
 
 ## Cấu trúc thư mục
 

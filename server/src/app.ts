@@ -57,7 +57,7 @@ export function buildApp(options: BuildAppOptions = {}): express.Express {
   );
   app.use(
     cors({
-      origin: [config.publicAppUrl, config.serverOrigin],
+      origin: config.allowedOrigins,
       credentials: true,
     }),
   );

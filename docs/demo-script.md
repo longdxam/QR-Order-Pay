@@ -4,13 +4,13 @@
 
 - Ưu tiên production-local: tạo `.env.production` theo `docs/deployment.md`, rồi `docker compose -f compose.production.yaml --env-file .env.production up -d --build`.
 - Seed demo là thao tác phá dữ liệu hiện có; chỉ chạy `npm run seed` khi đã xác nhận đúng database demo.
-- Mở `http://localhost:8080` và kiểm tra `http://localhost:8080/healthz`.
-- Trên điện thoại cùng mạng Wi-Fi, mở `<IP-máy>:5173/t/<token-bàn-01>`. Lấy token từ log khi seed.
+- Mở Guest portal `http://localhost:8080` và kiểm tra `http://localhost:8080/healthz`.
+- Trên điện thoại cùng mạng Wi-Fi, mở `http://<IP-máy>:8080/t/<token-bàn-01>`. Lấy token từ log khi seed và đặt `PUBLIC_APP_URL` theo IP LAN trước khi xoay QR.
 - Mở sẵn:
   - 1 tab guest trên điện thoại (hoặc tab ẩn danh).
   - 1 tab guest thứ hai trên trình duyệt khác.
-  - 1 tab staff `/staff/kds` (login `staff.a@maycafe.vn / MayCafe@2025`).
-  - 1 tab admin `/admin/operations`.
+  - 1 tab Staff `http://localhost:8081/staff/kds` (login `staff.a@maycafe.vn / MayCafe@2025`).
+  - 1 tab Admin `http://localhost:8082/admin/operations`.
 
 ## Kịch bản
 

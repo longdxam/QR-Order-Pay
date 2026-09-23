@@ -7,13 +7,15 @@ import { Input } from '../../components/ui/Input';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { useAuth, type AuthUser } from './useAuth';
 import { useToast } from '../../components/ui/useToast';
+import { getPortalMode } from '../../lib/portals';
 
 export function LoginPage(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const setSession = useAuth((s) => s.setSession);
   const { toast } = useToast();
-  const [email, setEmail] = useState('staff.a@maycafe.vn');
+  const portal = getPortalMode();
+  const [email, setEmail] = useState(portal === 'admin' ? 'admin@maycafe.vn' : 'staff.a@maycafe.vn');
   const [password, setPassword] = useState('MayCafe@2025');
   const [loading, setLoading] = useState(false);
 
@@ -24,9 +26,18 @@ export function LoginPage(): JSX.Element {
       const data = await unwrap(
         await api.post<{ accessToken: string; user: AuthUser }>('/auth/login', { email, password }),
       );
+      if (portal === 'admin' && data.user.role !== 'ADMIN') {
+        try {
+          await api.post('/auth/logout');
+        } catch {
+          // The portal still refuses the role even if the cleanup request fails.
+        }
+        throw new Error('Cổng này chỉ dành cho quản trị viên.');
+      }
       setSession(data.accessToken, data.user);
       toast({ title: `Xin chào, ${data.user.name}`, tone: 'success' });
-      const target = (location.state as { from?: string } | null)?.from ?? (data.user.role === 'ADMIN' ? '/admin' : '/staff');
+      const defaultTarget = portal === 'admin' ? '/admin' : portal === 'staff' ? '/staff' : data.user.role === 'ADMIN' ? '/admin' : '/staff';
+      const target = (location.state as { from?: string } | null)?.from ?? defaultTarget;
       navigate(target, { replace: true });
     } catch (e) {
       toast({ title: 'Đăng nhập thất bại', description: getErrorMessage(e), tone: 'danger' });

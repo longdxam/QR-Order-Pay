@@ -4,7 +4,7 @@
 
 Cấu hình `compose.production.yaml` chạy sáu service:
 
-- `web`: Nginx phục vụ React production build trên cổng 8080, fallback SPA và proxy `/api/` + `/socket.io/`.
+- `web`: Nginx phục vụ cùng một React production build qua ba portal tách biệt: Guest `8080`, Staff `8081`, Admin `8082`; mỗi cổng chỉ proxy nhóm API đúng vai trò.
 - `server-a`, `server-b`: hai Node.js 24 LTS chạy Express/Socket.IO; Nginx round-robin REST và giữ Socket.IO sticky theo địa chỉ client.
 - `worker`: cùng image Node.js nhưng chỉ chạy idle-session sweeper và anomaly scheduler; không phục vụ HTTP.
 - `mongo`: MongoDB 7 replica set một node; không publish cổng ra host trong cấu hình này.
@@ -16,6 +16,8 @@ Tạo `.env.production` (đã được Git bỏ qua):
 
 ```dotenv
 PUBLIC_APP_URL=http://localhost:8080
+STAFF_APP_URL=http://localhost:8081
+ADMIN_APP_URL=http://localhost:8082
 COOKIE_SECURE=false
 JWT_ACCESS_SECRET=<chuỗi ngẫu nhiên tối thiểu 32 ký tự>
 JWT_REFRESH_SECRET=<chuỗi ngẫu nhiên khác, tối thiểu 32 ký tự>
@@ -29,7 +31,17 @@ docker compose -f compose.production.yaml --env-file .env.production up -d --bui
 docker compose -f compose.production.yaml ps
 curl http://localhost:8080/healthz
 curl http://localhost:8080/api/v1/health
+curl http://localhost:8081/healthz
+curl http://localhost:8082/healthz
 ```
+
+Các portal local:
+
+- Guest/QR: `http://localhost:8080`
+- Staff/KDS: `http://localhost:8081`
+- Admin: `http://localhost:8082`
+
+Nginx trả `404` nếu gọi Staff/Admin API từ cổng Guest hoặc gọi chéo API giữa hai portal nội bộ. Backend vẫn kiểm tra JWT và role; tách cổng chỉ là thêm một lớp cô lập, không thay thế phân quyền. Refresh cookie dùng tên riêng theo portal để Staff và Admin có thể đăng nhập đồng thời trên cùng máy.
 
 Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu demo, thực hiện có chủ ý sau khi kiểm tra đúng database; seed sẽ thay dữ liệu hiện có.
 
@@ -51,7 +63,7 @@ Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu d
 
 Khi đặt sau load balancer hoặc reverse proxy HTTPS:
 
-1. Đặt `PUBLIC_APP_URL=https://<domain>` và `COOKIE_SECURE=true`.
+1. Đặt `PUBLIC_APP_URL=https://order.<domain>`, `STAFF_APP_URL=https://staff.<domain>`, `ADMIN_APP_URL=https://admin.<domain>` và `COOKIE_SECURE=true`.
 2. Giữ frontend, API và Socket.IO cùng origin; proxy phải hỗ trợ WebSocket upgrade.
 3. Không public MongoDB; dùng network riêng và authentication phù hợp với nền tảng.
 4. Chỉ đặt `TRUST_PROXY_HOPS` bằng số proxy thực tế, không tin tùy ý `X-Forwarded-For` từ Internet.
@@ -76,7 +88,7 @@ Repository hiện mới có cấu hình production local. Chưa có bằng chứ
 
 Cấu hình hiện đã sẵn để triển khai nhưng chưa tạo tài nguyên cloud. Trước khi thực hiện cần: nhà cung cấp/tài khoản cloud có quyền tạo dịch vụ, khu vực triển khai, ngân sách hoặc giới hạn chi phí, domain và quyền DNS, lựa chọn MongoDB/Redis managed hay tự quản, secret production (JWT mới; không dùng secret local), cùng quyền GitHub repository nếu muốn CD. Chỉ tạo tài nguyên tính phí sau khi chủ dự án chốt nhà cung cấp và ngân sách.
 
-Sau deploy phải bật HTTPS, `COOKIE_SECURE=true`, đặt `PUBLIC_APP_URL`/`SERVER_ORIGIN` đúng domain, dùng secret manager, private network cho Mongo/Redis, health check sau release và tag image theo commit. Replica set một node trong Compose không chịu được lỗi host và không phải mô hình database HA cho cloud.
+Sau deploy phải bật HTTPS, `COOKIE_SECURE=true`, đặt ba URL portal và `SERVER_ORIGIN` đúng domain, dùng secret manager, private network cho Mongo/Redis, health check sau release và tag image theo commit. Replica set một node trong Compose không chịu được lỗi host và không phải mô hình database HA cho cloud.
 
 ## Backup, restore và rollback
 

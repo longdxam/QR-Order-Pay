@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { login as loginSvc, refresh as refreshSvc, logout as logoutSvc, logoutAll as logoutAllSvc } from '../services/authService.js';
 import { loginRequestSchema, authResponseSchema } from '@may-cafe/contracts';
-import { setRefreshCookie, clearRefreshCookie } from './cookieHelpers.js';
+import { setRefreshCookie, clearRefreshCookie, refreshCookieName } from './cookieHelpers.js';
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -12,7 +12,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       userAgent: req.headers['user-agent'] ?? '',
       ip: req.ip ?? '',
     });
-    setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
+    setRefreshCookie(req, res, result.refreshToken, result.refreshExpiresAt);
     const data = authResponseSchema.parse({ accessToken: result.accessToken, user: result.user });
     res.json({ success: true, data });
   } catch (e) {
@@ -22,7 +22,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
 
 export async function refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const token = req.cookies?.['mc_refresh'];
+    const token = req.cookies?.[refreshCookieName(req)];
     if (!token || typeof token !== 'string') {
       res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'Thiếu refresh token.' } });
       return;
@@ -32,7 +32,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       userAgent: req.headers['user-agent'] ?? '',
       ip: req.ip ?? '',
     });
-    setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
+    setRefreshCookie(req, res, result.refreshToken, result.refreshExpiresAt);
     const data = authResponseSchema.parse({ accessToken: result.accessToken, user: result.user });
     res.json({ success: true, data });
   } catch (e) {
@@ -42,11 +42,11 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
 
 export async function logout(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const token = req.cookies?.['mc_refresh'];
+    const token = req.cookies?.[refreshCookieName(req)];
     if (typeof token === 'string') {
       await logoutSvc(token);
     }
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
     res.json({ success: true, data: { ok: true } });
   } catch (e) {
     next(e);
@@ -60,7 +60,7 @@ export async function logoutAll(req: Request, res: Response, next: NextFunction)
       return;
     }
     await logoutAllSvc(req.user.id);
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
     res.json({ success: true, data: { ok: true } });
   } catch (e) {
     next(e);

@@ -45,7 +45,9 @@ services:
       TRUST_PROXY_HOPS: 1
       SHUTDOWN_TIMEOUT_MS: 10000
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
-      SERVER_ORIGIN: ${PUBLIC_APP_URL:-http://localhost:8080}
+      STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:8081}
+      ADMIN_APP_URL: ${ADMIN_APP_URL:-http://localhost:8082}
+      SERVER_ORIGIN: ${SERVER_ORIGIN:-http://localhost:8080}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -112,9 +114,15 @@ services:
     build:
       context: .
       dockerfile: client/Dockerfile
+      args:
+        VITE_GUEST_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+        VITE_STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:8081}
+        VITE_ADMIN_APP_URL: ${ADMIN_APP_URL:-http://localhost:8082}
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-8080}:8080"
+      - "${STAFF_WEB_PORT:-8081}:8081"
+      - "${ADMIN_WEB_PORT:-8082}:8082"
     depends_on:
       server-a:
         condition: service_healthy

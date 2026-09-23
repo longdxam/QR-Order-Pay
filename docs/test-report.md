@@ -38,7 +38,8 @@ Route-level code splitting đưa entry client xuống 382,54 kB, gzip 117,26 kB.
 
 - Docker Engine 29.7.2: build thành công image Node.js 24 LTS và Nginx 1.27.
 - `mongo`, `redis`, `server-a`, `server-b`, `web`: healthy; `worker` chạy entrypoint job riêng trong project Compose `maycafe-production`.
-- HTTP qua `http://localhost:8080`: frontend, `/staff/kds` deep-link, `/api/v1/health`, `/api/v1/products` đều trả 200.
+- HTTP được tách portal: Guest `8080`, Staff `8081`, Admin `8082`; deep-link đúng portal trả 200. Ma trận smoke xác nhận route/API gọi chéo trả 404, còn API đúng portal vẫn áp dụng 401/403 theo JWT/role.
+- Staff/Admin login qua origin riêng trả 200 và dùng hai cookie `mc_refresh_staff`/`mc_refresh_admin`, không ghi đè nhau trên cùng host.
 - `/readyz` trong backend trả 200 với MongoDB `ready`; WebSocket kết nối qua Nginx bằng transport `websocket`.
 - Luồng production-local đạt: QR join → order → bốn trạng thái → checkout → payment → Bill snapshot → receipt đúng tổng tiền.
 - SIGTERM: server exit code 0 sau khoảng 495 ms và healthy lại sau restart.

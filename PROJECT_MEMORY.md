@@ -109,7 +109,7 @@ Cập nhật: 23/09/2026.
 - Production build: PASS; Vite còn cảnh báo bundle JS chính 989,87 kB (gzip 291,75 kB).
 - Refresh access token staff đã có single-flight, retry một lần, kiểm soát race logout; có 6 test client chuyên biệt.
 - Auth/payment contract dùng chung đã được cả client và server tiêu thụ; requestId client được kiểm tra định dạng/độ dài.
-- P2 production-local đã được build và chạy bằng Docker Engine 29.7.2: project riêng `maycafe-production` có MongoDB/Node/Nginx healthy, chỉ Nginx publish cổng 8080. Frontend, deep-link, API, readiness và WebSocket cùng-origin đã được kiểm tra.
+- P2 production-local đã được build và chạy bằng Docker Engine 29.7.2: project riêng `maycafe-production` có MongoDB/Node/Nginx healthy; Nginx publish Guest `8080`, Staff `8081`, Admin `8082`. Frontend, deep-link, API, readiness và WebSocket cùng-origin đã được kiểm tra.
 - P3 observability đã hoàn thành production-local: Node.js 24 LTS, structured log không trùng Morgan, Prometheus metrics nội bộ, Admin `/admin/operations`, nhãn route cardinality-safe và payment replay không tăng counter. Lỗi kiểm soát `p3-controlled-error` đã đối chiếu log/dashboard.
 - P4A search đã hoàn thành local: 25/25 unit (13/13 Top-1, 12/12 ràng buộc) và integration API qua MongoDB tạm đạt; kết quả fallback/live được ghi riêng trong `docs/ai-evaluation.md`.
 - P4B đã hoàn thành local: scheduler detector cho HTTP error/p95, preparation p95 và cancellation rate; baseline/min-sample/threshold cấu hình, alert MongoDB dedupe+cooldown, AI/fallback explanation, ADMIN ACK/CLOSE có audit. HTTP window còn là instance-local nên chưa dùng cho multi-instance trước P5.
@@ -130,7 +130,7 @@ Cập nhật: 23/09/2026.
 1. npm ci
 2. Tạo server/.env từ .env.example, cấu hình MongoDB replica set.
 3. npm run db:up → npm run db:wait → npm run seed (seed chỉ dành cho dữ liệu demo; có thể thay dữ liệu hiện tại).
-4. npm run dev.
+4. `npm run dev` dùng portal hợp nhất tại `5173`; production-local tách Guest `8080`, Staff `8081`, Admin `8082` qua cùng Nginx.
 5. Admin vào Bàn & QR, đổi token và tải ảnh QR.
 6. Khách quét QR/vào link để tự mở phiên → chọn món hoặc hỏi AI → giỏ → gửi đơn.
 7. Staff vào Bàn & phiên và thấy phiên mới xuất hiện realtime, không cần mở bàn trước.
@@ -184,12 +184,13 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Dashboard hỗ trợ khoảng ngày, CSV và in/PDF. Backend dùng MongoDB `$facet` trên toàn bộ đơn PAID, nhóm theo `Asia/Ho_Chi_Minh`; integration 105 đơn khóa hồi quy giới hạn phân trang cũ.
 - Contracts chung bổ sung join/current table session và request transition. Script root build contracts trước dev/typecheck/test để checkout sạch và CI không phụ thuộc `dist` cũ.
 - Vite 8.3.0, Vitest 5.0.1, React Router 7.18.4 và UUID 14.0.2; `npm audit` 0 vulnerability. Vitest config đã đổi khỏi `poolOptions` bị loại bỏ.
-- CI có thêm audit và browser smoke production frontend. Playwright mới: 11 ca; trên preview không backend đạt 7, skip 4 ca cần `E2E_TABLE_TOKEN`; offline reload đạt. Docker Desktop đang tắt nên chưa chạy lại API-backed 11/11.
-- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server unit 58/58, client 14/14, integration 29/29, build PASS. Không chạy lại benchmark tải vì thay đổi không nhằm tăng throughput.
+- CI có thêm audit và browser smoke production frontend. Playwright có 11 ca; production-local ba portal đạt 7 ca độc lập dữ liệu, skip 4 ca cần `E2E_TABLE_TOKEN`; offline reload đạt.
+- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server unit/client/integration PASS, build PASS. Không chạy lại benchmark tải vì thay đổi không nhằm tăng throughput.
+- Production-local tách Guest `8080`, Staff `8081`, Admin `8082` trên cùng Nginx. Proxy chặn route/API gọi chéo; CORS/Socket cho phép đúng ba origin và refresh-cookie Staff/Admin tách tên để đăng nhập đồng thời.
 
 - Xem mục “Cập nhật P5/P6 mới nhất” và `docs/upgrade-progress.md` trước; không chạy lại benchmark nặng nếu không có thay đổi liên quan hiệu năng.
-- Production-local đã từng đạt ở `http://localhost:8080`, nhưng Docker Desktop đang tắt ngày 23/09/2026 nên hiện không phục vụ. Khi bật lại cần rebuild code P7 rồi chạy smoke API-backed; không suy diễn trạng thái cũ là trạng thái hiện tại.
-- Toàn bộ kiểm tra cuối: lint PASS, typecheck PASS, server unit 58/58, client 14/14, integration 28/28, Playwright 9/9, build PASS. Cross-instance smoke trên image cuối PASS.
+- Production-local hiện đang chạy healthy trên ba portal `8080`/`8081`/`8082`; health, login, cookie isolation và ma trận route/API đã smoke PASS ngày 23/09/2026.
+- Container web của project `maycafe-benchmark` đã dừng để nhường cổng `8081`; Mongo/Redis và volume benchmark không bị xóa, có thể khởi động lại với cổng khác.
 - Việc cần người dùng cung cấp tiếp: key AI hợp lệ nếu muốn test live; hoặc lựa chọn cloud/account/region/budget/domain nếu muốn deploy thật. Không yêu cầu lại camera/in QR cho tới khi người dùng muốn thực hiện bước đó.
 - Toàn bộ P1–P7 đã commit/push lên `main`; GitHub Actions run #1 (`35807566033`) PASS cả quality/build, integration và production frontend browser smoke.
 - Không ghi hoặc in nội dung `apikey.txt`. File này và `.cache/load` đang được Git ignore.

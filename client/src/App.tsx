@@ -6,6 +6,7 @@ import { GuestLayout } from './layouts/GuestLayout';
 import { StaffLayout } from './layouts/StaffLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
+import { getPortalMode, portalHome } from './lib/portals';
 
 const JoinPage = lazy(() =>
   import('./features/guest/JoinPage').then((module) => ({ default: module.JoinPage })),
@@ -65,48 +66,60 @@ const LoginPage = lazy(() =>
 );
 
 export function App(): JSX.Element {
+  const portal = getPortalMode();
+  const guestEnabled = portal === 'unified' || portal === 'guest';
+  const staffEnabled = portal === 'unified' || portal === 'staff';
+  const adminEnabled = portal === 'unified' || portal === 'admin';
+
   return (
     <ToastProvider>
       <NetworkStatus />
       <Suspense fallback={<PageLoading />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/t" replace />} />
-          <Route path="/t" element={<JoinPage />} />
-          <Route path="/t/:token" element={<JoinPage />} />
+          <Route path="/" element={<Navigate to={portalHome(portal)} replace />} />
+          {guestEnabled ? (
+            <>
+              <Route path="/t" element={<JoinPage />} />
+              <Route path="/t/:token" element={<JoinPage />} />
+              <Route element={<GuestLayout />}>
+                <Route path="/menu" element={<MenuPage />} />
+                <Route path="/cart" element={<CartPage />} />
+                <Route path="/orders" element={<OrdersPage />} />
+                <Route path="/receipt" element={<ReceiptPage />} />
+                <Route path="/ai" element={<AIPage />} />
+              </Route>
+            </>
+          ) : null}
 
-          <Route element={<GuestLayout />}>
-            <Route path="/menu" element={<MenuPage />} />
-            <Route path="/cart" element={<CartPage />} />
-            <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/receipt" element={<ReceiptPage />} />
-            <Route path="/ai" element={<AIPage />} />
-          </Route>
-
-          <Route path="/auth/login" element={<LoginPage />} />
-          <Route element={<RequireAuth roles={['STAFF', 'ADMIN']} />}>
-            <Route element={<StaffLayout />}>
-              <Route path="/staff" element={<Navigate to="/staff/kds" replace />} />
-              <Route path="/staff/kds" element={<StaffKDS />} />
-              <Route path="/staff/tables" element={<StaffTables />} />
-              <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
+          {staffEnabled || adminEnabled ? <Route path="/auth/login" element={<LoginPage />} /> : null}
+          {staffEnabled ? (
+            <Route element={<RequireAuth roles={['STAFF', 'ADMIN']} />}>
+              <Route element={<StaffLayout />}>
+                <Route path="/staff" element={<Navigate to="/staff/kds" replace />} />
+                <Route path="/staff/kds" element={<StaffKDS />} />
+                <Route path="/staff/tables" element={<StaffTables />} />
+                <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
+              </Route>
             </Route>
-          </Route>
+          ) : null}
 
-          <Route element={<RequireAuth roles={['ADMIN']} />}>
-            <Route element={<AdminLayout />}>
-              <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
-              <Route path="/admin/operations" element={<AdminOperations />} />
-              <Route path="/admin/products" element={<AdminProducts />} />
-              <Route path="/admin/categories" element={<AdminCategories />} />
-              <Route path="/admin/toppings" element={<AdminToppings />} />
-              <Route path="/admin/tables" element={<AdminTables />} />
-              <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/reviews" element={<AdminReviews />} />
+          {adminEnabled ? (
+            <Route element={<RequireAuth roles={['ADMIN']} />}>
+              <Route element={<AdminLayout />}>
+                <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                <Route path="/admin/operations" element={<AdminOperations />} />
+                <Route path="/admin/products" element={<AdminProducts />} />
+                <Route path="/admin/categories" element={<AdminCategories />} />
+                <Route path="/admin/toppings" element={<AdminToppings />} />
+                <Route path="/admin/tables" element={<AdminTables />} />
+                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/reviews" element={<AdminReviews />} />
+              </Route>
             </Route>
-          </Route>
+          ) : null}
 
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to={portalHome(portal)} replace />} />
         </Routes>
       </Suspense>
     </ToastProvider>

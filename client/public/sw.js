@@ -1,9 +1,8 @@
-const CACHE_VERSION = 'may-cafe-shell-v2';
+const CACHE_VERSION = 'may-cafe-shell-v3';
 const SHELL_URLS = [
   '/',
   '/index.html',
   '/t',
-  '/auth/login',
   '/manifest.webmanifest',
   '/favicon.svg',
 ];

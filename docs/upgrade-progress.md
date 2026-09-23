@@ -55,11 +55,11 @@ Ngày bắt đầu: 20/09/2026. Điều phối CoDev theo `HUONG_DAN_DIEU_PHOI_C
 - Đã tạo Docker build nhiều stage cho server/client, Nginx cùng-origin, `compose.production.yaml` và `docs/deployment.md`.
 - Cấu hình Compose đã qua `docker compose ... config --quiet`; image server và web build thành công trên Docker Engine 29.7.2.
 - Sửa hai lỗi chỉ lộ khi build image: thiếu `tsconfig.base.json` trong build context và entrypoint server phải là `dist/src/server.js`.
-- Ba service `mongo`, `server`, `web` chạy trong project riêng `maycafe-production`, đều healthy; chỉ Nginx publish cổng `8080`, MongoDB không mở cổng host.
+- Các service chạy trong project riêng `maycafe-production`, đều healthy; Nginx publish Guest `8080`, Staff `8081`, Admin `8082`, còn MongoDB/Redis/backend không mở cổng host.
 - Đã kiểm tra frontend, SPA deep-link, API proxy, Mongo readiness và WebSocket upgrade qua Nginx.
 - Đã chạy xuyên luồng trên database production-local riêng: seed → QR join → đặt món → CONFIRMED/PREPARING/READY/SERVED → CHECKOUT → Payment → Bill snapshot → receipt.
 - SIGTERM/graceful shutdown kết thúc với exit code 0 trong khoảng 0,5 giây; backend khởi động lại và trở về healthy.
-- Stack hiện chạy tại `http://localhost:8080`, có 24 món/5 danh mục từ seed demo trong volume riêng. Chưa deploy cloud/HTTPS và không tuyên bố high availability.
+- Stack hiện chạy tại Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`, có dữ liệu seed demo trong volume riêng. Chưa deploy cloud/HTTPS và không tuyên bố high availability.
 
 Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ dùng log tổng hợp đã loại secret khi bàn giao.
 

@@ -54,6 +54,11 @@ function bool(name: string, fallback: boolean): boolean {
 }
 
 const environment = required('NODE_ENV', 'development');
+const publicAppUrl = required('PUBLIC_APP_URL', 'http://localhost:5173');
+const serverOrigin = required('SERVER_ORIGIN', 'http://localhost:4000');
+const staffAppUrl = required('STAFF_APP_URL', publicAppUrl);
+const adminAppUrl = required('ADMIN_APP_URL', publicAppUrl);
+const allowedOrigins = [...new Set([publicAppUrl, staffAppUrl, adminAppUrl, serverOrigin])];
 
 function authSecret(name: string, developmentFallback: string): string {
   const value = required(name, developmentFallback);
@@ -68,8 +73,11 @@ export const config = {
   port: num('PORT', 4000),
   trustProxyHops: nonNegativeInt('TRUST_PROXY_HOPS', 0),
   shutdownTimeoutMs: nonNegativeInt('SHUTDOWN_TIMEOUT_MS', 10_000),
-  publicAppUrl: required('PUBLIC_APP_URL', 'http://localhost:5173'),
-  serverOrigin: required('SERVER_ORIGIN', 'http://localhost:4000'),
+  publicAppUrl,
+  staffAppUrl,
+  adminAppUrl,
+  serverOrigin,
+  allowedOrigins,
   cookieDomain: process.env.COOKIE_DOMAIN || undefined,
   cookieSecure: bool('COOKIE_SECURE', false),
   logLevel: required('LOG_LEVEL', 'info'),

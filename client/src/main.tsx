@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
 import './styles/index.css';
+import { getPortalMode } from './lib/portals';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,7 +29,8 @@ createRoot(rootEl).render(
   </StrictMode>,
 );
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+const portal = getPortalMode();
+if (import.meta.env.PROD && portal !== 'staff' && portal !== 'admin' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('/sw.js');
   });

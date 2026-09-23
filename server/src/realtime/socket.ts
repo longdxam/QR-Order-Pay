@@ -31,10 +31,10 @@ export function getIO(): IOServer<Record<string, never>, ServerToClientEvents> |
 
 export function createSocketServer(httpServer: HttpServer): IOServer<Record<string, never>, ServerToClientEvents> {
   io = new IOServer(httpServer, {
-    cors: { origin: [config.publicAppUrl, config.serverOrigin], credentials: true },
+    cors: { origin: config.allowedOrigins, credentials: true },
     allowRequest: (req, callback) => {
       const origin = req.headers.origin;
-      callback(null, !origin || [config.publicAppUrl, config.serverOrigin].includes(origin));
+      callback(null, !origin || config.allowedOrigins.includes(origin));
     },
   });
   const redis = socketRedisClients();

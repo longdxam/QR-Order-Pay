@@ -30,11 +30,14 @@ for (const viewport of viewports) {
       expect(pageErrors).toEqual([]);
     });
 
-    test('login page keeps its form visible', async ({ page }) => {
+    test('login page keeps its form visible', async ({ page, baseURL }) => {
       const pageErrors: string[] = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
 
-      await page.goto('/auth/login');
+      const staffBaseUrl = process.env.E2E_STAFF_BASE_URL
+        ?? (process.env.E2E_BASE_URL ? baseURL : 'http://localhost:8081')
+        ?? 'http://localhost:8081';
+      await page.goto(new URL('/auth/login', staffBaseUrl).toString());
       await expect(page.getByRole('heading', { name: 'Đăng nhập nội bộ' })).toBeVisible();
       await expect(page.getByLabel('Email')).toBeVisible();
       await expect(page.getByLabel('Mật khẩu')).toBeVisible();
