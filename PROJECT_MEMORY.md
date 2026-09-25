@@ -83,7 +83,7 @@ Cập nhật: 23/09/2026.
 - GuestSession cũ từ trước thay đổi chưa có receiptTokenHash: rời bàn và vào một phiên mới để demo trọn luồng.
 - Phiên khi thu tiền được chốt thành snapshot `Bill` bất biến: unique theo `tableSessionId`, không có API sửa/xóa, ghi trong cùng transaction với payment và việc đóng phiên (`closedReason:'PAID'`); response payments trả thêm `billId`.
 - GET /staff/table-sessions/:id/bill đọc snapshot cho phiên đã đóng, fallback tính động cho phiên cũ chưa có Bill.
-- GET /receipts/current đã bỏ field nội bộ (`idempotencyKey`, `requestHash`, `statusHistory`, `version`, `__v`) nhưng vẫn tính từ `Order`.
+- GET /receipts/current đã bỏ field nội bộ (`idempotencyKey`, `requestHash`, `statusHistory`, `version`, `__v`) và dùng `Bill` snapshot bất biến; chỉ phiên legacy chưa có Bill mới fallback về `Order`.
 - Phiên `CLOSED` không chặn phiên mới: partial unique index `one_active_session_per_table` chỉ áp cho OPEN/CHECKOUT.
 
 ## Các file trọng tâm
@@ -115,7 +115,7 @@ Cập nhật: 23/09/2026.
 - P4B đã hoàn thành local: scheduler detector cho HTTP error/p95, preparation p95 và cancellation rate; baseline/min-sample/threshold cấu hình, alert MongoDB dedupe+cooldown, AI/fallback explanation, ADMIN ACK/CLOSE có audit. HTTP window còn là instance-local nên chưa dùng cho multi-instance trước P5.
 - Luồng container đã PASS trên volume riêng: seed → QR join → order → pha chế → checkout → payment → Bill → receipt; graceful SIGTERM exit 0 khoảng 0,5 giây và restart healthy. Chưa deploy cloud/HTTPS và chưa gọi đây là high availability.
 - E2E curl 14/14 bên dưới là lịch sử ngày 17/09. Playwright production build đã được chạy mới ngày 22/09 và đạt 9/9 ở ba viewport; xem phần P5/P6 cuối file.
-- Integration server: 29/29 PASS — 21 test trong `orderFlow.test.ts` và 8 test trong `sessionAutoOpen.test.ts`, chạy trên MongoMemoryReplSet thật.
+- Integration server mới nhất: 42/42 PASS trên MongoMemoryReplSet thật.
 - `server/vitest.config.ts` phải tách mỗi file test sang process riêng (`isolate: true`, `singleFork: false`, `maxForks: 1`): nhiều file test dùng chung một mongoose instance gây `OverwriteModelError`.
 - E2E curl trên server thật + MongoDB thật: 14/14 PASS — join bàn trống 200 `created:true` → đặt đơn 201 → thu tiền 201 kèm `billId` → gọi lại 200 cùng `billId` → quét lại QR ra phiên mới rồi đặt đơn 201; cookie cũ 401; receipt không lộ field nội bộ.
 - Browser QA: PASS — khách vào thẳng `/menu` thấy tên bàn và đặt được đơn qua UI; trang staff hiện badge "Tự mở".
@@ -146,14 +146,14 @@ Biến môi trường mới trong `.env.example`: `GUEST_AUTO_OPEN=true` (cho kh
 ## Việc còn lại và ranh giới
 
 - Playwright tự động ở 375/768/1440 đã đạt; PWA reload offline đã có smoke test. Còn quét ảnh QR/camera thật, kiểm tra trực quan thủ công và chạy ca browser hai thiết bị trên backend production-local khi Docker hoạt động.
-- Lint hiện đạt 0 lỗi/cảnh báo. Route-level lazy loading đưa entry client xuống 382,54 kB (gzip 117,26 kB); chunk lớn nhất là Dashboard 385,02 kB (gzip 102,55 kB), đều dưới ngưỡng 500 kB.
+- Lint hiện đạt 0 lỗi/cảnh báo. Route-level lazy loading giữ entry client ở 389,20 kB (gzip 118,78 kB); chunk lớn nhất là Dashboard 384,70 kB (gzip 102,48 kB), đều dưới ngưỡng 500 kB.
 - Dashboard đã có lọc ngày, CSV và in/lưu PDF; aggregation không còn cắt ở 100 đơn. Lịch sử đơn admin, voucher và upload ảnh là mở rộng sản phẩm ngoài luồng cốt lõi hiện tại.
 - Đã triển khai tự refresh access token staff ở frontend; access token vẫn chỉ giữ trong memory, refresh token ở cookie HttpOnly.
 - Không xem docs cũ hay số lượng tính năng trong README là bằng chứng đã test: ưu tiên file này và docs/test-report.md.
 - Index tableSession mới one_active_session_per_table bảo đảm chỉ một OPEN/CHECKOUT mỗi bàn. Với DB cũ có dữ liệu trùng phiên hoạt động, cần xử lý dữ liệu trước khi tạo index; không tự xóa dữ liệu.
 - Phiên bản API OpenAPI đã bổ sung staff tables và receipt endpoints. Contracts chung hiện bao phủ thêm join/current table session và request chuyển trạng thái; vẫn chưa chuẩn hóa mọi response quản trị cũ.
 - E2E thủ công 17/09/2026 đã tạo dữ liệu thật trong DB demo: bàn `B03` đã thu tiền, bàn `B04` còn 1 đơn PENDING `MCX29XD` kèm phiên mới do auto-open. Người dùng tự dọn nếu cần; không tự xóa dữ liệu.
-- Các câu hỏi §11 của issue đã chốt: Q1 mặc định `GUEST_AUTO_OPEN=true` kèm công tắc; Q2 bật idle timeout 60 phút; Q3 vẫn cho nhiều guest session song song theo thiết bị (giữ nguyên); Q4 `Bill` dùng cho `staffBill`, còn `/receipts/current` vẫn tính từ `Order` nhưng đã lọc field nội bộ; Q5 không thêm van "xác nhận đơn đầu tiên".
+- Các câu hỏi §11 của issue đã chốt: Q1 mặc định `GUEST_AUTO_OPEN=true` kèm công tắc; Q2 bật idle timeout 60 phút; Q3 vẫn cho nhiều guest session song song theo thiết bị (giữ nguyên); Q4 `Bill` là nguồn cho cả staff bill và `/receipts/current`, có fallback legacy; Q5 không thêm van "xác nhận đơn đầu tiên".
 - Các finding khác trong `audit_2026-09-16.md` §12 nằm ngoài phạm vi issue này, mới chỉ ghi nhận chứ chưa sửa.
 
 ## Nguồn đã tra cứu khi triển khai
@@ -165,7 +165,7 @@ Biến môi trường mới trong `.env.example`: `GUEST_AUTO_OPEN=true` (cho kh
 
 Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live chưa thực hiện.
 
-- Baseline P5 ngày 22/09 dùng Nginx + `server-a` + `server-b` + `worker-1`; số tải/failover bên dưới thuộc topology cũ này. Từ 23/09 production-local đã thay bằng hai pool riêng `server-guest-a/b` và `server-internal-a/b`, cùng `worker-1`, MongoDB replica set một node và Redis AOF.
+- Baseline P5 ngày 22/09 dùng Nginx + `server-a` + `server-b` + `worker-1`; số tải/failover bên dưới thuộc topology cũ này. Source production hiện dùng hai pool `server-guest-a/b`, `server-internal-a/b` và ba role `worker-scheduler/realtime/report`; stack runtime cũ cần recreate để nhận topology mới.
 - Failover local: 20/20 request qua B khi A dừng, tối đa khoảng 1.036 ms. Redis outage để read menu hoạt động, readiness `degraded`, mutation không tự bỏ limiter. Đây không phải HA cả máy/cloud.
 - Load test k6 dùng DB `maycafe_benchmark`, 200 sản phẩm. Menu fixed hai backend đạt cao nhất 90 RPS (p95 96,48 ms); 100 RPS p95 3,26 s; ramp 600–700 không đạt. Guest 20 VU/60 s có 0 lỗi nhưng write p95 4,15 s nên không đạt ngưỡng. Realtime 100/100, connect p95 324,05 ms.
 - Load test phát hiện `dropDatabase()` của benchmark seed xóa unique index và cho tạo nhiều phiên active. Seed nay import mọi model + `syncIndexes()` trước dữ liệu; `check:benchmark` xác nhận đúng một active session, không trùng idempotency key, sai tổng hay trạng thái. Không dùng kết quả trước sửa làm bằng chứng.
@@ -179,13 +179,13 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 
 ### Cập nhật cải tiến còn lại — 23/09/2026
 
-- Client dùng lazy route; entry production giảm từ khoảng 990 kB xuống 382,54 kB (gzip 117,26 kB), không còn cảnh báo chunk >500 kB.
+- Client dùng lazy route; entry production giảm từ khoảng 990 kB xuống 389,20 kB (gzip 118,78 kB), không còn cảnh báo chunk >500 kB.
 - PWA production có manifest/service worker, precache theo Vite asset manifest, reload offline đạt; API và Socket.IO không bao giờ được cache. UI báo mất mạng/kết nối lại và giỏ vẫn persist để người dùng tự thử gửi lại.
 - Dashboard hỗ trợ khoảng ngày, CSV và in/PDF. Backend dùng MongoDB `$facet` trên toàn bộ đơn PAID, nhóm theo `Asia/Ho_Chi_Minh`; integration 105 đơn khóa hồi quy giới hạn phân trang cũ.
 - Contracts chung bổ sung join/current table session và request transition. Script root build contracts trước dev/typecheck/test để checkout sạch và CI không phụ thuộc `dist` cũ.
 - Vite 8.3.0, Vitest 5.0.1, React Router 7.18.4 và UUID 14.0.2; `npm audit` 0 vulnerability. Vitest config đã đổi khỏi `poolOptions` bị loại bỏ.
 - CI có thêm audit và browser smoke production frontend. Playwright có 11 ca; production-local ba portal đạt 7 ca độc lập dữ liệu, skip 4 ca cần `E2E_TABLE_TOKEN`; offline reload đạt.
-- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server 61 unit/client 15/integration 29 PASS, build PASS, Playwright 7 PASS/4 SKIP. Chưa chạy lại benchmark k6 đầy đủ; chỉ smoke congestion/routing/worker trên topology mới.
+- Kiểm tra local mới nhất: lint PASS, typecheck PASS, server 67 unit/client 17/integration 42 PASS, build PASS, Compose config PASS, Playwright trên build mới 7 PASS/4 SKIP. Chưa chạy lại benchmark k6 đầy đủ.
 - Production-local tách Guest `8080`, Staff `8081`, Admin `8082` trên cùng Nginx. Proxy chặn route/API gọi chéo; CORS/Socket cho phép đúng ba origin và refresh-cookie Staff/Admin tách tên để đăng nhập đồng thời.
 - Traffic `8080` chỉ vào pool Guest; `8081/8082` chỉ vào pool Internal. Bốn API container có CPU/RAM limit; Internal dùng `cpu_shares=1536`, Guest `512`. Health API trả `trafficClass` để smoke routing. Nginx dùng Docker DNS `resolve` động để không giữ IP container cũ sau recreate; app-level guard chặn gọi chéo ngay cả khi bypass proxy.
 - Guest được giới hạn hai lớp: Nginx burst/connection trả 429 và shared Redis limiter theo token/phiên bàn (join 20/phút, order 12/phút, service request 6/phút mặc định). Menu public cache Redis 60 giây và invalidation bằng generation khi Admin sửa catalog.
@@ -197,3 +197,36 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Việc cần người dùng cung cấp tiếp: key AI hợp lệ nếu muốn test live; hoặc lựa chọn cloud/account/region/budget/domain nếu muốn deploy thật. Không yêu cầu lại camera/in QR cho tới khi người dùng muốn thực hiện bước đó.
 - Toàn bộ P1–P7 đã commit/push lên `main`; GitHub Actions run #1 (`35807566033`) PASS cả quality/build, integration và production frontend browser smoke.
 - Không ghi hoặc in nội dung `apikey.txt`. File này và `.cache/load` đang được Git ignore.
+
+## Cập nhật cải tiến A1 — 23/09/2026
+
+- Đã thêm `OutboxEvent` trong MongoDB và relay chạy ở worker. Relay claim bằng lease, retry exponential có giới hạn, giữ cùng `eventId` khi enqueue Redis và chỉ đánh dấu `PUBLISHED` sau khi queue nhận thành công.
+- Order create/cancel/transition, payment, table-session open/reopen/transition/idle-close và service-request create/resolve nay ghi business state, audit và realtime outbox trong cùng transaction. Controller không còn tự phát notification sau commit cho các luồng này.
+- Payment/đóng phiên phát event tới room khách rồi consumer mới ngắt socket; khách vẫn nhận `payment.confirmed` trước khi mất kết nối. At-least-once được chấp nhận, nên event có thể trùng khi worker dừng đúng khoảng enqueue/mark.
+- `npm run dev` nay chạy thêm worker. API `TRAFFIC_CLASS=unified` có relay cùng process để dev/test vẫn hoạt động; khi Redis không sẵn sàng nhưng Socket.IO local tồn tại, relay phát trực tiếp từ bản ghi outbox.
+- Config mới: `OUTBOX_POLL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_LEASE_MS`, `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_RETRY_BASE_MS`, `OUTBOX_RETRY_MAX_MS`.
+- Kiểm tra local sau thay đổi: lint PASS, typecheck PASS, server unit 61/61, client 15/15, integration 30/30, production build PASS. Integration có ca ép rollback chứng minh TableSession/AuditLog/OutboxEvent cùng rollback và ca replay chứng minh không sinh thêm event.
+- Ghi chú lịch sử này đã được thay thế bởi đợt hoàn tất A1–D1 bên dưới.
+
+## Hoàn tất kế hoạch A1–A3, B1–B4, C1–C7, D1 — 23/09/2026
+
+- Outbox/audit đã bao phủ mutation catalog và availability; Admin operations xem/replay outbox `FAILED` và Redis dead-letter có audit.
+- Production tách `worker-scheduler`, `worker-realtime`, `worker-report`; queue dùng atomic claim + owner lease/renew/ACK, reclaim, backoff, dead-letter/replay; scheduler có leader lease, worker heartbeat/progress và telemetry tuổi queue/Redis memory. Redis drill đạt isolation report/realtime, foreign ACK, reclaim và replay.
+- Realtime event có envelope ID/schema/entity/version/time; client dedupe bounded, bỏ version cũ và refetch khi reconnect.
+- Order dùng quote ký HMAC và một pricing service chung; receipt dùng Bill snapshot bất biến với fallback legacy.
+- Module boundary lint chặn controller import model/UoW. Production tắt auto-index; migration runner build có lock/checksum/preflight và được Compose gate trước API/worker.
+- Đã thêm KDS SLA, staff availability, Admin bill history/reprint, cancel approval, chuyển bàn, cash shift reconciliation, AI evidence + final configuration validation cùng API/UI/test.
+- MongoDB 7 drill: cả 3 migration apply rồi skip idempotent; backup/restore 4 business document và migration state, 0 Bill trùng phiên, 0 Payment mồ côi, đủ index bắt buộc. Biên bản ở `docs/restore-drill-2026-09-23.md`.
+- Quality gate cuối: lint/typecheck/build/audit/Compose PASS; server 67/67, client 17/17, integration 42/42. E2E trên production frontend mới đạt 7 PASS/4 SKIP; bốn ca cần token bàn không được tính PASS.
+
+## Sửa lỗi S1–S4 theo `claude_de_xuat.md` — 24/09/2026
+
+- Kế hoạch mới nằm ở `claude_de_xuat.md`; người dùng đã loại N1 (tách hóa đơn theo khách) và N2 (VietQR).
+- S1: `GET /staff/orders` chỉ trả đơn PENDING..READY của phiên OPEN/CHECKOUT (`orderService.listOrdersForStaff`); trước đó trả mọi đơn SERVED từ trước tới nay.
+- S2: đặt món và thanh toán gặp request cùng Idempotency-Key vượt qua bước kiểm tra trước sẽ trả replay (đơn: bắt 11000 trên `idempotencyKey`; payment: kiểm lại key khi transaction lỗi). Trùng mã đơn thì sinh mã mới. Giỏ hàng chỉ đổi key khi server trả `IDEMPOTENCY_CONFLICT`.
+- S3: DTO `guestOrderSchema`/`staffOrderSchema` trong contracts, serializer `server/src/services/orderDto.ts`; API đơn không còn trả `idempotencyKey`, `requestHash`, `__v`; khách không thấy ID nhân viên trong `statusHistory`.
+- S4: Nginx bật gzip, header bảo mật và CSP enforce qua `docker/nginx/maycafe-security-headers.inc` (chỉ cho location SPA); `index.html`/`sw.js` no-cache. `img-src` cho mọi `https:` vì ảnh món là URL admin nhập.
+- Kiểm chứng: lint/typecheck/build PASS; server 67/67, client 19/19, integration 46/46; E2E 7 PASS/4 SKIP; duyệt ba portal 0 vi phạm CSP.
+- Production-local đã dựng lại từ source hiện tại ngày 24/09/2026 theo topology mới (API guest/internal A/B, `worker-scheduler/realtime/report`, migrate); container `worker` cũ đã gỡ. Migration 001–003 áp dụng rồi skip khi chạy lại; số document nghiệp vụ không đổi (101 đơn, 43 payment, 2 bill). Backup trước nâng cấp: `.cache/backup/maycafe-20260924-002643.archive.gz` (SHA-256 `35958d84…31fc6`).
+- JWT secret của production-local nằm trong `.env` ở thư mục gốc (bị Git ignore, tạo ngày 24/09/2026 từ giá trị stack đang chạy). `docker compose -f compose.production.yaml up -d` tự đọc file này; không xóa hay đổi giá trị nếu không muốn mọi phiên staff/admin hết hiệu lực. Không in nội dung file.
+- Lỗi phát hiện khi chạy stack mới: trang Admin → Hóa đơn gửi bộ lọc rỗng và bị 422. Đã sửa `billHistoryQuerySchema` coi chuỗi rỗng là không lọc; unit test `billHistoryQuery.test.ts`. Server unit nay 69/69.

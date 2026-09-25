@@ -2,12 +2,13 @@
 
 ## Production build local qua reverse proxy
 
-Cấu hình `compose.production.yaml` chạy tám service:
+Cấu hình `compose.production.yaml` chạy các service dài hạn và một migration job:
 
 - `web`: Nginx phục vụ cùng một React production build qua ba portal tách biệt: Guest `8080`, Staff `8081`, Admin `8082`; mỗi cổng chỉ proxy nhóm API đúng vai trò.
 - `server-guest-a`, `server-guest-b`: pool Node.js 24 LTS chỉ nhận traffic từ portal Guest qua Nginx.
 - `server-internal-a`, `server-internal-b`: pool Node.js 24 LTS riêng cho Staff/Admin, có `cpu_shares` cao gấp ba pool Guest để được ưu tiên khi CPU tranh chấp.
-- `worker`: cùng image Node.js nhưng không phục vụ HTTP; xử lý hàng đợi báo cáo/CSV, thông báo realtime, idle-session sweeper và anomaly scheduler.
+- `worker-scheduler`, `worker-realtime`, `worker-report`: cùng image Node.js nhưng tách scheduler/outbox, thông báo realtime và báo cáo/CSV thành ba process có heartbeat riêng.
+- `migrate`: one-shot job chạy migration đã build, phải hoàn tất trước API/worker.
 - `mongo`: MongoDB 7 replica set một node; không publish cổng ra host trong cấu hình này.
 - `redis`: Redis 7 dùng AOF; làm Socket.IO adapter/emitter, hàng đợi worker có retry/dead-letter, cache menu, rate-limit store và kho aggregate HTTP theo phút; không publish cổng ra host.
 
@@ -50,9 +51,9 @@ Nginx trả `404` nếu gọi Staff/Admin API từ cổng Guest hoặc gọi ch�
 
 Traffic Guest có hai lớp chống spam: Nginx giới hạn burst/connection theo guest cookie (fallback theo IP trước khi có cookie), còn Express + Redis giới hạn join theo token bàn, gọi món theo `tableSessionId`, và yêu cầu phục vụ theo bàn. Mặc định: join `20/phút`, gọi món `12/phút`, yêu cầu phục vụ `6/phút`; tất cả có thể chỉnh bằng biến `RATE_LIMIT_GUEST_*`.
 
-Menu/sản phẩm công khai được cache Redis mặc định 60 giây. Mọi thay đổi product/category/topping từ Admin tăng cache generation ngay, nên request kế tiếp không đọc catalog cũ. Nếu Redis lỗi, menu vẫn đọc trực tiếp MongoDB; mutation được bảo vệ không tự fail-open.
+Menu/sản phẩm công khai được cache Redis mặc định 60 giây. Mọi thay đổi product/category/topping từ Admin/Staff ghi outbox; realtime consumer tăng cache generation, còn TTL 60 giây chặn stale vô hạn nếu worker gián đoạn. Nếu Redis lỗi, menu vẫn đọc trực tiếp MongoDB; mutation được bảo vệ không tự fail-open.
 
-Dashboard Admin dùng hàng đợi worker qua `POST /api/v1/admin/reports/overview/jobs` và poll `GET /api/v1/admin/reports/jobs/:id`. Cả JSON và CSV đều được tạo ngoài API process, kết quả giữ mặc định 15 phút. Thông báo realtime cũng vào queue ưu tiên cao hơn report; worker phát qua Socket.IO Redis emitter. Job lỗi được retry rồi chuyển dead-letter.
+Dashboard Admin dùng hàng đợi worker qua `POST /api/v1/admin/reports/overview/jobs` và poll `GET /api/v1/admin/reports/jobs/:id`. Cả JSON và CSV đều được tạo ngoài API process, kết quả giữ mặc định 15 phút sau khi terminal. Thông báo realtime dùng worker riêng qua Socket.IO Redis emitter. Job có owner lease, retry/backoff, reclaim khi worker chết và dead-letter; Admin operations xem/replay job/outbox lỗi có audit.
 
 Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu demo, thực hiện có chủ ý sau khi kiểm tra đúng database; seed sẽ thay dữ liệu hiện có.
 
@@ -67,7 +68,7 @@ Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu d
 
 - Prometheus scrape `GET /metrics` trực tiếp từ bốn service `server-guest-*`/`server-internal-*` trong private network. Nginx không proxy endpoint này.
 - Admin xem số liệu vận hành tại `/admin/operations`; API `/api/v1/admin/operations/summary` bắt buộc vai trò `ADMIN`.
-- Có thể đặt `INSTANCE_ID`; Compose gán `server-guest-a/b`, `server-internal-a/b`, `worker-1` để log/metric phân biệt rõ. Health API trả thêm `trafficClass=guest|internal` để kiểm tra routing.
+- Có thể đặt `INSTANCE_ID`; Compose gán `server-guest-a/b`, `server-internal-a/b`, `worker-scheduler-1`, `worker-realtime-1`, `worker-report-1` để log/metric phân biệt rõ. Worker healthcheck đọc heartbeat TTL trong Redis. Health API trả thêm `trafficClass=guest|internal` để kiểm tra routing.
 - Quy tắc tổng hợp, định nghĩa metric và cách tránh cộng trùng số liệu database nằm tại [observability.md](observability.md).
 
 ## HTTPS/cloud
@@ -85,7 +86,7 @@ Repository hiện mới có cấu hình production local. Chưa có bằng chứ
 ## Kết quả production-local cập nhật 23/09/2026
 
 - Image server Node.js 24 LTS và web build thành công trên Docker Engine 29.7.2.
-- MongoDB, Redis, bốn backend và web healthy; worker chạy riêng một bản. Nginx publish `8080-8082`, các dependency/backend chỉ ở mạng nội bộ Compose.
+- Lượt production-local trước đây đã xác nhận MongoDB, Redis, bốn backend, web và worker hợp nhất. Source hiện tách ba worker và migration gate; Compose config đã PASS, Redis queue/migration được drill cô lập, nhưng toàn stack mới chưa được recreate để smoke lại. Nginx publish `8080-8082`, các dependency/backend chỉ ở mạng nội bộ Compose.
 - Frontend, SPA deep-link, REST proxy, readiness và Socket.IO WebSocket đã hoạt động qua cùng origin.
 - Luồng seed → QR → order → KDS states → checkout → payment → Bill → receipt đã PASS trên volume riêng.
 - SIGTERM đóng backend sạch với exit code 0 trong khoảng 0,5 giây và restart trở lại healthy.
@@ -103,7 +104,7 @@ Sau deploy phải bật HTTPS, `COOKIE_SECURE=true`, đặt ba URL portal và `S
 
 ## Backup, restore và rollback
 
-- Trước thay đổi schema/index, tạo backup bằng công cụ MongoDB của môi trường triển khai.
-- Thử restore trên database riêng; không kiểm tra restore bằng cách ghi đè database demo/production.
+- Trước thay đổi schema/index, tạo backup bằng `scripts/db/backup.ps1`, giữ manifest SHA-256 rồi để migration gate chạy trước API/worker.
+- Thử restore bằng `scripts/db/restore-test.ps1` trên database kết thúc `_restore_test`; không ghi đè database demo/production. Drill MongoDB 7 ngày 23/09/2026 đã PASS; xem `backup-restore-runbook.md`.
 - Image triển khai cần được gắn tag theo commit. Rollback bằng cách chạy lại tag trước đó; thay đổi dữ liệu không tương thích phải có kế hoạch migration ngược riêng.
 - Replica set một node chỉ cung cấp transaction, không cung cấp high availability khi máy chủ hỏng.

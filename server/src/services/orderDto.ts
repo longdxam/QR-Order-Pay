@@ -1,0 +1,93 @@
+import {
+  guestOrderSchema,
+  staffOrderSchema,
+  type GuestOrder,
+  type StaffOrder,
+} from '@may-cafe/contracts';
+import type { OrderDoc } from '../models/Order.js';
+
+type OrderSource = Pick<
+  OrderDoc,
+  | '_id'
+  | 'code'
+  | 'tableSessionId'
+  | 'participantId'
+  | 'tableId'
+  | 'items'
+  | 'total'
+  | 'status'
+  | 'paymentStatus'
+  | 'cancelReason'
+  | 'statusHistory'
+  | 'version'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+const iso = (value: Date | string | null | undefined): string =>
+  value instanceof Date ? value.toISOString() : String(value ?? '');
+const idOrNull = (value: unknown): string | null =>
+  value === null || value === undefined ? null : String(value);
+
+function baseOrder(order: OrderSource) {
+  return {
+    _id: order._id.toString(),
+    code: order.code,
+    tableSessionId: order.tableSessionId.toString(),
+    participantId: order.participantId,
+    items: order.items.map((item) => ({
+      productId: item.productId.toString(),
+      variantId: idOrNull(item.variantId),
+      sizeName: item.sizeName ?? null,
+      sugarLevel: item.sugarLevel,
+      iceLevel: item.iceLevel,
+      toppingIds: item.toppingIds.map((id) => id.toString()),
+      toppingNamesSnapshot: [...item.toppingNamesSnapshot],
+      note: item.note ?? '',
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+      nameSnapshot: item.nameSnapshot,
+      variantNameSnapshot: item.variantNameSnapshot ?? '',
+    })),
+    total: order.total,
+    status: order.status,
+    paymentStatus: order.paymentStatus ?? 'UNPAID',
+    cancelReason: order.cancelReason ?? '',
+    createdAt: iso(order.createdAt),
+    updatedAt: iso(order.updatedAt),
+  };
+}
+
+/** Đơn trả cho khách: không có khóa idempotency, hash request hay ID nhân viên đã thao tác. */
+export function toGuestOrder(order: OrderSource): GuestOrder {
+  return guestOrderSchema.parse({
+    ...baseOrder(order),
+    statusHistory: order.statusHistory.map((entry) => ({
+      from: entry.from ?? null,
+      to: entry.to,
+      at: iso(entry.at),
+      reason: entry.reason ?? '',
+    })),
+  });
+}
+
+export function toStaffOrder(
+  order: OrderSource,
+  table?: { name: string; code: string } | null,
+): StaffOrder {
+  return staffOrderSchema.parse({
+    ...baseOrder(order),
+    tableId: order.tableId.toString(),
+    version: order.version ?? 0,
+    ...(table ? { tableName: table.name, tableCode: table.code } : {}),
+    statusHistory: order.statusHistory.map((entry) => ({
+      from: entry.from ?? null,
+      to: entry.to,
+      at: iso(entry.at),
+      by: idOrNull(entry.by),
+      byParticipantId: entry.byParticipantId ?? null,
+      reason: entry.reason ?? '',
+    })),
+  });
+}

@@ -1,7 +1,7 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
+import type { CurrentTableSessionResponse, OrderQuoteResponse } from '@may-cafe/contracts';
 import { getAxiosError } from '../../lib/api';
 import { Trash2, ShoppingBag } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
@@ -22,6 +22,7 @@ export function CartPage(): JSX.Element {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const submission = useRef<{ payload: string; key: string } | null>(null);
+  const [quote, setQuote] = useState<OrderQuoteResponse | null>(null);
   const sessionQuery = useQuery({
     queryKey: ['guest-session'],
     queryFn: async () =>
@@ -29,21 +30,46 @@ export function CartPage(): JSX.Element {
   });
 
   const { subtotal } = cartTotals(items);
+  const orderPayload = useMemo(
+    () => ({
+      items: items.map((it) => ({
+        productId: it.productId,
+        variantId: it.variantId,
+        sugarLevel: it.sugarLevel,
+        iceLevel: it.iceLevel,
+        toppingIds: it.toppingIds,
+        note: it.note,
+        quantity: it.quantity,
+      })),
+    }),
+    [items],
+  );
+  const cartSignature = JSON.stringify(orderPayload);
+  useEffect(() => {
+    setQuote(null);
+    submission.current = null;
+  }, [cartSignature]);
+
+  const quoteMutation = useMutation({
+    mutationFn: async () =>
+      unwrap<OrderQuoteResponse>(await api.post('/orders/quote', orderPayload)),
+    onSuccess: (value) => setQuote(value),
+    onError: (error) =>
+      toast({
+        title: 'Không thể báo giá giỏ hàng',
+        description: getErrorMessage(error),
+        tone: 'danger',
+      }),
+  });
 
   const placeMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
-        items: items.map((it) => ({
-          productId: it.productId,
-          variantId: it.variantId,
-          sugarLevel: it.sugarLevel,
-          iceLevel: it.iceLevel,
-          toppingIds: it.toppingIds,
-          note: it.note,
-          quantity: it.quantity,
-        })),
-      };
-      const signature = JSON.stringify({ session: useCart.getState().tableSessionId, payload });
+      if (!quote) throw new Error('QUOTE_REQUIRED');
+      const payload = { ...orderPayload, quoteToken: quote.quoteToken };
+      const signature = JSON.stringify({
+        session: useCart.getState().tableSessionId,
+        orderPayload,
+      });
       if (submission.current?.payload !== signature)
         submission.current = { payload: signature, key: generateIdempotencyKey() };
       return unwrap(
@@ -64,8 +90,12 @@ export function CartPage(): JSX.Element {
       navigate('/orders');
     },
     onError: (err) => {
-      const status = getAxiosError(err)?.response?.status;
-      if (status && status < 500) submission.current = null;
+      const errorData = getAxiosError(err)?.response?.data as
+        { error?: { code?: string } } | undefined;
+      // Giữ nguyên key cho mọi lỗi khác: gửi lại cùng key chỉ nhận về đơn cũ nếu đơn đã được
+      // tạo, nên không thể sinh đơn trùng. Key chỉ phải đổi khi server báo đã dùng cho nội dung khác.
+      if (errorData?.error?.code === 'IDEMPOTENCY_CONFLICT') submission.current = null;
+      if (errorData?.error?.code === 'QUOTE_CHANGED') setQuote(null);
       toast({ title: 'Không gửi được đơn', description: getErrorMessage(err), tone: 'danger' });
     },
   });
@@ -153,8 +183,17 @@ export function CartPage(): JSX.Element {
         </div>
         <div className="border-t border-foreground/10 pt-2 flex justify-between font-display text-base">
           <span>Tổng</span>
-          <span>{vnd(subtotal)}</span>
+          <span>{vnd(quote?.total ?? subtotal)}</span>
         </div>
+        {quote ? (
+          <div
+            className={`rounded-xl p-3 text-sm ${quote.total !== subtotal ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}
+          >
+            {quote.total !== subtotal
+              ? `Giá mới từ hệ thống là ${vnd(quote.total)} (giỏ cũ ${vnd(subtotal)}). Hãy kiểm tra và xác nhận lại.`
+              : `Đã kiểm tra giá và tình trạng món. Báo giá có hiệu lực đến ${new Date(quote.expiresAt).toLocaleTimeString('vi-VN')}.`}
+          </div>
+        ) : null}
         {sessionQuery.data?.active && sessionQuery.data.status === 'CHECKOUT' ? (
           <p className="text-sm text-muted-foreground">
             Bàn đang thanh toán, vui lòng nhờ nhân viên mở lại để gọi thêm món.
@@ -162,14 +201,21 @@ export function CartPage(): JSX.Element {
         ) : null}
         <Button
           className="w-full"
-          onClick={() => placeMutation.mutate()}
+          onClick={() => (quote ? placeMutation.mutate() : quoteMutation.mutate())}
           disabled={
             placeMutation.isPending ||
+            quoteMutation.isPending ||
             !sessionQuery.data?.active ||
             sessionQuery.data.status !== 'OPEN'
           }
         >
-          {placeMutation.isPending ? 'Đang gửi đơn...' : 'Gửi đơn tới bếp'}
+          {placeMutation.isPending
+            ? 'Đang gửi đơn...'
+            : quoteMutation.isPending
+              ? 'Đang kiểm tra giá...'
+              : quote
+                ? 'Xác nhận gửi đơn tới bếp'
+                : 'Kiểm tra giá và tình trạng món'}
         </Button>
       </Card>
     </div>

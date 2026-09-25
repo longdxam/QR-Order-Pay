@@ -10,6 +10,8 @@ import * as admin from '../controllers/adminController.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { loadGuest, loadReceiptGuest, requireGuest, guestCsrfGuard } from '../middlewares/guest.js';
 import { currentReceipt } from '../controllers/receiptController.js';
+import * as cancelRequest from '../controllers/cancelRequestController.js';
+import * as cashShift from '../controllers/cashShiftController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -55,8 +57,12 @@ const rateLimitOrPassthrough = (
 };
 
 const authLimiter = rateLimitOrPassthrough(config.rateLimits.authPerMinute, 'auth');
-const guestMutationLimiter = rateLimitOrPassthrough(config.rateLimits.guestMutationPerMinute, 'guest-mutation');
-const clientIpKey = (req: Parameters<RequestHandler>[0]): string => `ip:${sha256(req.ip ?? 'unknown')}`;
+const guestMutationLimiter = rateLimitOrPassthrough(
+  config.rateLimits.guestMutationPerMinute,
+  'guest-mutation',
+);
+const clientIpKey = (req: Parameters<RequestHandler>[0]): string =>
+  `ip:${sha256(req.ip ?? 'unknown')}`;
 const tableKey = (req: Parameters<RequestHandler>[0]): string =>
   req.guest?.tableSessionId ? `table:${req.guest.tableSessionId}` : clientIpKey(req);
 const joinKey = (req: Parameters<RequestHandler>[0]): string => {
@@ -65,9 +71,21 @@ const joinKey = (req: Parameters<RequestHandler>[0]): string => {
     ? `table-token:${sha256(tableToken)}`
     : clientIpKey(req);
 };
-const guestJoinLimiter = rateLimitOrPassthrough(config.rateLimits.guestJoinPerMinute, 'guest-join', joinKey);
-const guestOrderLimiter = rateLimitOrPassthrough(config.rateLimits.guestOrderPerMinute, 'guest-order', tableKey);
-const guestServiceLimiter = rateLimitOrPassthrough(config.rateLimits.guestServicePerMinute, 'guest-service', tableKey);
+const guestJoinLimiter = rateLimitOrPassthrough(
+  config.rateLimits.guestJoinPerMinute,
+  'guest-join',
+  joinKey,
+);
+const guestOrderLimiter = rateLimitOrPassthrough(
+  config.rateLimits.guestOrderPerMinute,
+  'guest-order',
+  tableKey,
+);
+const guestServiceLimiter = rateLimitOrPassthrough(
+  config.rateLimits.guestServicePerMinute,
+  'guest-service',
+  tableKey,
+);
 const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
 
 // auth
@@ -81,51 +99,255 @@ apiRouter.get('/auth/me', requireAuth, auth.me);
 apiRouter.get('/categories', menu.listMenu);
 apiRouter.get('/products', menu.listMenu);
 apiRouter.get('/products/featured', menu.listFeaturedMenu);
-apiRouter.post('/menu/search', rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'menu-search'), menu.search);
+apiRouter.post(
+  '/menu/search',
+  rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'menu-search'),
+  menu.search,
+);
 
 // table session public + guest
-apiRouter.post('/table-sessions/join', loadGuest, guestCsrfGuard, guestJoinLimiter, tableSession.join);
+apiRouter.post(
+  '/table-sessions/join',
+  loadGuest,
+  guestCsrfGuard,
+  guestJoinLimiter,
+  tableSession.join,
+);
 apiRouter.get('/table-sessions/current', loadGuest, tableSession.current);
 apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.leave);
 
 // guest orders
+apiRouter.post(
+  '/orders/quote',
+  loadGuest,
+  guestCsrfGuard,
+  guestOrderLimiter,
+  requireGuest,
+  order.quote,
+);
 apiRouter.post('/orders', loadGuest, guestCsrfGuard, guestOrderLimiter, requireGuest, order.place);
 apiRouter.get('/orders/mine', loadGuest, requireGuest, order.listMine);
 apiRouter.get('/orders/:id', loadGuest, requireGuest, order.detail);
-apiRouter.post('/orders/:id/cancel', loadGuest, guestCsrfGuard, guestMutationLimiter, requireGuest, order.cancel);
-apiRouter.post('/orders/:id/review', loadGuest, guestCsrfGuard, guestMutationLimiter, requireGuest, order.review);
+apiRouter.post(
+  '/orders/:id/cancel',
+  loadGuest,
+  guestCsrfGuard,
+  guestMutationLimiter,
+  requireGuest,
+  order.cancel,
+);
+apiRouter.post(
+  '/orders/:id/review',
+  loadGuest,
+  guestCsrfGuard,
+  guestMutationLimiter,
+  requireGuest,
+  order.review,
+);
+apiRouter.post(
+  '/orders/:id/cancel-requests',
+  loadGuest,
+  guestCsrfGuard,
+  guestMutationLimiter,
+  requireGuest,
+  cancelRequest.create,
+);
 apiRouter.get('/receipts/current', loadReceiptGuest, currentReceipt);
-apiRouter.post('/receipts/orders/:id/review', guestCsrfGuard, guestMutationLimiter, loadReceiptGuest, order.review);
+apiRouter.post(
+  '/receipts/orders/:id/review',
+  guestCsrfGuard,
+  guestMutationLimiter,
+  loadReceiptGuest,
+  order.review,
+);
 
 // guest service requests
-apiRouter.post('/service-requests', loadGuest, guestCsrfGuard, guestServiceLimiter, requireGuest, serviceRequest.create);
+apiRouter.post(
+  '/service-requests',
+  loadGuest,
+  guestCsrfGuard,
+  guestServiceLimiter,
+  requireGuest,
+  serviceRequest.create,
+);
 
 // AI
-apiRouter.post('/ai/recommendations', aiLimiter, loadGuest, guestCsrfGuard, requireGuest, ai.recommend);
+apiRouter.post(
+  '/ai/recommendations',
+  aiLimiter,
+  loadGuest,
+  guestCsrfGuard,
+  requireGuest,
+  ai.recommend,
+);
+apiRouter.post(
+  '/ai/recommendations/validate',
+  aiLimiter,
+  loadGuest,
+  guestCsrfGuard,
+  requireGuest,
+  ai.validateConfiguration,
+);
 
 // staff/admin
-apiRouter.get('/staff/tables', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffTables);
+apiRouter.get(
+  '/staff/tables',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffTables,
+);
 apiRouter.get('/staff/orders', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffList);
 apiRouter.get('/staff/orders/:id', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffGetOne);
-apiRouter.patch('/staff/orders/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffTransition);
-apiRouter.post('/staff/orders/:id/confirm', requireAuth, requireRole('STAFF', 'ADMIN'), order.staffConfirmReceipt);
+apiRouter.patch(
+  '/staff/orders/:id/status',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  order.staffTransition,
+);
+apiRouter.post(
+  '/staff/orders/:id/confirm',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  order.staffConfirmReceipt,
+);
 
-apiRouter.get('/staff/table-sessions', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffList);
-apiRouter.post('/staff/tables/:tableId/sessions', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffOpen);
-apiRouter.patch('/staff/table-sessions/:id/status', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffTransition);
-apiRouter.get('/staff/table-sessions/:id/bill', requireAuth, requireRole('STAFF', 'ADMIN'), tableSession.staffBill);
+apiRouter.get(
+  '/staff/table-sessions',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffList,
+);
+apiRouter.post(
+  '/staff/tables/:tableId/sessions',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffOpen,
+);
+apiRouter.patch(
+  '/staff/table-sessions/:id/status',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffTransition,
+);
+apiRouter.post(
+  '/staff/table-sessions/:id/transfer',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffTransfer,
+);
+apiRouter.get(
+  '/staff/table-sessions/:id/bill',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableSession.staffBill,
+);
 
-apiRouter.post('/staff/table-sessions/:id/payments', requireAuth, requireRole('STAFF', 'ADMIN'), payment.confirm);
-apiRouter.get('/staff/service-requests', requireAuth, requireRole('STAFF', 'ADMIN'), serviceRequest.list);
-apiRouter.post('/staff/service-requests/:id/resolve', requireAuth, requireRole('STAFF', 'ADMIN'), serviceRequest.resolveOne);
+apiRouter.post(
+  '/staff/table-sessions/:id/payments',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.confirm,
+);
+apiRouter.get(
+  '/staff/service-requests',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  serviceRequest.list,
+);
+apiRouter.post(
+  '/staff/service-requests/:id/resolve',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  serviceRequest.resolveOne,
+);
+apiRouter.get(
+  '/staff/cancel-requests',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  cancelRequest.list,
+);
+apiRouter.patch(
+  '/staff/cancel-requests/:id',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  cancelRequest.decide,
+);
+apiRouter.get(
+  '/staff/cash-shifts/current',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  cashShift.current,
+);
+apiRouter.post('/staff/cash-shifts', requireAuth, requireRole('STAFF', 'ADMIN'), cashShift.open);
+apiRouter.post(
+  '/staff/cash-shifts/:id/close',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  cashShift.close,
+);
+apiRouter.get(
+  '/staff/catalog/availability',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  admin.staffAvailabilityCatalog,
+);
+apiRouter.patch(
+  '/staff/catalog/products/:id/availability',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  admin.setProductAvailability,
+);
+apiRouter.patch(
+  '/staff/catalog/products/:id/variants/:variantId/availability',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  admin.setVariantAvailability,
+);
+apiRouter.patch(
+  '/staff/catalog/toppings/:id/availability',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  admin.setToppingAvailability,
+);
 
 // admin
 apiRouter.get('/admin/reports/overview', requireAuth, requireRole('ADMIN'), admin.reportsOverview);
-apiRouter.post('/admin/reports/overview/jobs', requireAuth, requireRole('ADMIN'), admin.createOverviewJob);
+apiRouter.post(
+  '/admin/reports/overview/jobs',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.createOverviewJob,
+);
 apiRouter.get('/admin/reports/jobs/:id', requireAuth, requireRole('ADMIN'), admin.reportJobStatus);
+apiRouter.get('/admin/bills', requireAuth, requireRole('ADMIN'), admin.bills);
+apiRouter.get('/admin/bills/:id', requireAuth, requireRole('ADMIN'), admin.billDetail);
+apiRouter.get('/admin/cash-shifts', requireAuth, requireRole('ADMIN'), cashShift.history);
 apiRouter.get('/admin/operations/summary', requireAuth, requireRole('ADMIN'), admin.operations);
+apiRouter.get(
+  '/admin/operations/failures',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.operationFailures,
+);
+apiRouter.post(
+  '/admin/operations/outbox/:id/replay',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.replayOutbox,
+);
+apiRouter.post(
+  '/admin/operations/jobs/:id/replay',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.replayQueueJob,
+);
 apiRouter.get('/admin/anomalies', requireAuth, requireRole('ADMIN'), admin.anomalies);
-apiRouter.patch('/admin/anomalies/:id/status', requireAuth, requireRole('ADMIN'), admin.setAnomalyStatus);
+apiRouter.patch(
+  '/admin/anomalies/:id/status',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.setAnomalyStatus,
+);
 apiRouter.get('/admin/products', requireAuth, requireRole('ADMIN'), admin.listProducts);
 apiRouter.post('/admin/products', requireAuth, requireRole('ADMIN'), admin.createProduct);
 apiRouter.patch('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin.updateProduct);
@@ -140,7 +362,12 @@ apiRouter.post('/admin/toppings', requireAuth, requireRole('ADMIN'), admin.creat
 apiRouter.patch('/admin/toppings/:id', requireAuth, requireRole('ADMIN'), admin.updateTopping);
 
 apiRouter.get('/admin/tables', requireAuth, requireRole('ADMIN'), admin.listTables);
-apiRouter.post('/admin/tables/:id/rotate-token', requireAuth, requireRole('ADMIN'), admin.rotateTableToken);
+apiRouter.post(
+  '/admin/tables/:id/rotate-token',
+  requireAuth,
+  requireRole('ADMIN'),
+  admin.rotateTableToken,
+);
 apiRouter.get('/admin/users', requireAuth, requireRole('ADMIN'), admin.listUsers);
 apiRouter.post('/admin/users', requireAuth, requireRole('ADMIN'), admin.createStaff);
 apiRouter.patch('/admin/users/:id', requireAuth, requireRole('ADMIN'), admin.updateUser);
@@ -148,5 +375,13 @@ apiRouter.get('/admin/reviews', requireAuth, requireRole('ADMIN'), admin.listRev
 
 // health
 apiRouter.get('/health', (_req, res) => {
-  res.json({ success: true, data: { ok: true, uptime: process.uptime(), instanceId: config.instanceId, trafficClass: config.trafficClass } });
+  res.json({
+    success: true,
+    data: {
+      ok: true,
+      uptime: process.uptime(),
+      instanceId: config.instanceId,
+      trafficClass: config.trafficClass,
+    },
+  });
 });

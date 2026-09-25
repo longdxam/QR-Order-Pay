@@ -11,8 +11,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "npm run build:contracts && npm-run-all -p dev:server dev:client",
+    "dev": "npm run build:contracts && npm-run-all -p dev:server dev:worker dev:client",
     "dev:server": "npm -w @may-cafe/server run dev",
+    "dev:worker": "npm -w @may-cafe/server run dev:worker",
     "dev:client": "npm -w @may-cafe/client run dev",
     "build:contracts": "npm -w @may-cafe/contracts run build",
     "build": "npm run build:contracts && npm -w @may-cafe/server run build && npm -w @may-cafe/client run build",
@@ -30,9 +31,12 @@
     "test:client:run": "npm -w @may-cafe/client test",
     "test:integration": "npm run build:contracts && npm run test:integration:run",
     "test:integration:run": "npm -w @may-cafe/server run test:integration",
+    "test:queue-drill": "npm -w @may-cafe/server run test:queue-drill",
     "test:e2e": "npm -w @may-cafe/server run test:e2e",
     "seed": "npm -w @may-cafe/server run seed",
     "db:wait": "npm -w @may-cafe/server run db:wait",
+    "db:migrate": "npm -w @may-cafe/server run db:migrate",
+    "db:migrate:prod": "npm -w @may-cafe/server run db:migrate:prod",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\""

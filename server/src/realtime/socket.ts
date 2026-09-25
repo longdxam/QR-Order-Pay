@@ -5,7 +5,7 @@ import { logger } from '../infrastructure/logger.js';
 import { sha256 } from '../utils/crypto.js';
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
-import type { Role } from '@may-cafe/contracts';
+import type { RealtimeEventEnvelope, Role } from '@may-cafe/contracts';
 import { verifyAccessToken } from '../utils/crypto.js';
 import { GUEST_COOKIE } from '../middlewares/guest.js';
 import { UserModel } from '../models/User.js';
@@ -14,13 +14,15 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { socketRedisClients } from '../infrastructure/redis.js';
 
 interface ServerToClientEvents {
-  'order.created': (payload: unknown) => void;
-  'order.statusChanged': (payload: unknown) => void;
-  'menu.availabilityChanged': (payload: unknown) => void;
-  'serviceRequest.created': (payload: unknown) => void;
-  'serviceRequest.resolved': (payload: unknown) => void;
-  'payment.confirmed': (payload: unknown) => void;
-  'tableSession.statusChanged': (payload: unknown) => void;
+  'order.created': (payload: RealtimeEventEnvelope) => void;
+  'order.statusChanged': (payload: RealtimeEventEnvelope) => void;
+  'menu.availabilityChanged': (payload: RealtimeEventEnvelope) => void;
+  'serviceRequest.created': (payload: RealtimeEventEnvelope) => void;
+  'serviceRequest.resolved': (payload: RealtimeEventEnvelope) => void;
+  'payment.confirmed': (payload: RealtimeEventEnvelope) => void;
+  'tableSession.statusChanged': (payload: RealtimeEventEnvelope) => void;
+  'cancelRequest.created': (payload: RealtimeEventEnvelope) => void;
+  'cancelRequest.resolved': (payload: RealtimeEventEnvelope) => void;
 }
 
 let io: IOServer<Record<string, never>, ServerToClientEvents> | null = null;
@@ -29,7 +31,9 @@ export function getIO(): IOServer<Record<string, never>, ServerToClientEvents> |
   return io;
 }
 
-export function createSocketServer(httpServer: HttpServer): IOServer<Record<string, never>, ServerToClientEvents> {
+export function createSocketServer(
+  httpServer: HttpServer,
+): IOServer<Record<string, never>, ServerToClientEvents> {
   io = new IOServer(httpServer, {
     cors: { origin: config.allowedOrigins, credentials: true },
     allowRequest: (req, callback) => {
@@ -43,15 +47,23 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.accessToken as string | undefined;
-      const guestToken = socket.handshake.headers.cookie?.split(';').map((part) => part.trim())
-        .find((part) => part.startsWith(`${GUEST_COOKIE}=`))?.slice(GUEST_COOKIE.length + 1);
+      const guestToken = socket.handshake.headers.cookie
+        ?.split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(`${GUEST_COOKIE}=`))
+        ?.slice(GUEST_COOKIE.length + 1);
       const role = socket.handshake.auth?.role as Role | undefined;
       if (role === 'STAFF' || role === 'ADMIN') {
         if (config.trafficClass === 'guest') return next(new Error('UNAUTHENTICATED'));
         if (!token) return next(new Error('UNAUTHENTICATED'));
         const payload = verifyAccessToken(token);
         const user = await UserModel.findById(payload.sub);
-        if (!user?.isActive || !['STAFF', 'ADMIN'].includes(user.role) || user.role !== payload.role) return next(new Error('UNAUTHENTICATED'));
+        if (
+          !user?.isActive ||
+          !['STAFF', 'ADMIN'].includes(user.role) ||
+          user.role !== payload.role
+        )
+          return next(new Error('UNAUTHENTICATED'));
         (socket.data as { role?: string; userId?: string }).role = payload.role;
         (socket.data as { role?: string; userId?: string }).userId = payload.sub;
         return next();
@@ -62,10 +74,17 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
         const guest = await guestSessionRepository.findActiveByTokenHash(hash);
         if (!guest) return next(new Error('UNAUTHENTICATED'));
         const tableSession = await tableSessionRepository.findById(guest.tableSessionId);
-        if (!tableSession || tableSession.status === 'CLOSED') return next(new Error('SESSION_CLOSED'));
-        (socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }).guestId = guest.id;
-        (socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }).tableSessionId = guest.tableSessionId;
-        (socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }).participantId = guest.participantId;
+        if (!tableSession || tableSession.status === 'CLOSED')
+          return next(new Error('SESSION_CLOSED'));
+        (
+          socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }
+        ).guestId = guest.id;
+        (
+          socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }
+        ).tableSessionId = guest.tableSessionId;
+        (
+          socket.data as { guestId?: string; tableSessionId?: string; participantId?: string }
+        ).participantId = guest.participantId;
         return next();
       }
       next(new Error('UNAUTHENTICATED'));
@@ -101,25 +120,32 @@ export function createSocketServer(httpServer: HttpServer): IOServer<Record<stri
   return io;
 }
 
-export function publishStaff<T>(event: keyof ServerToClientEvents, payload: T): void {
+export function publishStaff(
+  event: keyof ServerToClientEvents,
+  payload: RealtimeEventEnvelope,
+): void {
   io?.to('staff').emit(event, payload);
 }
 
-export function publishSession<T>(tableSessionId: string, event: keyof ServerToClientEvents, payload: T): void {
+export function publishSession(
+  tableSessionId: string,
+  event: keyof ServerToClientEvents,
+  payload: RealtimeEventEnvelope,
+): void {
   io?.to(`session:${tableSessionId}`).emit(event, payload);
 }
 
-export function publishGuest<T>(
+export function publishGuest(
   tableSessionId: string,
   participantId: string,
   event: keyof ServerToClientEvents,
-  payload: T,
+  payload: RealtimeEventEnvelope,
 ): void {
   io?.to(`guest:${tableSessionId}:${participantId}`).emit(event, payload);
 }
 
-export function publishMenuChange(): void {
-  io?.emit('menu.availabilityChanged', {});
+export function publishMenuChange(payload: RealtimeEventEnvelope): void {
+  io?.emit('menu.availabilityChanged', payload);
 }
 
 export function closeSessionSockets(tableSessionId: string): void {

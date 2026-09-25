@@ -9,6 +9,7 @@ import '../models/AuditLog.js';
 import '../models/Bill.js';
 import '../models/GuestSession.js';
 import '../models/Order.js';
+import '../models/OutboxEvent.js';
 import '../models/Payment.js';
 import '../models/RefreshSession.js';
 import '../models/Review.js';

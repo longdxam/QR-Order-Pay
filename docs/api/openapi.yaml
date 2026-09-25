@@ -70,7 +70,7 @@ paths:
   /receipts/current:
     get:
       summary: Hóa đơn của thiết bị sau khi đóng phiên
-      description: Cookie HttpOnly mc_receipt riêng, chỉ dùng cho hóa đơn và đánh giá; hết hạn 12 giờ từ lúc vào bàn. Không chấp nhận cookie này để đặt món. Chỉ trả đơn SERVED và PAID của participant hiện tại; mỗi order chỉ gồm các field khách dùng (_id, code, items, total, status, paymentStatus, participantId, createdAt, review) — đã bỏ field nội bộ.
+      description: Cookie HttpOnly mc_receipt riêng, chỉ dùng cho hóa đơn và đánh giá; hết hạn 12 giờ từ lúc vào bàn. Phiên mới đọc Bill snapshot bất biến và lọc theo participant; phiên lịch sử chưa có Bill dùng fallback Order có đánh dấu source.
       responses:
         '200': { description: 'data gồm tableName, closedAt, total, orders kèm review' }
         '401': { description: Phiên chưa đóng hoặc quyền xem hết hạn }
@@ -255,7 +255,13 @@ paths:
         '409': { description: IDEMPOTENCY_CONFLICT hoặc bàn không khả dụng }
         '422': { description: Dữ liệu không hợp lệ }
   /orders/mine:
-    get: { summary: Đơn của participant hiện tại, responses: { '200': { description: OK } } }
+    get:
+      summary: Đơn của participant hiện tại
+      description: >-
+        Mỗi đơn theo guestOrderSchema (packages/contracts). Các endpoint đơn của khách
+        (POST /orders, GET /orders/{id}, POST /orders/{id}/cancel) dùng cùng DTO: không trả
+        idempotencyKey, requestHash, __v hay ID nhân viên trong statusHistory.
+      responses: { '200': { description: OK } }
   /orders/{id}:
     get:
       summary: Chi tiết đơn (ownership)
@@ -358,7 +364,18 @@ paths:
                         image: { type: string }
         '429': { description: Rate limit }
   /staff/orders:
-    get: { summary: Đơn cho KDS, responses: { '200': { description: OK } } }
+    get:
+      summary: Đơn cho KDS
+      description: >-
+        Chỉ gồm đơn của phiên OPEN/CHECKOUT. Mặc định lọc PENDING, CONFIRMED, PREPARING, READY;
+        truyền status để lấy một trạng thái cụ thể (vẫn giới hạn trong phiên đang hoạt động).
+        Mỗi phần tử theo staffOrderSchema, không có idempotencyKey/requestHash/__v.
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, enum: [PENDING, CONFIRMED, PREPARING, READY, SERVED, CANCELLED] }
+      responses: { '200': { description: OK } }
   /staff/orders/{id}/status:
     patch:
       summary: Chuyển trạng thái đơn
@@ -488,3 +505,113 @@ paths:
     get: { summary: Danh sách bàn, responses: { '200': { description: OK } } }
   /admin/users:
     get: { summary: Danh sách nhân viên, responses: { '200': { description: OK } } }
+  /orders/quote:
+    post:
+      {
+        summary: Báo giá ký số ràng buộc guest/phiên/fingerprint giỏ,
+        responses:
+          {
+            '200': { description: Dòng món chuẩn hóa, tổng và thời hạn },
+            '409': { description: Món không khả dụng },
+            '422': { description: Tùy chọn sai },
+          },
+      }
+  /orders/{id}/cancel-requests:
+    post:
+      {
+        summary: Guest yêu cầu hủy đơn CONFIRMED trước khi pha,
+        responses:
+          {
+            '201': { description: Đang chờ duyệt },
+            '409': { description: Trạng thái không cho phép },
+          },
+      }
+  /staff/cancel-requests:
+    get: { summary: Yêu cầu hủy đang chờ, responses: { '200': { description: OK } } }
+  /staff/cancel-requests/{id}:
+    patch:
+      {
+        summary: Duyệt hoặc từ chối với expectedVersion,
+        responses:
+          { '200': { description: Đã xử lý }, '409': { description: Race hoặc đơn đã pha } },
+      }
+  /staff/catalog/availability:
+    get:
+      { summary: Catalog tối thiểu để staff bật/tắt bán, responses: { '200': { description: OK } } }
+  /staff/catalog/products/{id}/availability:
+    patch:
+      {
+        summary: Staff bật/tắt món nhưng không được sửa giá,
+        responses: { '200': { description: Đã cập nhật } },
+      }
+  /staff/catalog/products/{id}/variants/{variantId}/availability:
+    patch:
+      {
+        summary: Staff bật/tắt một size nhưng không được sửa giá,
+        responses: { '200': { description: Đã cập nhật } },
+      }
+  /staff/catalog/toppings/{id}/availability:
+    patch:
+      {
+        summary: Staff bật/tắt topping nhưng không được sửa giá,
+        responses: { '200': { description: Đã cập nhật } },
+      }
+  /staff/table-sessions/{id}/transfer:
+    post:
+      {
+        summary: Chuyển phiên OPEN sang bàn trống bằng transaction,
+        responses:
+          {
+            '200': { description: Đã chuyển },
+            '409': { description: Bàn đích bận hoặc version đổi },
+          },
+      }
+  /staff/cash-shifts/current:
+    get:
+      {
+        summary: Ca hiện tại và tổng Payment theo phương thức,
+        responses: { '200': { description: OK } },
+      }
+  /staff/cash-shifts:
+    post:
+      {
+        summary: Mở ca thu ngân,
+        responses: { '201': { description: Đã mở }, '409': { description: Đã có ca mở } },
+      }
+  /staff/cash-shifts/{id}/close:
+    post:
+      {
+        summary: Chốt tiền kiểm đếm và chênh lệch,
+        responses: { '200': { description: Đã chốt }, '409': { description: Ca đã thay đổi } },
+      }
+  /admin/bills:
+    get:
+      {
+        summary: Bill snapshot phân trang và lọc mã/bàn/ngày/thu ngân,
+        responses: { '200': { description: OK }, '403': { description: Chỉ ADMIN } },
+      }
+  /admin/bills/{id}:
+    get:
+      {
+        summary: Chi tiết snapshot để in lại,
+        responses: { '200': { description: OK }, '404': { description: Không tìm thấy } },
+      }
+  /admin/operations/failures:
+    get: { summary: Outbox FAILED và queue dead-letter, responses: { '200': { description: OK } } }
+  /admin/operations/outbox/{id}/replay:
+    post:
+      { summary: Replay một outbox FAILED và ghi audit, responses: { '200': { description: OK } } }
+  /admin/operations/jobs/{id}/replay:
+    post:
+      {
+        summary: Replay một Redis dead-letter và ghi audit,
+        responses: { '200': { description: OK } },
+      }
+  /admin/cash-shifts:
+    get: { summary: Lịch sử đối soát ca, responses: { '200': { description: OK } } }
+  /ai/recommendations/validate:
+    post:
+      {
+        summary: Kiểm tra lại variant/topping/giá/caffeine/dairy của cấu hình AI cuối,
+        responses: { '200': { description: Kết quả valid, total và violations } },
+      }

@@ -1,20 +1,40 @@
 import type { Request, Response, NextFunction } from 'express';
-import { placeOrderRequestSchema, reviewRequestSchema } from '@may-cafe/contracts';
-import { cancelOrderByGuest, getOrderForGuest, listOrdersForGuest, placeOrder } from '../services/orderService.js';
+import {
+  orderStatusSchema,
+  placeOrderRequestSchema,
+  quoteOrderRequestSchema,
+  reviewRequestSchema,
+  updateOrderStatusRequestSchema,
+} from '@may-cafe/contracts';
+import {
+  cancelOrderByGuest,
+  getOrderForGuest,
+  listOrdersForGuest,
+  listOrdersForStaff,
+  placeOrder,
+} from '../services/orderService.js';
+import { toGuestOrder, toStaffOrder } from '../services/orderDto.js';
 import { submitReview } from '../services/reviewService.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { transitionByStaff } from '../services/orderService.js';
 import { orderRepository } from '../repositories/orderRepository.js';
-import { notifyGuest, notifyStaff } from '../services/notificationService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { recordBusinessEvent, recordOrderStageDuration } from '../infrastructure/metrics.js';
+import { createOrderQuote } from '../services/orderPricingService.js';
 
-async function notifyOrder(order: Awaited<ReturnType<typeof getOrderForGuest>>, event: 'order.created' | 'order.statusChanged'): Promise<void> {
-  const payload = { orderId: order.id, tableSessionId: order.tableSessionId.toString(), status: order.status };
-  await Promise.all([
-    notifyStaff(event, payload),
-    notifyGuest(order.tableSessionId.toString(), order.participantId, event, payload),
-  ]);
+export async function quote(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.guest) throw new ForbiddenError('Vui lòng quét QR tại bàn để báo giá.');
+    const input = quoteOrderRequestSchema.parse(req.body);
+    const data = await createOrderQuote({
+      tableSessionId: req.guest.tableSessionId,
+      participantId: req.guest.participantId,
+      items: input.items,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function place(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -31,12 +51,14 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
       idempotencyKey,
       items: input.items,
       note: input.note,
+      quoteToken: input.quoteToken,
     });
     if (result.created) {
-      await notifyOrder(result.order, 'order.created');
       recordBusinessEvent('order_created');
     }
-    res.status(result.created ? 201 : 200).json({ success: true, data: { order: result.order, created: result.created } });
+    res
+      .status(result.created ? 201 : 200)
+      .json({ success: true, data: { order: toGuestOrder(result.order), created: result.created } });
   } catch (e) {
     next(e);
   }
@@ -47,9 +69,8 @@ export async function cancel(req: Request, res: Response, next: NextFunction): P
     if (!req.guest) throw new ForbiddenError();
     const id = String(req.params['id'] ?? '');
     const order = await cancelOrderByGuest(id, req.guest.participantId);
-    await notifyOrder(order, 'order.statusChanged');
     recordBusinessEvent('order_cancelled');
-    res.json({ success: true, data: { order } });
+    res.json({ success: true, data: { order: toGuestOrder(order) } });
   } catch (e) {
     next(e);
   }
@@ -60,7 +81,7 @@ export async function detail(req: Request, res: Response, next: NextFunction): P
     if (!req.guest) throw new ForbiddenError();
     const id = String(req.params['id'] ?? '');
     const order = await getOrderForGuest(id, req.guest.participantId);
-    res.json({ success: true, data: { order } });
+    res.json({ success: true, data: { order: toGuestOrder(order) } });
   } catch (e) {
     next(e);
   }
@@ -70,7 +91,7 @@ export async function listMine(req: Request, res: Response, next: NextFunction):
   try {
     if (!req.guest) throw new ForbiddenError();
     const orders = await listOrdersForGuest(req.guest.participantId, req.guest.tableSessionId);
-    res.json({ success: true, data: { orders } });
+    res.json({ success: true, data: { orders: orders.map((order) => toGuestOrder(order)) } });
   } catch (e) {
     next(e);
   }
@@ -95,11 +116,20 @@ export async function review(req: Request, res: Response, next: NextFunction): P
 
 export async function staffList(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const items = await orderRepository.listForStaff({ status: status as never });
+    const status =
+      typeof req.query.status === 'string' ? orderStatusSchema.parse(req.query.status) : undefined;
+    const items = await listOrdersForStaff(status);
     const tables = await tableRepository.list();
-    const names = new Map(tables.map((t) => [t.id, t.name]));
-    res.json({ success: true, data: { items: items.map((o) => ({ ...o.toObject(), tableName: names.get(o.tableId.toString()) ?? 'Bàn' })) } });
+    const byId = new Map(tables.map((t) => [t.id, t]));
+    res.json({
+      success: true,
+      data: {
+        items: items.map((o) => {
+          const table = byId.get(o.tableId.toString());
+          return toStaffOrder(o, { name: table?.name ?? 'Bàn', code: table?.code ?? '' });
+        }),
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -110,30 +140,38 @@ export async function staffGetOne(req: Request, res: Response, next: NextFunctio
     const id = String(req.params['id'] ?? '');
     const order = await orderRepository.findById(id);
     if (!order) {
-      res.status(404).json({ success: false, error: { code: 'ORDER_NOT_FOUND', message: 'Không tìm thấy đơn.' } });
+      res.status(404).json({
+        success: false,
+        error: { code: 'ORDER_NOT_FOUND', message: 'Không tìm thấy đơn.' },
+      });
       return;
     }
-    const tables = await tableRepository.list();
-    const table = tables.find((t) => t.id === order.tableId.toString());
-    const obj = order.toObject();
-    res.json({ success: true, data: { order: { ...obj, tableName: table?.name ?? 'Bàn', tableCode: table?.code ?? '' } } });
+    const table = await tableRepository.findById(order.tableId.toString());
+    res.json({
+      success: true,
+      data: {
+        order: toStaffOrder(order, { name: table?.name ?? 'Bàn', code: table?.code ?? '' }),
+      },
+    });
   } catch (e) {
     next(e);
   }
 }
 
-export async function staffTransition(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function staffTransition(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     if (!req.user) throw new NotFoundError();
     const id = String(req.params['id'] ?? '');
-    const body = req.body as { status?: string; reason?: string };
-    if (!body.status) throw new ValidationError('Thiếu trạng thái.');
-    const order = await transitionByStaff(id, body.status as never, { id: req.user.id }, body.reason);
-    await notifyOrder(order, 'order.statusChanged');
+    const body = updateOrderStatusRequestSchema.parse(req.body);
+    const order = await transitionByStaff(id, body.status, { id: req.user.id }, body.reason);
     recordStageDuration(order);
     if (order.status === 'CANCELLED') recordBusinessEvent('order_cancelled');
     if (order.status === 'SERVED') recordBusinessEvent('order_served');
-    res.json({ success: true, data: { order } });
+    res.json({ success: true, data: { order: toStaffOrder(order) } });
   } catch (e) {
     next(e);
   }
@@ -144,25 +182,29 @@ function recordStageDuration(order: Awaited<ReturnType<typeof transitionByStaff>
   const transition = history.at(-1);
   const previous = history.at(-2);
   if (!transition?.at || !previous?.at) return;
-  const stage = transition.to === 'CONFIRMED'
-    ? 'acceptance'
-    : transition.to === 'READY'
-      ? 'preparation'
-      : transition.to === 'SERVED'
-        ? 'service'
-        : null;
+  const stage =
+    transition.to === 'CONFIRMED'
+      ? 'acceptance'
+      : transition.to === 'READY'
+        ? 'preparation'
+        : transition.to === 'SERVED'
+          ? 'service'
+          : null;
   if (!stage) return;
   recordOrderStageDuration(stage, (transition.at.getTime() - previous.at.getTime()) / 1_000);
 }
 
-export async function staffConfirmReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function staffConfirmReceipt(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     if (!req.user) throw new NotFoundError();
     const id = String(req.params['id'] ?? '');
     const order = await transitionByStaff(id, 'CONFIRMED', { id: req.user.id });
-    await notifyOrder(order, 'order.statusChanged');
     recordStageDuration(order);
-    res.json({ success: true, data: { order } });
+    res.json({ success: true, data: { order: toStaffOrder(order) } });
   } catch (e) {
     next(e);
   }

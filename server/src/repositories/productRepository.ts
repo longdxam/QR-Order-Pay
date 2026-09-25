@@ -34,14 +34,40 @@ export const productRepository = {
   async listAll(): Promise<ProductDoc[]> {
     return ProductModel.find().sort({ sortOrder: 1, name: 1 });
   },
-  async create(data: Record<string, unknown>): Promise<ProductDoc> {
-    return ProductModel.create(data);
+  async create(data: Record<string, unknown>, session?: ClientSession | null): Promise<ProductDoc> {
+    const [created] = await ProductModel.create([data], { session: session ?? undefined });
+    if (!created) throw new Error('Failed to create product');
+    return created;
   },
-  async update(id: string, update: Record<string, unknown>): Promise<ProductDoc | null> {
-    return ProductModel.findByIdAndUpdate(id, update, { new: true });
+  async update(
+    id: string,
+    update: Record<string, unknown>,
+    session?: ClientSession | null,
+  ): Promise<ProductDoc | null> {
+    return ProductModel.findByIdAndUpdate(
+      id,
+      { $set: update, $inc: { version: 1 } },
+      { new: true, session: session ?? undefined },
+    );
   },
-  async archive(id: string): Promise<ProductDoc | null> {
-    return ProductModel.findByIdAndUpdate(id, { isArchived: true }, { new: true });
+  async archive(id: string, session?: ClientSession | null): Promise<ProductDoc | null> {
+    return ProductModel.findByIdAndUpdate(
+      id,
+      { $set: { isArchived: true }, $inc: { version: 1 } },
+      { new: true, session: session ?? undefined },
+    );
+  },
+  async setVariantAvailability(
+    id: string,
+    variantId: string,
+    isAvailable: boolean,
+    session?: ClientSession | null,
+  ): Promise<ProductDoc | null> {
+    return ProductModel.findOneAndUpdate(
+      { _id: id, 'variants._id': variantId },
+      { $set: { 'variants.$.isAvailable': isAvailable }, $inc: { version: 1 } },
+      { new: true, session: session ?? undefined },
+    );
   },
 };
 

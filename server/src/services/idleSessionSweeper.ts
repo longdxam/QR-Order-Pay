@@ -4,7 +4,8 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { OrderModel } from '../models/Order.js';
-import { notifyStaff } from './notificationService.js';
+import { unitOfWork } from '../infrastructure/unitOfWork.js';
+import { outboxRepository } from '../repositories/outboxRepository.js';
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -23,30 +24,54 @@ export async function sweepIdleSessions(now: Date = new Date()): Promise<number>
   for (const candidate of candidates) {
     const id = candidate._id.toString();
     try {
-      const hasOrder = await OrderModel.exists({
-        tableSessionId: candidate._id,
-        status: { $ne: 'CANCELLED' },
-      });
-      if (hasOrder) continue;
+      const didClose = await unitOfWork.withTransaction(async (mongoSession) => {
+        const hasOrder = await OrderModel.exists({
+          tableSessionId: candidate._id,
+          status: { $ne: 'CANCELLED' },
+        }).session(mongoSession);
+        if (hasOrder) return false;
 
-      const closed = await tableSessionRepository.updateStatus(id, candidate.version, {
-        status: 'CLOSED',
-        closedBy: null,
-        closedReason: 'IDLE',
-      });
-      if (!closed) continue;
+        const closed = await tableSessionRepository.updateStatus(
+          id,
+          candidate.version,
+          {
+            status: 'CLOSED',
+            closedBy: null,
+            closedReason: 'IDLE',
+          },
+          mongoSession,
+        );
+        if (!closed) return false;
 
-      await guestSessionRepository.revokeByTableSession(id);
-      await auditRepository.log({
-        actorType: 'SYSTEM',
-        actorId: null,
-        action: 'tableSession.idleClosed',
-        entityType: 'TableSession',
-        entityId: id,
-        metadata: { tableId: candidate.tableId.toString() },
+        await guestSessionRepository.revokeByTableSession(id, mongoSession);
+        await auditRepository.log(
+          {
+            actorType: 'SYSTEM',
+            actorId: null,
+            action: 'tableSession.idleClosed',
+            entityType: 'TableSession',
+            entityId: id,
+            metadata: { tableId: candidate.tableId.toString() },
+          },
+          mongoSession,
+        );
+        const event = {
+          eventType: 'tableSession.statusChanged' as const,
+          aggregateType: 'TableSession',
+          aggregateId: id,
+          aggregateVersion: closed.version,
+          payload: { tableSessionId: id, status: 'CLOSED', version: closed.version },
+        };
+        await outboxRepository.createRealtimeEvents(
+          [
+            { ...event, target: { scope: 'staff' } },
+            { ...event, target: { scope: 'session', tableSessionId: id } },
+          ],
+          mongoSession,
+        );
+        return true;
       });
-      await notifyStaff('tableSession.statusChanged', { tableSessionId: id, status: 'CLOSED' });
-      closedCount += 1;
+      if (didClose) closedCount += 1;
     } catch (e) {
       logger.error({ err: e, tableSessionId: id }, 'failed to close idle table session');
     }
@@ -60,7 +85,9 @@ export function startIdleSessionSweeper(): () => void {
   if (config.sessionIdleTimeoutMin <= 0) return () => {};
 
   const timer = setInterval(() => {
-    void sweepIdleSessions().catch((e) => logger.error({ err: e }, 'idle table session sweep failed'));
+    void sweepIdleSessions().catch((e) =>
+      logger.error({ err: e }, 'idle table session sweep failed'),
+    );
   }, SWEEP_INTERVAL_MS);
   timer.unref();
 

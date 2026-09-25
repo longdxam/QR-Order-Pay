@@ -1,17 +1,20 @@
 import crypto from 'node:crypto';
-import mongoose from 'mongoose';
-import { productRepository } from '../repositories/productRepository.js';
-import { toppingRepository } from '../repositories/toppingRepository.js';
 import { orderRepository } from '../repositories/orderRepository.js';
-import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../errors/AppError.js';
 import type { OrderStatus } from '@may-cafe/contracts';
 import { randomShortCode } from '../utils/crypto.js';
-import { guestCanOrder } from './tableSessionService.js';
 import type { OrderDoc } from '../models/Order.js';
 import { TableSessionModel } from '../models/TableSession.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
+import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
+import { priceOrderItems, validateQuote } from './orderPricingService.js';
 
 export interface PlaceOrderItemInput {
   productId: string;
@@ -29,25 +32,32 @@ export interface PlaceOrderInput {
   idempotencyKey: string;
   items: PlaceOrderItemInput[];
   note?: string;
+  quoteToken?: string;
 }
 
 const MAX_QUANTITY = 50;
 
-export async function placeOrder(input: PlaceOrderInput): Promise<{ order: OrderDoc; created: boolean }> {
+export async function placeOrder(
+  input: PlaceOrderInput,
+): Promise<{ order: OrderDoc; created: boolean }> {
   const idempotencyKey = input.idempotencyKey?.slice(0, 64);
   if (!idempotencyKey) throw new ValidationError('Thiếu idempotency key.');
-  if (!Array.isArray(input.items) || input.items.length === 0) throw new ValidationError('Đơn hàng cần ít nhất một món.');
+  if (!Array.isArray(input.items) || input.items.length === 0)
+    throw new ValidationError('Đơn hàng cần ít nhất một món.');
   for (const it of input.items) {
     if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > MAX_QUANTITY) {
       throw new ValidationError('Số lượng mỗi món phải là số nguyên từ 1 đến 50.');
     }
   }
-  await guestCanOrder(input.tableSessionId);
-
-  const existing = await orderRepository.findByIdempotency(input.tableSessionId, idempotencyKey);
-  if (existing) {
-    const expectedHash = hashRequest({ items: input.items, note: input.note, participantId: input.participantId });
-    if (existing.requestHash !== expectedHash) {
+  const requestHash = hashRequest({
+    items: input.items,
+    note: input.note,
+    participantId: input.participantId,
+  });
+  const replay = async () => {
+    const existing = await orderRepository.findByIdempotency(input.tableSessionId, idempotencyKey);
+    if (!existing) return null;
+    if (existing.requestHash !== requestHash) {
       throw new ConflictError(
         'IDEMPOTENCY_CONFLICT',
         'Idempotency key đã được dùng với nội dung khác, vui lòng tạo yêu cầu mới.',
@@ -57,189 +67,215 @@ export async function placeOrder(input: PlaceOrderInput): Promise<{ order: Order
       throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Idempotency key không thuộc về phiên này.');
     }
     return { order: existing, created: false };
-  }
+  };
+  const replayed = await replay();
+  if (replayed) return replayed;
 
-  const productIds = [...new Set(input.items.map((i) => i.productId))];
-  const toppingIds = [...new Set(input.items.flatMap((i) => i.toppingIds))];
-  const [products, toppings, session] = await Promise.all([
-    productRepository.findManyByIds(productIds),
-    toppingIds.length > 0 ? toppingRepository.findManyByIds(toppingIds) : Promise.resolve([]),
-    tableSessionRepository.findById(input.tableSessionId),
-  ]);
-  if (!session) throw new NotFoundError('Phiên không tồn tại.');
-  if (!['OPEN'].includes(session.status))
-    throw new ForbiddenError('Phiên không ở trạng thái mở, không thể đặt món.');
-
-  const productMap = new Map(products.map((p) => [p._id.toString(), p]));
-  const toppingMap = new Map(toppings.map((t) => [t._id.toString(), t]));
-
-  const unavailable: string[] = [];
-  const invalidOptions: string[] = [];
-
-  const snapshotItems = input.items.map((item, idx) => {
-    const product = productMap.get(item.productId);
-    if (!product || product.isArchived || !product.isAvailable) {
-      unavailable.push(item.productId);
-      return null;
-    }
-    const variant = item.variantId ? product.variants.find((v) => v._id?.toString() === item.variantId) : null;
-    if (item.variantId && !variant) {
-      invalidOptions.push(`item#${idx}:variant`);
-      return null;
-    }
-    if ((product.variants.length > 0 && !variant) || variant?.isAvailable === false) {
-      invalidOptions.push(`item#${idx}:variant-unavailable`);
-    }
-    if (new Set(item.toppingIds).size !== item.toppingIds.length) invalidOptions.push(`item#${idx}:duplicate-topping`);
-    if (item.variantId && !product.allowedOptions.sizes?.includes(variant?.name ?? '')) {
-      invalidOptions.push(`item#${idx}:variant-size`);
-    }
-    if (!product.allowedOptions.sugarLevels?.includes(item.sugarLevel)) {
-      invalidOptions.push(`item#${idx}:sugar`);
-    }
-    if (!product.allowedOptions.iceLevels?.includes(item.iceLevel)) {
-      invalidOptions.push(`item#${idx}:ice`);
-    }
-    let unitPrice = (variant?.price ?? product.basePrice) ?? 0;
-    for (const tid of item.toppingIds) {
-      const topping = toppingMap.get(tid);
-      if (!topping || topping.isArchived || !topping.isAvailable || !product.allowedOptions.toppingIds.map(String).includes(tid)) {
-        invalidOptions.push(`item#${idx}:topping-${tid}`);
-        continue;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return { order: await createOrder(input, idempotencyKey, requestHash), created: true };
+    } catch (error) {
+      // Request cùng key có thể đã commit sau bước kiểm tra phía trên: trả lại đơn đó thay vì lỗi.
+      if (isDuplicateKey(error, 'idempotencyKey')) {
+        const raced = await replay();
+        if (raced) return raced;
       }
-      unitPrice += topping.price;
+      if (isDuplicateKey(error, 'code') && attempt < 3) continue;
+      throw error;
     }
-    return {
-      productId: product._id,
-      variantId: variant?._id ?? null,
-      sizeName: variant?.name ?? null,
-      sugarLevel: item.sugarLevel,
-      iceLevel: item.iceLevel,
-      toppingIds: item.toppingIds.map((id) => new mongoose.Types.ObjectId(id)),
-      toppingNamesSnapshot: item.toppingIds.map((id) => toppingMap.get(id)?.name ?? ''),
-      note: (item.note ?? '').slice(0, 280),
-      quantity: item.quantity,
-      unitPrice,
-      lineTotal: unitPrice * item.quantity,
-      nameSnapshot: product.name,
-      variantNameSnapshot: variant?.name ?? '',
-    };
-  });
-
-  if (unavailable.length > 0) {
-    throw new ConflictError(
-      'PRODUCT_UNAVAILABLE',
-      'Một món vừa hết hoặc không khả dụng. Vui lòng cập nhật giỏ hàng.',
-      { unavailable },
-    );
   }
-  if (invalidOptions.length > 0) {
-    throw new ValidationError('Tùy chọn món không hợp lệ.', { invalidOptions });
-  }
+}
 
-  const total = snapshotItems.reduce((s, it) => s + (it?.lineTotal ?? 0), 0);
-  const code = await generateUniqueCode();
+function isDuplicateKey(error: unknown, field: string): boolean {
+  const e = error as { code?: number; keyPattern?: Record<string, unknown> };
+  return e?.code === 11000 && !!e.keyPattern && field in e.keyPattern;
+}
 
-  const result = await unitOfWork.withTransaction(async (mongoSession) => {
+async function createOrder(
+  input: PlaceOrderInput,
+  idempotencyKey: string,
+  requestHash: string,
+): Promise<OrderDoc> {
+  const code = `MC${randomShortCode(5)}`;
+  return unitOfWork.withTransaction(async (mongoSession) => {
     const open = await TableSessionModel.findOneAndUpdate(
-      { _id: input.tableSessionId, status: 'OPEN' }, { $inc: { version: 1 } }, { session: mongoSession },
+      { _id: input.tableSessionId, status: 'OPEN' },
+      { $inc: { version: 1 } },
+      { session: mongoSession, new: true },
     );
-    if (!open) throw new ForbiddenError('Phiên đang thanh toán hoặc đã đóng, không thể đặt thêm món.');
+    if (!open)
+      throw new ForbiddenError('Phiên đang thanh toán hoặc đã đóng, không thể đặt thêm món.');
+    const priced = await priceOrderItems(input.items, mongoSession);
+    validateQuote(
+      {
+        quoteToken: input.quoteToken,
+        tableSessionId: input.tableSessionId,
+        participantId: input.participantId,
+        items: input.items,
+      },
+      priced,
+    );
     const order = await orderRepository.createWithSession(
       {
         code,
-        tableSessionId: session._id,
+        tableSessionId: open._id,
         participantId: input.participantId,
-        tableId: session.tableId,
-        items: snapshotItems.map((it) => ({ ...it })),
-        total,
+        tableId: open.tableId,
+        items: priced.items.map((it) => ({ ...it })),
+        total: priced.total,
         status: 'PENDING' as OrderStatus,
         paymentStatus: 'UNPAID' as const,
-        statusHistory: [{ from: null, to: 'PENDING', at: new Date(), byParticipantId: input.participantId }],
+        statusHistory: [
+          { from: null, to: 'PENDING', at: new Date(), byParticipantId: input.participantId },
+        ],
         idempotencyKey,
-        requestHash: hashRequest({ items: input.items, note: input.note, participantId: input.participantId }),
+        requestHash,
         version: 0,
         cancelReason: '',
       },
       mongoSession,
     );
+    await auditRepository.log(
+      {
+        actorType: 'GUEST',
+        participantId: input.participantId,
+        action: 'order.placed',
+        entityType: 'Order',
+        entityId: order._id.toString(),
+        metadata: { code: order.code, total: order.total },
+      },
+      mongoSession,
+    );
+    await outboxRepository.createRealtimeEvents(
+      orderRealtimeEvents(order, 'order.created'),
+      mongoSession,
+    );
     return order;
   });
-
-  await auditRepository.log({
-    actorType: 'GUEST',
-    participantId: input.participantId,
-    action: 'order.placed',
-    entityType: 'Order',
-    entityId: result._id.toString(),
-    metadata: { code: result.code, total: result.total },
-  });
-
-  return { order: result, created: true };
 }
 
-function hashRequest(payload: { items: PlaceOrderItemInput[]; note?: string; participantId: string }): string {
+function hashRequest(payload: {
+  items: PlaceOrderItemInput[];
+  note?: string;
+  participantId: string;
+}): string {
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-async function generateUniqueCode(): Promise<string> {
-  for (let i = 0; i < 5; i++) {
-    const code = `MC${randomShortCode(5)}`;
-    const exists = await orderRepository.findByCode(code);
-    if (!exists) return code;
-  }
-  // extremely unlikely fallback
-  return `MC${Date.now().toString(36).toUpperCase()}`;
-}
-
-export async function cancelOrderByGuest(orderId: string, participantId: string): Promise<OrderDoc> {
-  const order = await orderRepository.findById(orderId);
-  if (!order) throw new NotFoundError('Đơn không tồn tại.');
-  if (order.participantId !== participantId)
-    throw new ForbiddenError('Bạn không thể hủy đơn của khách khác.');
-  if (order.status !== 'PENDING')
-    throw new ConflictError('STATE_TRANSITION_INVALID', 'Đơn đã được nhận, không thể hủy.');
-  const updated = await orderRepository.transitionStatus(orderId, order.version, 'CANCELLED', {
-    from: 'PENDING',
-    byParticipantId: participantId,
-    reason: 'Khách hủy',
-  });
-  if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật, vui lòng tải lại.');
-  await auditRepository.log({
-    actorType: 'GUEST',
-    participantId,
-    action: 'order.cancelled',
-    entityType: 'Order',
-    entityId: orderId,
-  });
-  return updated;
-}
-
-export async function transitionByStaff(orderId: string, next: OrderStatus, actor: { id: string }, reason?: string): Promise<OrderDoc> {
-  const order = await orderRepository.findById(orderId);
-  if (!order) throw new NotFoundError('Đơn không tồn tại.');
-  const allowed = allowedNext(order.status);
-  if (!allowed.includes(next)) {
-    throw new ConflictError(
-      'STATE_TRANSITION_INVALID',
-      `Không thể chuyển đơn từ ${order.status} sang ${next}.`,
+export async function cancelOrderByGuest(
+  orderId: string,
+  participantId: string,
+): Promise<OrderDoc> {
+  return unitOfWork.withTransaction(async (session) => {
+    const order = await orderRepository.findById(orderId, session);
+    if (!order) throw new NotFoundError('Đơn không tồn tại.');
+    if (order.participantId !== participantId)
+      throw new ForbiddenError('Bạn không thể hủy đơn của khách khác.');
+    if (order.status !== 'PENDING')
+      throw new ConflictError('STATE_TRANSITION_INVALID', 'Đơn đã được nhận, không thể hủy.');
+    const updated = await orderRepository.transitionStatus(
+      orderId,
+      order.version,
+      'CANCELLED',
+      {
+        from: 'PENDING',
+        byParticipantId: participantId,
+        reason: 'Khách hủy',
+      },
+      session,
     );
-  }
-  const updated = await orderRepository.transitionStatus(orderId, order.version, next, {
-    from: order.status,
-    by: actor.id,
-    reason,
+    if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật, vui lòng tải lại.');
+    await auditRepository.log(
+      {
+        actorType: 'GUEST',
+        participantId,
+        action: 'order.cancelled',
+        entityType: 'Order',
+        entityId: orderId,
+      },
+      session,
+    );
+    await outboxRepository.createRealtimeEvents(
+      orderRealtimeEvents(updated, 'order.statusChanged'),
+      session,
+    );
+    return updated;
   });
-  if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật bởi người khác, vui lòng tải lại.');
-  await auditRepository.log({
-    actorType: 'USER',
-    actorId: actor.id,
-    action: 'order.transition',
-    entityType: 'Order',
-    entityId: orderId,
-    metadata: { from: order.status, to: next, reason },
+}
+
+export async function transitionByStaff(
+  orderId: string,
+  next: OrderStatus,
+  actor: { id: string },
+  reason?: string,
+): Promise<OrderDoc> {
+  return unitOfWork.withTransaction(async (session) => {
+    const order = await orderRepository.findById(orderId, session);
+    if (!order) throw new NotFoundError('Đơn không tồn tại.');
+    const allowed = allowedNext(order.status);
+    if (!allowed.includes(next)) {
+      throw new ConflictError(
+        'STATE_TRANSITION_INVALID',
+        `Không thể chuyển đơn từ ${order.status} sang ${next}.`,
+      );
+    }
+    const updated = await orderRepository.transitionStatus(
+      orderId,
+      order.version,
+      next,
+      {
+        from: order.status,
+        by: actor.id,
+        reason,
+      },
+      session,
+    );
+    if (!updated)
+      throw new ConflictError(
+        'CONFLICT',
+        'Đơn vừa được cập nhật bởi người khác, vui lòng tải lại.',
+      );
+    await auditRepository.log(
+      {
+        actorType: 'USER',
+        actorId: actor.id,
+        action: 'order.transition',
+        entityType: 'Order',
+        entityId: orderId,
+        metadata: { from: order.status, to: next, reason },
+      },
+      session,
+    );
+    await outboxRepository.createRealtimeEvents(
+      orderRealtimeEvents(updated, 'order.statusChanged'),
+      session,
+    );
+    return updated;
   });
-  return updated;
+}
+
+function orderRealtimeEvents(
+  order: OrderDoc,
+  eventType: 'order.created' | 'order.statusChanged',
+): RealtimeOutboxInput[] {
+  const tableSessionId = order.tableSessionId.toString();
+  const payload = {
+    orderId: order.id,
+    tableSessionId,
+    status: order.status,
+    version: order.version,
+  };
+  const base = {
+    eventType,
+    aggregateType: 'Order',
+    aggregateId: order.id,
+    aggregateVersion: order.version,
+    payload,
+  } as const;
+  return [
+    { ...base, target: { scope: 'staff' } },
+    { ...base, target: { scope: 'guest', tableSessionId, participantId: order.participantId } },
+  ];
 }
 
 function allowedNext(from: OrderStatus): OrderStatus[] {
@@ -258,6 +294,17 @@ export async function getOrderForGuest(orderId: string, participantId: string): 
   return order;
 }
 
-export async function listOrdersForGuest(participantId: string, tableSessionId?: string): Promise<OrderDoc[]> {
+export async function listOrdersForStaff(status?: OrderStatus): Promise<OrderDoc[]> {
+  const activeSessions = await tableSessionRepository.listOpen();
+  return orderRepository.listForStaff({
+    tableSessionIds: activeSessions.map((session) => session._id.toString()),
+    status,
+  });
+}
+
+export async function listOrdersForGuest(
+  participantId: string,
+  tableSessionId?: string,
+): Promise<OrderDoc[]> {
   return (await orderRepository.list({ participantId, tableSessionId, limit: 50 })).items;
 }

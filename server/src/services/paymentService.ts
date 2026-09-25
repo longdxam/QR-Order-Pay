@@ -6,11 +6,20 @@ import { guestSessionRepository } from '../repositories/guestSessionRepository.j
 import { tableRepository } from '../repositories/tableRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../errors/AppError.js';
 import type { OrderDoc } from '../models/Order.js';
 import type { TableSessionDoc } from '../models/TableSession.js';
 import { OrderModel } from '../models/Order.js';
 import { ServiceRequestModel } from '../models/ServiceRequest.js';
+import { outboxRepository } from '../repositories/outboxRepository.js';
+import { UserModel } from '../models/User.js';
+import { ensureOpenShift } from './cashShiftService.js';
+import { CancelRequestModel } from '../models/CancelRequest.js';
 
 export interface ConfirmPaymentInput {
   tableSessionId: string;
@@ -26,31 +35,66 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
   if (!Number.isInteger(input.amount) || input.amount < 0) {
     throw new ValidationError('Số tiền thanh toán không hợp lệ.');
   }
-  const existing = await paymentRepository.findByIdempotency(input.idempotencyKey);
-  if (existing) {
-    if (existing.tableSessionId.toString() !== input.tableSessionId || existing.amount !== input.amount || existing.method !== input.method || existing.confirmedBy?.toString() !== input.staffId || existing.note !== (input.note ?? '')) {
-      throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã thanh toán đã dùng cho yêu cầu khác.');
-    }
-    const bill = await billRepository.findBySession(input.tableSessionId);
-    return {
-      payment: existing,
-      orderIds: existing.orderIds.map((o) => o.toString()),
-      replayed: true,
-      billId: bill?._id.toString() ?? null,
-    };
+  const replayed = await replayPayment(input);
+  if (replayed) return replayed;
+  try {
+    return await settleSession(input);
+  } catch (error) {
+    // Request cùng key có thể đã commit sau bước kiểm tra phía trên (khi đó phiên đã CLOSED
+    // nên transaction này báo lỗi): trả lại khoản thu đã ghi thay vì lỗi gây hiểu nhầm.
+    const raced = await replayPayment(input);
+    if (raced) return raced;
+    throw error;
   }
+}
 
-  const { orderCount, ...result } = await unitOfWork.withTransaction(async (session) => {
+async function replayPayment(input: ConfirmPaymentInput) {
+  const existing = await paymentRepository.findByIdempotency(input.idempotencyKey);
+  if (!existing) return null;
+  if (
+    existing.tableSessionId.toString() !== input.tableSessionId ||
+    existing.amount !== input.amount ||
+    existing.method !== input.method ||
+    existing.confirmedBy?.toString() !== input.staffId ||
+    existing.note !== (input.note ?? '')
+  ) {
+    throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã thanh toán đã dùng cho yêu cầu khác.');
+  }
+  const bill = await billRepository.findBySession(input.tableSessionId);
+  return {
+    payment: existing,
+    orderIds: existing.orderIds.map((o) => o.toString()),
+    replayed: true as const,
+    billId: bill?._id.toString() ?? null,
+  };
+}
+
+async function settleSession(input: ConfirmPaymentInput) {
+  const result = await unitOfWork.withTransaction(async (session) => {
     const tableSession = await tableSessionRepository.findById(input.tableSessionId, session);
     if (!tableSession) throw new NotFoundError('Phiên không tồn tại.');
-    if (tableSession.status !== 'CHECKOUT') throw new ForbiddenError('Hãy chuyển bàn sang thanh toán trước khi thu tiền.');
+    if (tableSession.status !== 'CHECKOUT')
+      throw new ForbiddenError('Hãy chuyển bàn sang thanh toán trước khi thu tiền.');
     if (tableSession.version !== input.expectedVersion) {
       throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng tải lại.');
+    }
+    if (
+      await CancelRequestModel.exists({
+        tableSessionId: tableSession._id,
+        status: 'REQUESTED',
+      }).session(session)
+    ) {
+      throw new ConflictError(
+        'CANCEL_REQUEST_PENDING',
+        'Còn yêu cầu hủy đang chờ xử lý. Hãy duyệt hoặc từ chối trước khi thu tiền.',
+      );
     }
 
     const allOrders = await OrderModel.find({ tableSessionId: tableSession._id }).session(session);
     if (allOrders.some((o) => !['SERVED', 'CANCELLED'].includes(o.status))) {
-      throw new ValidationError('Còn món chưa phục vụ. Hãy hoàn tất hoặc hủy đơn hợp lệ trước khi thu tiền.');
+      throw new ValidationError(
+        'Còn món chưa phục vụ. Hãy hoàn tất hoặc hủy đơn hợp lệ trước khi thu tiền.',
+      );
     }
     const orders = allOrders.filter((o) => o.status === 'SERVED' && o.paymentStatus === 'UNPAID');
     if (orders.length === 0) {
@@ -63,10 +107,13 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
 
     const table = await tableRepository.findById(tableSession.tableId.toString(), session);
     if (!table) throw new NotFoundError('Bàn không tồn tại.');
+    const cashier = await UserModel.findById(input.staffId).session(session);
+    const shift = await ensureOpenShift(input.staffId, session);
 
     const payment = await paymentRepository.create(
       {
         tableSessionId: tableSession._id,
+        shiftId: shift._id,
         orderIds: orders.map((o) => o._id),
         amount: input.amount,
         method: input.method,
@@ -86,14 +133,24 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
 
     // Snapshot bất biến của phiên: chốt ngay trong cùng transaction với payment.
     // Đọc lại đơn sau khi cập nhật paymentStatus để snapshot không giữ trạng thái cũ trong bộ nhớ.
-    const settledOrders = await OrderModel.find({ tableSessionId: tableSession._id }).sort({ createdAt: 1 }).session(session);
-    const sessionPayments = await paymentRepository.listBySession(tableSession._id.toString(), session);
+    const settledOrders = await OrderModel.find({ tableSessionId: tableSession._id })
+      .sort({ createdAt: 1 })
+      .session(session);
+    const sessionPayments = await paymentRepository.listBySession(
+      tableSession._id.toString(),
+      session,
+    );
     const { bill } = await billRepository.finalize(
       {
         tableSession,
         tableCode: table.code,
+        tableName: table.name,
+        cashierName: cashier?.name ?? 'Nhân viên',
         orders: settledOrders,
-        payments: [payment, ...sessionPayments.filter((p) => p._id.toString() !== payment._id.toString())],
+        payments: [
+          payment,
+          ...sessionPayments.filter((p) => p._id.toString() !== payment._id.toString()),
+        ],
         closedAt: new Date(),
       },
       session,
@@ -102,7 +159,12 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
     const closed = await tableSessionRepository.updateStatus(
       tableSession._id.toString(),
       tableSession.version,
-      { status: 'CLOSED', closedBy: input.staffId, closedReason: 'PAID', billId: bill._id.toString() },
+      {
+        status: 'CLOSED',
+        closedBy: input.staffId,
+        closedReason: 'PAID',
+        billId: bill._id.toString(),
+      },
       session,
     );
     if (!closed) throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng thử lại.');
@@ -115,24 +177,50 @@ export async function confirmPayment(input: ConfirmPaymentInput) {
       { session },
     );
 
+    await auditRepository.log(
+      {
+        actorType: 'USER',
+        actorId: input.staffId,
+        action: 'payment.confirmed',
+        entityType: 'Payment',
+        entityId: payment._id.toString(),
+        metadata: { amount: payment.amount, orderCount: orders.length },
+      },
+      session,
+    );
+
+    const payload = {
+      tableSessionId: input.tableSessionId,
+      status: 'CLOSED',
+      version: closed.version,
+    };
+    const aggregate = {
+      aggregateType: 'TableSession',
+      aggregateId: input.tableSessionId,
+      aggregateVersion: closed.version,
+      payload,
+    } as const;
+    await outboxRepository.createRealtimeEvents(
+      [
+        {
+          ...aggregate,
+          eventType: 'payment.confirmed',
+          target: { scope: 'session', tableSessionId: input.tableSessionId },
+        },
+        { ...aggregate, eventType: 'payment.confirmed', target: { scope: 'staff' } },
+        { ...aggregate, eventType: 'tableSession.statusChanged', target: { scope: 'staff' } },
+        { ...aggregate, eventType: 'serviceRequest.resolved', target: { scope: 'staff' } },
+      ],
+      session,
+    );
+
     return {
       payment,
       orderIds: orders.map((o) => o._id.toString()),
       replayed: false as const,
       billId: bill._id.toString(),
-      orderCount: orders.length,
       session: closed,
     };
-  });
-
-  // Audit chỉ ghi sau khi transaction commit thành công.
-  await auditRepository.log({
-    actorType: 'USER',
-    actorId: input.staffId,
-    action: 'payment.confirmed',
-    entityType: 'Payment',
-    entityId: result.payment._id.toString(),
-    metadata: { amount: result.payment.amount, orderCount },
   });
 
   return result;
@@ -147,7 +235,19 @@ export interface BillSummary {
   subtotal: number;
   total: number;
   paidAmount: number;
-  orders: Array<Pick<OrderDoc, '_id' | 'code' | 'total' | 'status' | 'paymentStatus' | 'items' | 'createdAt' | 'participantId'>>;
+  orders: Array<
+    Pick<
+      OrderDoc,
+      | '_id'
+      | 'code'
+      | 'total'
+      | 'status'
+      | 'paymentStatus'
+      | 'items'
+      | 'createdAt'
+      | 'participantId'
+    >
+  >;
 }
 
 export async function buildBill(tableSessionId: string): Promise<BillSummary> {

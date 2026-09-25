@@ -26,6 +26,13 @@ export interface RecommendResult {
     unitPrice: number;
     name: string;
     image: string;
+    evidence: {
+      variant: string | null;
+      price: number;
+      withinBudget: boolean;
+      caffeine: boolean | null;
+      dairy: boolean | null;
+    };
   }>;
   followUpQuestion?: string;
   latencyMs: number;
@@ -44,22 +51,37 @@ const RECOMMEND_SCHEMA = z.object({
 });
 
 export class AIService {
-  constructor(private readonly provider: AIProvider | null, private readonly mode: 'live' | 'fallback' | 'off') {}
+  constructor(
+    private readonly provider: AIProvider | null,
+    private readonly mode: 'live' | 'fallback' | 'off',
+  ) {}
 
   async recommend(input: RecommendInput): Promise<RecommendResult> {
     input = normalizePreferences(input);
     const started = Date.now();
     if (this.mode === 'off') {
-      return fallbackResult(input, 'Chế độ AI đang tắt. Đang hiển thị gợi ý theo menu.', Date.now() - started);
+      return fallbackResult(
+        input,
+        'Chế độ AI đang tắt. Đang hiển thị gợi ý theo menu.',
+        Date.now() - started,
+      );
     }
     if (!this.provider) {
-      return fallbackResult(input, 'AI Barista đang dùng gợi ý theo menu (fallback).', Date.now() - started);
+      return fallbackResult(
+        input,
+        'AI Barista đang dùng gợi ý theo menu (fallback).',
+        Date.now() - started,
+      );
     }
     try {
       return await this.llmRecommend(input, started);
     } catch (e) {
       logger.warn({ err: (e as Error).message }, 'ai recommend failed; using fallback');
-      return fallbackResult(input, 'AI tạm thời không khả dụng, đang dùng gợi ý theo menu.', Date.now() - started);
+      return fallbackResult(
+        input,
+        'AI tạm thời không khả dụng, đang dùng gợi ý theo menu.',
+        Date.now() - started,
+      );
     }
   }
 
@@ -71,7 +93,11 @@ export class AIService {
       name: p.name,
       description: p.description,
       basePrice: p.basePrice,
-      variants: p.variants.map((v) => ({ id: v._id?.toString() ?? null, name: v.name, price: v.price })),
+      variants: p.variants.map((v) => ({
+        id: v._id?.toString() ?? null,
+        name: v.name,
+        price: v.price,
+      })),
       caffeine: p.ingredientMetadata?.caffeine ?? null,
       dairy: p.ingredientMetadata?.dairy ?? null,
       flavorProfile: p.ingredientMetadata?.flavorProfile ?? [],
@@ -104,7 +130,12 @@ export class AIService {
       seen.add(rec.productId);
       const variantId = rec.variantId ?? null;
       const variant = variantId
-        ? product.variants.find((v) => v._id?.toString() === variantId && v.isAvailable !== false && product.allowedOptions.sizes.includes(v.name)) ?? null
+        ? (product.variants.find(
+            (v) =>
+              v._id?.toString() === variantId &&
+              v.isAvailable !== false &&
+              product.allowedOptions.sizes.includes(v.name),
+          ) ?? null)
         : availableVariant(product);
       if ((variantId && !variant) || (product.variants.length > 0 && !variant)) continue;
       const unitPrice = variant ? variant.price : product.basePrice;
@@ -112,10 +143,11 @@ export class AIService {
       recommendations.push({
         productId: product._id.toString(),
         variantId: variant?._id?.toString() ?? null,
-        reason: rec.reason,
+        reason: verifiedReason(product, variant?.name ?? null, unitPrice, preferences, budget),
         unitPrice,
         name: product.name,
         image: product.image,
+        evidence: recommendationEvidence(product, variant?.name ?? null, unitPrice, budget),
       });
       if (recommendations.length >= 3) break;
     }
@@ -152,7 +184,11 @@ function safeJsonParse(s: string): unknown {
   }
 }
 
-function fallbackResult(input: RecommendInput, message: string, latencyMs: number): Promise<RecommendResult> {
+function fallbackResult(
+  input: RecommendInput,
+  message: string,
+  latencyMs: number,
+): Promise<RecommendResult> {
   return productRepository.listPublic({}).then((products) => {
     const filtered = products.filter((p) => matchesPreferences(p, input));
     const budget = input.maxBudget ?? Number.POSITIVE_INFINITY;
@@ -166,16 +202,25 @@ function fallbackResult(input: RecommendInput, message: string, latencyMs: numbe
       if (pref.noDairy && p.ingredientMetadata?.dairy) continue;
       const flavor = (p.ingredientMetadata?.flavorProfile ?? []).map((x) => x.toLowerCase());
       const tags = (p.tags ?? []).map((x) => x.toLowerCase());
-      const haystack = `${p.name} ${p.description} ${flavor.join(' ')} ${tags.join(' ')}`.toLowerCase();
+      const haystack =
+        `${p.name} ${p.description} ${flavor.join(' ')} ${tags.join(' ')}`.toLowerCase();
       let score = 0;
       if (pref.lowSugar && /ít ngọt|low sugar/.test(haystack)) score += 2;
       if (pref.flavor && haystack.includes(pref.flavor.toLowerCase())) score += 2;
       if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) score += 1;
       if (pref.noDairy && !p.ingredientMetadata?.dairy) score += 1;
       if (/chua/.test(promptLow) && flavor.some((f) => f.includes('chua'))) score += 2;
-      if (/đắng|manly|đậm/.test(promptLow) && flavor.some((f) => f.includes('đắng') || f.includes('đậm'))) score += 2;
+      if (
+        /đắng|manly|đậm/.test(promptLow) &&
+        flavor.some((f) => f.includes('đắng') || f.includes('đậm'))
+      )
+        score += 2;
       if (/ngọt/.test(promptLow) && flavor.some((f) => f.includes('ngọt'))) score += 1;
-      if (/trái cây|fruit/.test(promptLow) && tags.some((t) => t.includes('fruit') || t.includes('trái cây'))) score += 2;
+      if (
+        /trái cây|fruit/.test(promptLow) &&
+        tags.some((t) => t.includes('fruit') || t.includes('trái cây'))
+      )
+        score += 2;
       if (p.isFeatured) score += 1;
       candidates.push({ p, score });
     }
@@ -184,7 +229,8 @@ function fallbackResult(input: RecommendInput, message: string, latencyMs: numbe
     if (picks.length === 0) {
       return {
         mode: 'fallback',
-        message: 'Hiện chưa có món phù hợp tất cả lựa chọn. Bạn có thể đổi ngân sách hoặc khẩu vị rồi thử lại.',
+        message:
+          'Hiện chưa có món phù hợp tất cả lựa chọn. Bạn có thể đổi ngân sách hoặc khẩu vị rồi thử lại.',
         recommendations: [],
         latencyMs,
       };
@@ -199,6 +245,12 @@ function fallbackResult(input: RecommendInput, message: string, latencyMs: numbe
         unitPrice: availableVariant(p)?.price ?? p.basePrice,
         name: p.name,
         image: p.image,
+        evidence: recommendationEvidence(
+          p,
+          availableVariant(p)?.name ?? null,
+          availableVariant(p)?.price ?? p.basePrice,
+          Number.isFinite(budget) ? budget : null,
+        ),
       })),
       latencyMs,
     };
@@ -206,7 +258,11 @@ function fallbackResult(input: RecommendInput, message: string, latencyMs: numbe
 }
 
 function availableVariant(p: ProductDoc) {
-  return p.variants.filter((v) => v.isAvailable !== false && p.allowedOptions.sizes.includes(v.name)).sort((a, b) => a.price - b.price)[0] ?? null;
+  return (
+    p.variants
+      .filter((v) => v.isAvailable !== false && p.allowedOptions.sizes.includes(v.name))
+      .sort((a, b) => a.price - b.price)[0] ?? null
+  );
 }
 
 function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
@@ -220,29 +276,76 @@ function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
 
 function normalizePreferences(input: RecommendInput): RecommendInput {
   const prompt = input.prompt.toLowerCase();
-  const budget = /(?:dưới|tối đa|ngân sách)\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|đ|vnd)?/.exec(prompt);
+  const budget = /(?:dưới|tối đa|ngân sách)\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|đ|vnd)?/.exec(
+    prompt,
+  );
   return {
     ...input,
-    maxBudget: input.maxBudget ?? (budget ? Number(budget[1]!.replace(',', '.')) * (/^(k|nghìn|ngàn)$/.test(budget[2] ?? '') ? 1000 : 1) : undefined),
+    maxBudget:
+      input.maxBudget ??
+      (budget
+        ? Number(budget[1]!.replace(',', '.')) *
+          (/^(k|nghìn|ngàn)$/.test(budget[2] ?? '') ? 1000 : 1)
+        : undefined),
     preferences: {
       ...input.preferences,
       // "không cà phê" loại nhóm coffee, không đồng nghĩa "không caffeine" (trà/matcha vẫn có thể chứa caffeine).
-      noCaffeine: input.preferences?.noCaffeine || /(?:không (?:có |uống )?(?:caffeine|cafein)|decaf)/.test(prompt),
+      noCaffeine:
+        input.preferences?.noCaffeine ||
+        /(?:không (?:có |uống )?(?:caffeine|cafein)|decaf)/.test(prompt),
       noDairy: input.preferences?.noDairy || /không (?:có |uống )?sữa/.test(prompt),
       lowSugar: input.preferences?.lowSugar || /ít (?:ngọt|đường)/.test(prompt),
     },
   };
 }
 
-function buildReason(p: ProductDoc, pref: NonNullable<RecommendInput['preferences']>, budget: number): string {
+function buildReason(
+  p: ProductDoc,
+  pref: NonNullable<RecommendInput['preferences']>,
+  budget: number,
+): string {
   const reasons: string[] = [];
   if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) reasons.push('không caffeine');
   if (pref.noDairy && !p.ingredientMetadata?.dairy) reasons.push('không sữa');
   if (pref.lowSugar) reasons.push('chọn mức đường thấp khi thêm món');
   if (pref.flavor) reasons.push(`hương ${pref.flavor}`);
-  if (Number.isFinite(budget) && p.basePrice <= budget) reasons.push(`trong tầm ${budget.toLocaleString('vi-VN')}đ`);
+  if (Number.isFinite(budget) && p.basePrice <= budget)
+    reasons.push(`trong tầm ${budget.toLocaleString('vi-VN')}đ`);
   if (reasons.length === 0) reasons.push('đề xuất của quán');
   return reasons.join(', ');
+}
+
+function verifiedReason(
+  p: ProductDoc,
+  variant: string | null,
+  price: number,
+  pref: NonNullable<RecommendInput['preferences']>,
+  budget: number | null,
+): string {
+  const reasons: string[] = [];
+  if (variant) reasons.push(`size ${variant}`);
+  reasons.push(`${price.toLocaleString('vi-VN')}đ`);
+  if (budget !== null) reasons.push(`không vượt ngân sách ${budget.toLocaleString('vi-VN')}đ`);
+  if (pref.noCaffeine) reasons.push('metadata xác nhận không caffeine');
+  if (pref.noDairy) reasons.push('metadata xác nhận không sữa');
+  if (pref.lowSugar) reasons.push('có thể chọn mức đường thấp');
+  if (pref.flavor) reasons.push(`hương ${pref.flavor}`);
+  return reasons.join(' · ');
+}
+
+function recommendationEvidence(
+  p: ProductDoc,
+  variant: string | null,
+  price: number,
+  budget: number | null,
+) {
+  return {
+    variant,
+    price,
+    withinBudget: budget === null || price <= budget,
+    caffeine: p.ingredientMetadata?.caffeine ?? null,
+    dairy: p.ingredientMetadata?.dairy ?? null,
+  };
 }
 
 export function buildAIService(): AIService {
@@ -255,4 +358,52 @@ export function buildAIService(): AIService {
     return new AIService(provider, 'live');
   }
   return new AIService(null, config.ai.mode === 'off' ? 'off' : 'fallback');
+}
+
+export async function validateRecommendedConfiguration(input: {
+  productId: string;
+  variantId: string | null;
+  toppingIds: string[];
+  constraints: { noCaffeine?: boolean; noDairy?: boolean; maxBudget?: number };
+}) {
+  const [product, toppings] = await Promise.all([
+    productRepository.findById(input.productId),
+    input.toppingIds.length > 0
+      ? (await import('../repositories/toppingRepository.js')).toppingRepository.findManyByIds(
+          input.toppingIds,
+        )
+      : Promise.resolve([]),
+  ]);
+  const violations: string[] = [];
+  if (!product || product.isArchived || !product.isAvailable)
+    return { valid: false, total: 0, violations: ['Món không còn khả dụng.'] };
+  const variant = input.variantId
+    ? product.variants.find(
+        (item) => item._id?.toString() === input.variantId && item.isAvailable !== false,
+      )
+    : null;
+  if (product.variants.length > 0 && !variant) violations.push('Size không còn khả dụng.');
+  let total = variant?.price ?? product.basePrice;
+  for (const toppingId of input.toppingIds) {
+    const topping = toppings.find((item) => item.id === toppingId);
+    if (
+      !topping ||
+      topping.isArchived ||
+      !topping.isAvailable ||
+      !product.allowedOptions.toppingIds.map(String).includes(toppingId)
+    )
+      violations.push(`Topping ${toppingId} không khả dụng.`);
+    else {
+      total += topping.price;
+      if (input.constraints.noDairy && topping.ingredientMetadata?.dairy !== false)
+        violations.push(`Không thể xác nhận topping ${topping.name} là không sữa.`);
+    }
+  }
+  if (input.constraints.noCaffeine && product.ingredientMetadata?.caffeine !== false)
+    violations.push('Cấu hình không đáp ứng yêu cầu không caffeine.');
+  if (input.constraints.noDairy && product.ingredientMetadata?.dairy !== false)
+    violations.push('Món nền không đáp ứng yêu cầu không sữa.');
+  if (input.constraints.maxBudget !== undefined && total > input.constraints.maxBudget)
+    violations.push(`Tổng cấu hình ${total.toLocaleString('vi-VN')}đ vượt ngân sách.`);
+  return { valid: violations.length === 0, total, violations };
 }

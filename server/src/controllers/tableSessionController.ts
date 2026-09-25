@@ -4,12 +4,14 @@ import {
   joinTableRequestSchema,
   joinTableResponseSchema,
   updateTableSessionStatusRequestSchema,
+  transferTableSessionRequestSchema,
 } from '@may-cafe/contracts';
 import {
   joinAsGuest,
   listOpenSessions,
   openSession,
   transition,
+  transferSession,
 } from '../services/tableSessionService.js';
 import {
   setGuestCookie,
@@ -25,14 +27,9 @@ import { tableSessionRepository } from '../repositories/tableSessionRepository.j
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { GUEST_COOKIE } from '../middlewares/guest.js';
 import { sha256 } from '../utils/crypto.js';
-import { GuestSessionModel } from '../models/GuestSession.js';
 import { RECEIPT_COOKIE } from '../middlewares/guest.js';
-import {
-  closeGuestSockets,
-  closeSessionSockets,
-} from '../realtime/socket.js';
+import { closeGuestSockets } from '../realtime/socket.js';
 import { recordBusinessEvent } from '../infrastructure/metrics.js';
-import { notifySession, notifyStaff } from '../services/notificationService.js';
 
 export async function join(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -58,11 +55,6 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
     const result = await joinAsGuest(input.tableToken);
     if (result.created) {
       recordBusinessEvent('table_session_created');
-      await notifyStaff('tableSession.statusChanged', {
-        tableSessionId: result.tableSession.id,
-        status: result.tableSession.status,
-        source: 'GUEST',
-      });
     }
     setGuestCookie(res, result.guestToken);
     setReceiptCookie(res, result.receiptToken);
@@ -127,10 +119,7 @@ export async function leave(req: Request, res: Response, next: NextFunction): Pr
     if (typeof token === 'string') await guestSessionRepository.revokeByHash(sha256(token));
     const receipt = req.cookies?.[RECEIPT_COOKIE];
     if (typeof receipt === 'string')
-      await GuestSessionModel.updateOne(
-        { receiptTokenHash: sha256(receipt) },
-        { $unset: { receiptTokenHash: 1 } },
-      );
+      await guestSessionRepository.clearReceiptByHash(sha256(receipt));
     clearGuestCookie(res);
     if (req.guest) closeGuestSockets(req.guest.tableSessionId, req.guest.participantId);
     res.json({ success: true, data: { ok: true } });
@@ -175,10 +164,6 @@ export async function staffOpen(req: Request, res: Response, next: NextFunction)
     }
     const { session, created } = await openSession(tableId, req.user.id);
     if (created) recordBusinessEvent('table_session_created');
-    await notifyStaff('tableSession.statusChanged', {
-      tableSessionId: session.id,
-      status: session.status,
-    });
     res.json({ success: true, data: { session, created } });
   } catch (e) {
     next(e);
@@ -195,17 +180,29 @@ export async function staffTransition(
     const id = String(req.params['id'] ?? '');
     const { status, expectedVersion } = updateTableSessionStatusRequestSchema.parse(req.body);
     const updated = await transition(id, expectedVersion, status, req.user.id);
-    const payload = { tableSessionId: id, status: updated.status };
-    await Promise.all([
-      notifyStaff('tableSession.statusChanged', payload),
-      notifySession(id, 'tableSession.statusChanged', payload),
-    ]);
-    if (updated.status === 'CLOSED') closeSessionSockets(id);
-    if (updated.status === 'CLOSED')
-      await notifyStaff('serviceRequest.resolved', { tableSessionId: id });
     res.json({ success: true, data: { session: updated } });
   } catch (e) {
     next(e);
+  }
+}
+
+export async function staffTransfer(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    if (!req.user) throw new NotFoundError();
+    const input = transferTableSessionRequestSchema.parse(req.body);
+    const session = await transferSession(
+      String(req.params['id'] ?? ''),
+      input.targetTableId,
+      input.expectedVersion,
+      req.user.id,
+    );
+    res.json({ success: true, data: { session } });
+  } catch (error) {
+    next(error);
   }
 }
 

@@ -12,6 +12,18 @@ export const tableSessionSchema = new Schema(
     billId: { type: Schema.Types.ObjectId, ref: 'Bill', default: null },
     closedReason: { type: String, enum: ['PAID', 'STAFF', 'IDLE'], default: null },
     version: { type: Number, default: 0 },
+    tableTransfers: {
+      type: [
+        {
+          fromTableId: Schema.Types.ObjectId,
+          toTableId: Schema.Types.ObjectId,
+          by: Schema.Types.ObjectId,
+          at: Date,
+          _id: false,
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );

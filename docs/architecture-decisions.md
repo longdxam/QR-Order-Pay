@@ -179,3 +179,47 @@ Quyết định không dùng background sync cho mutation vì quyền phiên, gi
 Dashboard không lấy `Order` qua API phân trang để tính biểu đồ. Repository dùng một MongoDB `$facet` cho summary, top sản phẩm, doanh thu theo ngày và theo giờ trên toàn bộ đơn `PAID`; các bucket dùng `Asia/Ho_Chi_Minh`. Khoảng ngày từ UI được đổi thành biên UTC tương ứng ngày Việt Nam.
 
 CSV được tạo phía client từ đúng response đang hiển thị, có chống spreadsheet formula injection; nút In/PDF dùng print dialog của trình duyệt. Integration tạo 105 đơn để khóa hồi quy lỗi cắt ở giới hạn 100 trước đây.
+
+## AD-014 — Transactional outbox cho luồng nghiệp vụ cốt lõi
+
+**Ngày:** 23/09/2026 · **Trạng thái:** đã triển khai và kiểm chứng local
+
+Order create/cancel/transition, payment, table-session open/reopen/transition/idle-close và service-request create/resolve ghi audit cùng các `OutboxEvent` trong chính transaction nghiệp vụ. API không còn phát notification sau commit cho các luồng này. Relay claim event bằng lease, giữ `eventId` ổn định khi đưa sang Redis realtime queue, retry có backoff và giữ event `FAILED` để điều tra khi vượt số lần thử.
+
+Giao nhận là at-least-once: nếu enqueue thành công nhưng cập nhật trạng thái outbox thất bại, event có thể xuất hiện lại. Event chứa aggregate/version để chuẩn bị cho client bỏ sự kiện cũ hoặc refetch ở A3. Khi event đóng phiên được phát vào room khách, consumer ngắt socket sau khi emit để khách nhận sự kiện thanh toán/đóng bàn trước khi mất kết nối.
+
+Production chỉ chạy relay trong worker. Chế độ `unified` chạy thêm relay trong API process; khi Redis không sẵn sàng nhưng Socket.IO cùng process tồn tại, relay phát trực tiếp rồi đánh dấu event. `npm run dev` khởi động cả API, worker và client để scheduler/report vẫn hoạt động.
+
+Mutation catalog/availability cũng dùng transaction audit + outbox; consumer mới invalidate cache sau khi nhận event. Admin operations hiển thị outbox `FAILED`, dead-letter Redis và cho replay có audit. Anomaly vẫn là dữ liệu vận hành riêng, không phải domain event cần outbox.
+
+## AD-015 — Worker tách vai trò và Redis queue có lease sở hữu
+
+**Ngày:** 23/09/2026 · **Trạng thái:** đã triển khai và kiểm chứng bằng Redis drill
+
+Realtime, report và scheduler chạy bằng các `WORKER_ROLE` riêng trong production. Claim chuyển job sang processing và tạo lease trong cùng Lua script; renew, ACK, retry và reclaim đều so khớp token/owner. Retry exponential có jitter, quá số lần vào dead-letter và replay chuyển nguyên tử về queue nguồn. Report state chỉ có TTL khi đã terminal để job dài không biến mất giữa chừng.
+
+Scheduler dùng leader lease để tránh chạy sweeper/detector trùng. Mỗi worker ghi heartbeat có TTL; Docker healthcheck và Admin operations đọc heartbeat thay vì chỉ kiểm process còn tồn tại. Shutdown ngừng claim mới, chờ job đang chạy và đóng dependency có thời hạn.
+
+## AD-016 — Bill snapshot và quote ký là hai ranh giới tài chính
+
+**Ngày:** 23/09/2026 · **Trạng thái:** đã triển khai và integration đạt
+
+Receipt phiên mới chỉ dựng từ Bill snapshot bất biến, đã giữ tên bàn, mã hóa đơn, cashier và payment summary tại thời điểm thanh toán. Phiên legacy chưa có Bill mới fallback về Order và response nêu rõ nguồn. Việc sửa Order/catalog sau thanh toán không đổi receipt.
+
+Đặt món có bước quote ký HMAC gắn guest, phiên bàn, fingerprint giỏ, fingerprint catalog, tổng tiền và hạn dùng. Quote và place dùng chung một pricing service; place đọc/khóa phiên, đọc catalog và tạo Order trong transaction. Catalog hoặc giỏ đổi trả `QUOTE_CHANGED`, buộc người dùng xác nhận lại; idempotency replay vẫn trả kết quả cũ trước khi kiểm quote hết hạn.
+
+## AD-017 — Các workflow vận hành có aggregate và version riêng
+
+**Ngày:** 23/09/2026 · **Trạng thái:** đã triển khai và integration đạt
+
+Cancel request và cash shift là aggregate riêng, có lifecycle/version/index chống thao tác đồng thời. Chuyển bàn giữ nguyên `tableSessionId`/participant, chỉ đổi vị trí hiện tại và cập nhật Order trong transaction; lịch sử nguồn/đích nằm trên session. Availability có endpoint STAFF tối thiểu, không tái sử dụng DTO quản trị giá.
+
+Bill history lọc theo snapshot, phân trang và biên ngày `Asia/Ho_Chi_Minh`. KDS tính tuổi từ `statusHistory`; AI chỉ giải thích từ evidence backend đã xác thực và cấu hình cuối được kiểm lại giá, availability, caffeine/dairy trước khi thêm giỏ.
+
+## AD-018 — Production dùng migration runner và restore drill bắt buộc
+
+**Ngày:** 23/09/2026 · **Trạng thái:** đã triển khai và drill đạt
+
+Mongoose `autoIndex` bị tắt ở production. Compose chạy migration đã build trước API/worker; runner có unique lock, checksum ổn định giữa TypeScript và JavaScript build, preflight dữ liệu xung đột và lịch sử applied. Migration chỉ tiến về trước; rollback ứng dụng phải tương thích schema trong cửa sổ deploy.
+
+Backup dùng archive gzip kèm SHA-256. Restore script chỉ chấp nhận database kết thúc bằng `_restore_test`, rồi kiểm count, Bill trùng phiên, Payment mồ côi và các index bắt buộc. Drill MongoDB 7 ngày 23/09/2026 khôi phục 4 business document cùng migration state, 0 lỗi, đủ 5 index kiểm tra; chi tiết ở `restore-drill-2026-09-23.md`.

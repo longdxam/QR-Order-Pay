@@ -6,6 +6,7 @@ export const categorySchema = new Schema(
     slug: { type: String, required: true, unique: true },
     sortOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    version: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

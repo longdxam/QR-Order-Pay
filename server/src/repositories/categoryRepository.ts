@@ -11,11 +11,24 @@ export const categoryRepository = {
   async findById(id: string, session?: ClientSession | null): Promise<CategoryDoc | null> {
     return CategoryModel.findById(id, null, { session: session ?? undefined });
   },
-  async create(data: { name: string; slug: string; sortOrder?: number }): Promise<CategoryDoc> {
-    return CategoryModel.create(data);
+  async create(
+    data: { name: string; slug: string; sortOrder?: number },
+    session?: ClientSession | null,
+  ): Promise<CategoryDoc> {
+    const [created] = await CategoryModel.create([data], { session: session ?? undefined });
+    if (!created) throw new Error('Failed to create category');
+    return created;
   },
-  async update(id: string, update: Partial<{ name: string; sortOrder: number; isActive: boolean }>) {
-    return CategoryModel.findByIdAndUpdate(id, update, { new: true });
+  async update(
+    id: string,
+    update: Partial<{ name: string; sortOrder: number; isActive: boolean }>,
+    session?: ClientSession | null,
+  ) {
+    return CategoryModel.findByIdAndUpdate(
+      id,
+      { $set: update, $inc: { version: 1 } },
+      { new: true, session: session ?? undefined },
+    );
   },
   async delete(id: string) {
     return CategoryModel.findByIdAndDelete(id);

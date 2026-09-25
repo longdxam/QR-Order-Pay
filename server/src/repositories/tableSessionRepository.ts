@@ -3,7 +3,10 @@ import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.
 import { ConflictError } from '../errors/AppError.js';
 
 export interface ITableSessionRepository {
-  findActiveByTable(tableId: string): Promise<TableSessionDoc | null>;
+  findActiveByTable(
+    tableId: string,
+    session?: ClientSession | null,
+  ): Promise<TableSessionDoc | null>;
   findById(id: string, session?: ClientSession | null): Promise<TableSessionDoc | null>;
   create(
     data: { tableId: string; openedBy?: string | null; source?: 'STAFF' | 'GUEST' },
@@ -25,8 +28,10 @@ export interface ITableSessionRepository {
 }
 
 export const tableSessionRepository: ITableSessionRepository = {
-  async findActiveByTable(tableId) {
-    return TableSessionModel.findOne({ tableId, status: { $in: ['OPEN', 'CHECKOUT'] } });
+  async findActiveByTable(tableId, session) {
+    return TableSessionModel.findOne({ tableId, status: { $in: ['OPEN', 'CHECKOUT'] } }, null, {
+      session: session ?? undefined,
+    });
   },
   async findById(id, session) {
     return TableSessionModel.findById(id, null, { session: session ?? undefined });
@@ -34,7 +39,13 @@ export const tableSessionRepository: ITableSessionRepository = {
   async create(data, session) {
     try {
       return await TableSessionModel.create(
-        [{ tableId: data.tableId, openedBy: data.openedBy ?? null, source: data.source ?? 'STAFF' }],
+        [
+          {
+            tableId: data.tableId,
+            openedBy: data.openedBy ?? null,
+            source: data.source ?? 'STAFF',
+          },
+        ],
         { session: session ?? undefined },
       ).then((d) => d[0]!);
     } catch (e: unknown) {

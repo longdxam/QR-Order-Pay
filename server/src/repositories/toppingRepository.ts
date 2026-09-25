@@ -14,10 +14,23 @@ export const toppingRepository = {
   async findById(id: string, session?: ClientSession | null): Promise<ToppingDoc | null> {
     return ToppingModel.findById(id, null, { session: session ?? undefined });
   },
-  async create(data: { name: string; price: number; isAvailable?: boolean }) {
-    return ToppingModel.create(data);
+  async create(
+    data: { name: string; price: number; isAvailable?: boolean },
+    session?: ClientSession | null,
+  ) {
+    const [created] = await ToppingModel.create([data], { session: session ?? undefined });
+    if (!created) throw new Error('Failed to create topping');
+    return created;
   },
-  async update(id: string, update: Partial<{ name: string; price: number; isAvailable: boolean; isArchived: boolean }>) {
-    return ToppingModel.findByIdAndUpdate(id, update, { new: true });
+  async update(
+    id: string,
+    update: Partial<{ name: string; price: number; isAvailable: boolean; isArchived: boolean }>,
+    session?: ClientSession | null,
+  ) {
+    return ToppingModel.findByIdAndUpdate(
+      id,
+      { $set: update, $inc: { version: 1 } },
+      { new: true, session: session ?? undefined },
+    );
   },
 };

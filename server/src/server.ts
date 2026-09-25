@@ -8,6 +8,7 @@ import { closeHttpServer } from './infrastructure/lifecycle.js';
 import { connectRedis, disconnectRedis } from './infrastructure/redis.js';
 import { setSharedHttpObservationSink } from './infrastructure/metrics.js';
 import { recordSharedHttpObservation } from './infrastructure/sharedHttpMetrics.js';
+import { startOutboxRelay, type OutboxRelay } from './services/outboxRelay.js';
 
 async function main(): Promise<void> {
   await connectMongo();
@@ -16,6 +17,8 @@ async function main(): Promise<void> {
   const app = buildApp();
   const httpServer = http.createServer(app);
   createSocketServer(httpServer);
+  const outboxRelay: OutboxRelay | null =
+    config.trafficClass === 'unified' ? startOutboxRelay() : null;
   httpServer.listen(config.port, () => {
     logger.info({ port: config.port }, 'server listening');
   });
@@ -27,12 +30,17 @@ async function main(): Promise<void> {
     let exitCode = 0;
     try {
       const { forced } = await closeHttpServer(httpServer, config.shutdownTimeoutMs);
-      if (forced) logger.warn({ timeoutMs: config.shutdownTimeoutMs }, 'forced remaining HTTP connections closed');
+      if (forced)
+        logger.warn(
+          { timeoutMs: config.shutdownTimeoutMs },
+          'forced remaining HTTP connections closed',
+        );
     } catch (error) {
       exitCode = 1;
       logger.error({ err: error }, 'HTTP shutdown failed');
     }
     try {
+      await outboxRelay?.stop();
       setSharedHttpObservationSink(null);
       await disconnectRedis();
     } catch (error) {

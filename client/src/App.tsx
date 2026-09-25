@@ -37,6 +37,12 @@ const StaffServiceRequests = lazy(() =>
     default: module.StaffServiceRequests,
   })),
 );
+const StaffAvailability = lazy(() =>
+  import('./features/staff/Availability').then((module) => ({ default: module.StaffAvailability })),
+);
+const StaffCashShift = lazy(() =>
+  import('./features/staff/CashShift').then((module) => ({ default: module.StaffCashShift })),
+);
 const AdminDashboard = lazy(() =>
   import('./features/admin/Dashboard').then((module) => ({ default: module.AdminDashboard })),
 );
@@ -60,6 +66,9 @@ const AdminReviews = lazy(() =>
 );
 const AdminOperations = lazy(() =>
   import('./features/admin/Operations').then((module) => ({ default: module.AdminOperations })),
+);
+const AdminBills = lazy(() =>
+  import('./features/admin/Bills').then((module) => ({ default: module.AdminBills })),
 );
 const LoginPage = lazy(() =>
   import('./features/auth/LoginPage').then((module) => ({ default: module.LoginPage })),
@@ -91,7 +100,9 @@ export function App(): JSX.Element {
             </>
           ) : null}
 
-          {staffEnabled || adminEnabled ? <Route path="/auth/login" element={<LoginPage />} /> : null}
+          {staffEnabled || adminEnabled ? (
+            <Route path="/auth/login" element={<LoginPage />} />
+          ) : null}
           {staffEnabled ? (
             <Route element={<RequireAuth roles={['STAFF', 'ADMIN']} />}>
               <Route element={<StaffLayout />}>
@@ -99,6 +110,8 @@ export function App(): JSX.Element {
                 <Route path="/staff/kds" element={<StaffKDS />} />
                 <Route path="/staff/tables" element={<StaffTables />} />
                 <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
+                <Route path="/staff/availability" element={<StaffAvailability />} />
+                <Route path="/staff/cash-shift" element={<StaffCashShift />} />
               </Route>
             </Route>
           ) : null}
@@ -109,6 +122,7 @@ export function App(): JSX.Element {
                 <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
+                <Route path="/admin/bills" element={<AdminBills />} />
                 <Route path="/admin/products" element={<AdminProducts />} />
                 <Route path="/admin/categories" element={<AdminCategories />} />
                 <Route path="/admin/toppings" element={<AdminToppings />} />

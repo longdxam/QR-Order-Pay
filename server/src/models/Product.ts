@@ -47,6 +47,7 @@ export const productSchema = new Schema(
     isArchived: { type: Boolean, default: false },
     isFeatured: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
+    version: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

@@ -2,6 +2,30 @@ import { z } from 'zod';
 
 export const moneyVndSchema = z.number().int().nonnegative();
 
+export const realtimeEventTypeSchema = z.enum([
+  'order.created',
+  'order.statusChanged',
+  'menu.availabilityChanged',
+  'serviceRequest.created',
+  'serviceRequest.resolved',
+  'payment.confirmed',
+  'tableSession.statusChanged',
+  'cancelRequest.created',
+  'cancelRequest.resolved',
+]);
+export type RealtimeEventType = z.infer<typeof realtimeEventTypeSchema>;
+
+export const realtimeEventEnvelopeSchema = z.object({
+  eventId: z.string().min(1),
+  eventType: realtimeEventTypeSchema,
+  schemaVersion: z.number().int().positive(),
+  entityId: z.string().min(1),
+  entityVersion: z.number().int().nonnegative(),
+  occurredAt: z.string().datetime(),
+  data: z.unknown(),
+});
+export type RealtimeEventEnvelope = z.infer<typeof realtimeEventEnvelopeSchema>;
+
 export const apiSuccessSchema = <T extends z.ZodTypeAny>(data: T) =>
   z.object({
     success: z.literal(true),
@@ -38,6 +62,7 @@ export const errorCode = {
   TABLE_SESSION_NOT_OPEN: 'TABLE_SESSION_NOT_OPEN',
   PRODUCT_UNAVAILABLE: 'PRODUCT_UNAVAILABLE',
   PRICE_CHANGED: 'PRICE_CHANGED',
+  QUOTE_CHANGED: 'QUOTE_CHANGED',
   INVALID_OPTIONS: 'INVALID_OPTIONS',
   IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
   STATE_TRANSITION_INVALID: 'STATE_TRANSITION_INVALID',
@@ -112,6 +137,10 @@ export type CurrentTableSessionResponse = z.infer<typeof currentTableSessionResp
 
 export const updateTableSessionStatusRequestSchema = z.object({
   status: tableSessionStatusSchema,
+  expectedVersion: z.number().int().nonnegative(),
+});
+export const transferTableSessionRequestSchema = z.object({
+  targetTableId: z.string().min(1),
   expectedVersion: z.number().int().nonnegative(),
 });
 
@@ -210,6 +239,54 @@ export const orderSchema = z.object({
   updatedAt: z.string(),
 });
 
+// DTO đơn trả qua API: liệt kê field tường minh để không lộ idempotencyKey/requestHash/__v.
+const orderDtoItemSchema = orderItemSchema.extend({
+  note: z.string(),
+  toppingNamesSnapshot: z.array(z.string()),
+  variantNameSnapshot: z.string(),
+});
+const orderDtoBaseSchema = z.object({
+  _id: z.string(),
+  code: z.string(),
+  tableSessionId: z.string(),
+  participantId: z.string(),
+  items: z.array(orderDtoItemSchema),
+  total: moneyVndSchema,
+  status: orderStatusSchema,
+  paymentStatus: paymentStatusSchema,
+  cancelReason: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export const guestOrderSchema = orderDtoBaseSchema.extend({
+  statusHistory: z.array(
+    z.object({
+      from: orderStatusSchema.nullable(),
+      to: orderStatusSchema,
+      at: z.string(),
+      reason: z.string(),
+    }),
+  ),
+});
+export type GuestOrder = z.infer<typeof guestOrderSchema>;
+export const staffOrderSchema = orderDtoBaseSchema.extend({
+  tableId: z.string(),
+  version: z.number().int().nonnegative(),
+  tableName: z.string().optional(),
+  tableCode: z.string().optional(),
+  statusHistory: z.array(
+    z.object({
+      from: orderStatusSchema.nullable(),
+      to: orderStatusSchema,
+      at: z.string(),
+      by: z.string().nullable(),
+      byParticipantId: z.string().nullable(),
+      reason: z.string(),
+    }),
+  ),
+});
+export type StaffOrder = z.infer<typeof staffOrderSchema>;
+
 export const tableSessionSchema = z.object({
   id: z.string(),
   tableId: z.string(),
@@ -237,7 +314,28 @@ export const placeOrderRequestSchema = z.object({
     )
     .min(1),
   note: z.string().max(280).optional(),
+  quoteToken: z.string().min(20).optional(),
 });
+export const quoteOrderRequestSchema = placeOrderRequestSchema.omit({ quoteToken: true });
+export const orderQuoteResponseSchema = z.object({
+  quoteId: z.string(),
+  quoteToken: z.string(),
+  expiresAt: z.string().datetime(),
+  total: moneyVndSchema,
+  items: z.array(
+    z.object({
+      productId: z.string(),
+      variantId: z.string().nullable(),
+      name: z.string(),
+      variantName: z.string(),
+      toppingNames: z.array(z.string()),
+      quantity: z.number().int().positive(),
+      unitPrice: moneyVndSchema,
+      lineTotal: moneyVndSchema,
+    }),
+  ),
+});
+export type OrderQuoteResponse = z.infer<typeof orderQuoteResponseSchema>;
 
 export const aiRecommendRequestSchema = z.object({
   prompt: z.string().min(1).max(500),
@@ -420,6 +518,144 @@ export const serviceRequestSchema = z.object({
   type: z.enum(['CALL_STAFF', 'REQUEST_BILL', 'OTHER']),
   note: z.string().max(280).optional(),
 });
+
+export const availabilityRequestSchema = z.object({ isAvailable: z.boolean() });
+export type AvailabilityRequest = z.infer<typeof availabilityRequestSchema>;
+export const cancelRequestSchema = z.object({ reason: z.string().trim().min(3).max(280) });
+export const cancelRequestDecisionSchema = z.object({
+  decision: z.enum(['APPROVED', 'REJECTED']),
+  expectedVersion: z.number().int().nonnegative(),
+  note: z.string().max(280).optional(),
+});
+export const openCashShiftRequestSchema = z.object({ openingCash: moneyVndSchema });
+export const closeCashShiftRequestSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  countedCash: moneyVndSchema,
+  note: z.string().max(500).optional(),
+});
+export const validateAiConfigurationRequestSchema = z.object({
+  productId: z.string(),
+  variantId: z.string().nullable(),
+  toppingIds: z.array(z.string()),
+  constraints: z.object({
+    noCaffeine: z.boolean().optional(),
+    noDairy: z.boolean().optional(),
+    maxBudget: moneyVndSchema.optional(),
+  }),
+});
+
+export const receiptResponseSchema = z.object({
+  source: z.enum(['BILL_SNAPSHOT', 'LEGACY_ORDER_FALLBACK']),
+  tableName: z.string(),
+  closedAt: z.string().datetime().nullable(),
+  total: moneyVndSchema,
+  orders: z.array(
+    z.object({
+      _id: z.string(),
+      code: z.string(),
+      total: moneyVndSchema,
+      status: orderStatusSchema,
+      paymentStatus: paymentStatusSchema,
+      participantId: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      items: z.array(
+        z.object({
+          nameSnapshot: z.string(),
+          variantNameSnapshot: z.string().optional().default(''),
+          sizeName: z.string().nullable(),
+          sugarLevel: z.string(),
+          iceLevel: z.string(),
+          toppingNamesSnapshot: z.array(z.string()).optional().default([]),
+          note: z.string().optional().default(''),
+          quantity: z.number().int().positive(),
+          unitPrice: moneyVndSchema,
+          lineTotal: moneyVndSchema,
+        }),
+      ),
+      review: z
+        .object({
+          rating: z.number().int().min(1).max(5),
+          comment: z.string().nullable().optional(),
+          createdAt: z.string().datetime(),
+        })
+        .nullable(),
+    }),
+  ),
+});
+export type ReceiptResponse = z.infer<typeof receiptResponseSchema>;
+
+// Form lọc gửi cả ô để trống (`q=`); chuỗi rỗng nghĩa là không lọc.
+const emptyAsUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+const optionalFilter = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(emptyAsUndefined, schema.optional());
+export const billHistoryQuerySchema = z.object({
+  q: optionalFilter(z.string().trim().max(100)),
+  table: optionalFilter(z.string().trim().max(100)),
+  cashier: optionalFilter(z.string().trim().max(100)),
+  from: optionalFilter(z.string().date()),
+  to: optionalFilter(z.string().date()),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type BillHistoryQuery = z.infer<typeof billHistoryQuerySchema>;
+
+export const billHistoryRowSchema = z.object({
+  id: z.string(),
+  invoiceCode: z.string(),
+  tableCode: z.string(),
+  tableName: z.string(),
+  cashierName: z.string(),
+  closedAt: z.string().datetime(),
+  total: moneyVndSchema,
+  paidAmount: moneyVndSchema,
+  paymentMethods: z.array(z.enum(['CASH', 'BANK_TRANSFER', 'OTHER'])),
+});
+export type BillHistoryRow = z.infer<typeof billHistoryRowSchema>;
+
+export const billHistoryListResponseSchema = z.object({
+  items: z.array(billHistoryRowSchema),
+  page: z.number().int().positive(),
+  limit: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+});
+export type BillHistoryListResponse = z.infer<typeof billHistoryListResponseSchema>;
+
+export const billHistoryDetailSchema = billHistoryRowSchema.extend({
+  tableSessionId: z.string(),
+  source: z.enum(['STAFF', 'GUEST']),
+  openedAt: z.string().datetime(),
+  subtotal: moneyVndSchema,
+  payments: z.array(
+    z.object({
+      method: z.enum(['CASH', 'BANK_TRANSFER', 'OTHER']),
+      amount: moneyVndSchema,
+      paidAt: z.string().datetime(),
+    }),
+  ),
+  orders: z.array(
+    z.object({
+      _id: z.string(),
+      code: z.string(),
+      status: orderStatusSchema,
+      paymentStatus: paymentStatusSchema,
+      total: moneyVndSchema,
+      createdAt: z.string().datetime(),
+      participantId: z.string().nullable().optional(),
+      items: z.array(
+        z
+          .object({
+            nameSnapshot: z.string(),
+            variantNameSnapshot: z.string().optional().default(''),
+            quantity: z.number().int().positive(),
+            lineTotal: moneyVndSchema,
+          })
+          .passthrough(),
+      ),
+    }),
+  ),
+});
+export type BillHistoryDetail = z.infer<typeof billHistoryDetailSchema>;
 
 export const billSchema = z.object({
   tableSessionId: z.string(),

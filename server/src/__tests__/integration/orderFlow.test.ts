@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { buildApp } from '../../app.js';
@@ -24,11 +24,24 @@ import { config } from '../../config/index.js';
 import { getInstanceMetricsSnapshot } from '../../infrastructure/metrics.js';
 import { persistAnomalyAlert, runAnomalyDetection } from '../../services/anomalyService.js';
 import { AnomalyAlertModel } from '../../models/AnomalyAlert.js';
+import { startOutboxRelay, type OutboxRelay } from '../../services/outboxRelay.js';
+import { OutboxEventModel } from '../../models/OutboxEvent.js';
+import { CancelRequestModel } from '../../models/CancelRequest.js';
+import { CashShiftModel } from '../../models/CashShift.js';
+import { orderRepository } from '../../repositories/orderRepository.js';
+import { paymentRepository } from '../../repositories/paymentRepository.js';
+
+const INTERNAL_ORDER_FIELDS = ['idempotencyKey', 'requestHash', '__v'];
+
+function expectNoInternalOrderFields(order: Record<string, unknown>): void {
+  for (const field of INTERNAL_ORDER_FIELDS) expect(order).not.toHaveProperty(field);
+}
 
 let httpServer: Server;
 let socketServer: ReturnType<typeof createSocketServer>;
 let socketUrl = '';
 const clients: Socket[] = [];
+let outboxRelay: OutboxRelay;
 
 let replSet: MongoMemoryReplSet;
 let app: ReturnType<typeof buildApp>;
@@ -117,6 +130,7 @@ beforeAll(async () => {
   await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
   httpServer = createServer(app);
   socketServer = createSocketServer(httpServer);
+  outboxRelay = startOutboxRelay();
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const address = httpServer.address();
   if (!address || typeof address === 'string') throw new Error('Missing test server address');
@@ -124,6 +138,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  await outboxRelay.stop();
   if (socketServer) await new Promise<void>((resolve) => socketServer.close(() => resolve()));
   await mongoose.disconnect();
   await replSet.stop();
@@ -493,13 +508,22 @@ describe('order flow integration', () => {
     };
   }
   async function place(cookie: string, payload: object, key = randomToken(16)) {
+    const quotedPayload = await withQuote(cookie, payload);
     const res = await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie)
       .set('Idempotency-Key', key)
-      .send(payload);
+      .send(quotedPayload);
     expect(res.status).toBe(201);
     return res.body.data.order as { _id: string; total: number };
+  }
+  async function withQuote(cookie: string, payload: object) {
+    const quoted = await request(app)
+      .post('/api/v1/orders/quote')
+      .set('Cookie', cookie)
+      .send(payload);
+    expect(quoted.status).toBe(200);
+    return { ...payload, quoteToken: quoted.body.data.quoteToken };
   }
   async function serve(id: string) {
     for (const status of ['CONFIRMED', 'PREPARING', 'READY', 'SERVED']) {
@@ -532,9 +556,11 @@ describe('order flow integration', () => {
         socket.off(name, handler);
         reject(new Error(`Timeout: ${name}`));
       }, 5000);
-      const handler = (data: T) => {
+      const handler = (payload: T | { data: T }) => {
         clearTimeout(timeout);
-        resolve(data);
+        if (payload && typeof payload === 'object' && 'eventId' in payload && 'data' in payload)
+          resolve((payload as { data: T }).data);
+        else resolve(payload as T);
       };
       socket.once(name, handler);
     });
@@ -803,23 +829,24 @@ describe('order flow integration', () => {
     expect(cookie).toBeDefined();
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
+    const initialPayload = {
+      items: [
+        {
+          productId: product!._id.toString(),
+          variantId: variant._id?.toString() ?? null,
+          sugarLevel: '50%',
+          iceLevel: 'normal-ice',
+          toppingIds: [],
+          quantity: 2,
+        },
+      ],
+    };
 
     const placeRes = await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie!)
       .set('Idempotency-Key', 'idem-key-1')
-      .send({
-        items: [
-          {
-            productId: product!._id.toString(),
-            variantId: variant._id?.toString() ?? null,
-            sugarLevel: '50%',
-            iceLevel: 'normal-ice',
-            toppingIds: [],
-            quantity: 2,
-          },
-        ],
-      });
+      .send(await withQuote(cookie!, initialPayload));
     expect(placeRes.status).toBe(201);
     expect(placeRes.body.data.order.total).toBe(variant.price * 2);
 
@@ -830,18 +857,7 @@ describe('order flow integration', () => {
       .post('/api/v1/orders')
       .set('Cookie', cookie!)
       .set('Idempotency-Key', 'idem-key-1')
-      .send({
-        items: [
-          {
-            productId: product!._id.toString(),
-            variantId: variant._id?.toString() ?? null,
-            sugarLevel: '50%',
-            iceLevel: 'normal-ice',
-            toppingIds: [],
-            quantity: 2,
-          },
-        ],
-      });
+      .send(initialPayload);
     expect(replay.status).toBe(200);
     expect(replay.body.data.created).toBe(false);
 
@@ -896,7 +912,44 @@ describe('order flow integration', () => {
       .send({ amount: expected, method: 'CASH', expectedVersion: nextVersion });
     expect(payRes.status).toBe(201);
     expect(payRes.body.data.payment.amount).toBe(expected);
+    expect(payRes.body.data.payment.shiftId).toBeTruthy();
+    const shift = await request(app)
+      .get('/api/v1/staff/cash-shifts/current')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(shift.body.data.shift.paymentsByMethod.CASH).toMatchObject({
+      total: expected,
+      count: 1,
+    });
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin@test.vn', password: 'Password@123' });
+    const bills = await request(app)
+      .get('/api/v1/admin/bills')
+      .set('Authorization', `Bearer ${adminLogin.body.data.accessToken}`);
+    expect(bills.status).toBe(200);
+    expect(bills.body.data.items[0]).toMatchObject({ total: expected, cashierName: 'Staff' });
   }, 60_000);
+
+  it('prevents two staff transitions from overwriting the same order version', async () => {
+    const { cookie, payload } = await startVisit();
+    const order = await place(cookie, payload);
+    const responses = await Promise.all([
+      request(app)
+        .patch(`/api/v1/staff/orders/${order._id}/status`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send({ status: 'CONFIRMED' }),
+      request(app)
+        .patch(`/api/v1/staff/orders/${order._id}/status`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send({ status: 'CONFIRMED' }),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    const stored = await OrderModel.findById(order._id);
+    expect(stored?.status).toBe('CONFIRMED');
+    expect(stored?.version).toBe(1);
+    expect(stored?.statusHistory.filter((entry) => entry.to === 'CONFIRMED')).toHaveLength(1);
+  });
 
   it('server recomputes unitPrice from menu (ignores client price)', async () => {
     await request(app)
@@ -906,24 +959,25 @@ describe('order flow integration', () => {
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
+    const pricePayload = {
+      items: [
+        {
+          productId: product!._id.toString(),
+          variantId: variant._id?.toString() ?? null,
+          sugarLevel: '100%',
+          iceLevel: 'normal-ice',
+          toppingIds: [],
+          quantity: 1,
+          unitPrice: 1,
+          lineTotal: 1,
+        },
+      ],
+    };
     const res = await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie)
       .set('Idempotency-Key', 'idem-key-2')
-      .send({
-        items: [
-          {
-            productId: product!._id.toString(),
-            variantId: variant._id?.toString() ?? null,
-            sugarLevel: '100%',
-            iceLevel: 'normal-ice',
-            toppingIds: [],
-            quantity: 1,
-            unitPrice: 1,
-            lineTotal: 1,
-          },
-        ],
-      });
+      .send(await withQuote(cookie, pricePayload));
     expect(res.status).toBe(201);
     expect(res.body.data.order.total).toBe(variant.price);
   }, 60_000);
@@ -978,7 +1032,7 @@ describe('order flow integration', () => {
       .post('/api/v1/orders')
       .set('Cookie', cookie)
       .set('Idempotency-Key', 'idem-dup')
-      .send(payload);
+      .send(await withQuote(cookie, payload));
     const r2 = await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie)
@@ -987,6 +1041,136 @@ describe('order flow integration', () => {
     expect(r1.status).toBe(201);
     expect(r2.status).toBe(200);
     expect(r1.body.data.order._id).toBe(r2.body.data.order._id);
+    const orderId = r1.body.data.order._id as string;
+    expect(await AuditLogModel.countDocuments({ action: 'order.placed', entityId: orderId })).toBe(
+      1,
+    );
+    expect(
+      await OutboxEventModel.countDocuments({
+        aggregateType: 'Order',
+        aggregateId: orderId,
+        eventType: 'order.created',
+      }),
+    ).toBe(2);
+  }, 60_000);
+
+  it('replays an order when the same key races past the idempotency pre-check', async () => {
+    const { cookie, payload } = await startVisit();
+    const quoted = await withQuote(cookie, payload);
+    const send = () =>
+      request(app)
+        .post('/api/v1/orders')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', 'race-key-0001')
+        .send(quoted);
+    const first = await send();
+    expect(first.status).toBe(201);
+    // Giả lập request thứ hai đi qua bước kiểm tra trước khi request đầu commit.
+    const spy = vi.spyOn(orderRepository, 'findByIdempotency').mockResolvedValueOnce(null);
+    try {
+      const second = await send();
+      expect(second.status).toBe(200);
+      expect(second.body.data).toMatchObject({ created: false });
+      expect(second.body.data.order._id).toBe(first.body.data.order._id);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await OrderModel.countDocuments({ idempotencyKey: 'race-key-0001' })).toBe(1);
+  }, 60_000);
+
+  it('replays a payment when the same key races past the idempotency pre-check', async () => {
+    const { cookie, sessionId, payload } = await startVisit();
+    const order = await place(cookie, payload);
+    await serve(order._id);
+    const version = await checkout(sessionId);
+    const first = await pay(sessionId, order.total, version, 'pay-race-0001');
+    expect(first.status).toBe(201);
+    const spy = vi.spyOn(paymentRepository, 'findByIdempotency').mockResolvedValueOnce(null);
+    try {
+      const second = await pay(sessionId, order.total, version, 'pay-race-0001');
+      expect(second.status).toBe(200);
+      expect(second.body.data).toMatchObject({ replayed: true, billId: first.body.data.billId });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await PaymentModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
+    expect(await BillModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
+  }, 60_000);
+
+  it('lists only unfinished orders of active visits in the staff feed', async () => {
+    const closedVisit = await startVisit();
+    const served = await place(closedVisit.cookie, closedVisit.payload);
+    await serve(served._id);
+    const version = await checkout(closedVisit.sessionId);
+    expect((await pay(closedVisit.sessionId, served.total, version, randomToken(16))).status).toBe(
+      201,
+    );
+    // Đơn chưa hoàn tất nằm trong phiên đã đóng (như dữ liệu seed cũ) không được lên KDS.
+    const { _id: _servedId, ...servedCopy } = (await OrderModel.findById(served._id).lean())!;
+    await OrderModel.create({
+      ...servedCopy,
+      code: 'STALE01',
+      status: 'PENDING',
+      paymentStatus: 'UNPAID',
+      idempotencyKey: 'stale-order-key',
+      requestHash: 'stale-order-hash',
+    });
+
+    const activeVisit = await startVisit();
+    const pending = await place(activeVisit.cookie, activeVisit.payload);
+
+    const feed = await request(app)
+      .get('/api/v1/staff/orders')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(feed.status).toBe(200);
+    expect(feed.body.data.items.map((item: { _id: string }) => item._id)).toEqual([pending._id]);
+    expect(feed.body.data.items[0]).toMatchObject({ tableName: 'Bàn 01', status: 'PENDING' });
+    expectNoInternalOrderFields(feed.body.data.items[0]);
+
+    const servedFeed = await request(app)
+      .get('/api/v1/staff/orders?status=SERVED')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(servedFeed.body.data.items).toEqual([]);
+  }, 60_000);
+
+  it('never exposes internal order fields to guests or staff', async () => {
+    const { cookie, payload } = await startVisit();
+    const placed = await request(app)
+      .post('/api/v1/orders')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomToken(16))
+      .send(await withQuote(cookie, payload));
+    expect(placed.status).toBe(201);
+    expectNoInternalOrderFields(placed.body.data.order);
+    const orderId = placed.body.data.order._id as string;
+    const confirmed = await request(app)
+      .patch(`/api/v1/staff/orders/${orderId}/status`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ status: 'CONFIRMED' });
+    expect(confirmed.status).toBe(200);
+    expectNoInternalOrderFields(confirmed.body.data.order);
+
+    const mine = await request(app).get('/api/v1/orders/mine').set('Cookie', cookie);
+    const detail = await request(app).get(`/api/v1/orders/${orderId}`).set('Cookie', cookie);
+    for (const order of [mine.body.data.orders[0], detail.body.data.order]) {
+      expectNoInternalOrderFields(order);
+      expect(order).toMatchObject({ _id: orderId, status: 'CONFIRMED' });
+      for (const entry of order.statusHistory) expect(entry).not.toHaveProperty('by');
+    }
+
+    const second = await place(cookie, payload);
+    const cancelled = await request(app)
+      .post(`/api/v1/orders/${second._id}/cancel`)
+      .set('Cookie', cookie);
+    expect(cancelled.status).toBe(200);
+    expectNoInternalOrderFields(cancelled.body.data.order);
+
+    const staffDetail = await request(app)
+      .get(`/api/v1/staff/orders/${orderId}`)
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expectNoInternalOrderFields(staffDetail.body.data.order);
+    expect(staffDetail.body.data.order).toMatchObject({ tableName: 'Bàn 01', tableCode: 'B01' });
+    expect(staffDetail.body.data.order.statusHistory.at(-1).by).toEqual(expect.any(String));
   }, 60_000);
 
   it('rejects duplicate idempotency key with different payload', async () => {
@@ -997,22 +1181,23 @@ describe('order flow integration', () => {
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
+    const firstPayload = {
+      items: [
+        {
+          productId: product!._id.toString(),
+          variantId: variant._id?.toString() ?? null,
+          sugarLevel: '50%',
+          iceLevel: 'normal-ice',
+          toppingIds: [],
+          quantity: 1,
+        },
+      ],
+    };
     await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie)
       .set('Idempotency-Key', 'idem-conflict')
-      .send({
-        items: [
-          {
-            productId: product!._id.toString(),
-            variantId: variant._id?.toString() ?? null,
-            sugarLevel: '50%',
-            iceLevel: 'normal-ice',
-            toppingIds: [],
-            quantity: 1,
-          },
-        ],
-      });
+      .send(await withQuote(cookie, firstPayload));
     const conflict = await request(app)
       .post('/api/v1/orders')
       .set('Cookie', cookie)
@@ -1030,7 +1215,388 @@ describe('order flow integration', () => {
         ],
       });
     expect(conflict.status).toBe(409);
+    const created = await OrderModel.findOne({ idempotencyKey: 'idem-conflict' });
+    expect(created).not.toBeNull();
+    expect(
+      await AuditLogModel.countDocuments({ action: 'order.placed', entityId: created!.id }),
+    ).toBe(1);
+    expect(
+      await OutboxEventModel.countDocuments({
+        aggregateType: 'Order',
+        aggregateId: created!.id,
+        eventType: 'order.created',
+      }),
+    ).toBe(2);
   }, 60_000);
+
+  it('rejects a stale signed quote after the catalog price changes', async () => {
+    const { cookie, payload } = await startVisit();
+    const quote = await request(app)
+      .post('/api/v1/orders/quote')
+      .set('Cookie', cookie)
+      .send(payload);
+    expect(quote.status).toBe(200);
+    await ProductModel.updateOne({ slug: 'espresso-may' }, { $inc: { 'variants.0.price': 5_000 } });
+    const placed = await request(app)
+      .post('/api/v1/orders')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomToken(16))
+      .send({ ...payload, quoteToken: quote.body.data.quoteToken });
+    expect(placed.status).toBe(409);
+    expect(placed.body.error).toMatchObject({
+      code: 'QUOTE_CHANGED',
+      details: { reason: 'CATALOG_CHANGED' },
+    });
+    expect(await OrderModel.countDocuments()).toBe(0);
+  });
+
+  it('does not place an order when a quoted topping becomes unavailable', async () => {
+    const { cookie, payload } = await startVisit();
+    const topping = (await ToppingModel.findOne())!;
+    const cart = {
+      ...payload,
+      items: [{ ...payload.items[0]!, toppingIds: [topping.id] }],
+    };
+    const quote = await request(app).post('/api/v1/orders/quote').set('Cookie', cookie).send(cart);
+    expect(quote.status).toBe(200);
+    await ToppingModel.updateOne({ _id: topping._id }, { $set: { isAvailable: false } });
+
+    const response = await request(app)
+      .post('/api/v1/orders')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomToken(16))
+      .send({ ...cart, quoteToken: quote.body.data.quoteToken });
+    expect(response.status).toBe(422);
+    expect(await OrderModel.countDocuments()).toBe(0);
+  });
+
+  it('approves a confirmed-order cancellation request exactly once', async () => {
+    const { cookie, payload } = await startVisit();
+    const order = await place(cookie, payload);
+    expect(
+      (
+        await request(app)
+          .patch(`/api/v1/staff/orders/${order._id}/status`)
+          .set('Authorization', `Bearer ${staffAccess}`)
+          .send({ status: 'CONFIRMED' })
+      ).status,
+    ).toBe(200);
+    const otherGuest = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/orders/${order._id}/cancel-requests`)
+          .set('Cookie', cookies(otherGuest))
+          .send({ reason: 'Gửi hộ khách khác' })
+      ).status,
+    ).toBe(403);
+    const [created, duplicate] = await Promise.all([
+      request(app)
+        .post(`/api/v1/orders/${order._id}/cancel-requests`)
+        .set('Cookie', cookie)
+        .send({ reason: 'Khách đổi ý' }),
+      request(app)
+        .post(`/api/v1/orders/${order._id}/cancel-requests`)
+        .set('Cookie', cookie)
+        .send({ reason: 'Khách đổi ý' }),
+    ]);
+    expect(created.status).toBe(201);
+    expect(duplicate.status).toBe(201);
+    expect(duplicate.body.data.request._id).toBe(created.body.data.request._id);
+    expect(await CancelRequestModel.countDocuments()).toBe(1);
+    const requestId = created.body.data.request._id as string;
+    const approved = await request(app)
+      .patch(`/api/v1/staff/cancel-requests/${requestId}`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ decision: 'APPROVED', expectedVersion: 0 });
+    expect(approved.status).toBe(200);
+    expect((await OrderModel.findById(order._id))!.status).toBe('CANCELLED');
+    expect(
+      (
+        await request(app)
+          .patch(`/api/v1/staff/cancel-requests/${requestId}`)
+          .set('Authorization', `Bearer ${staffAccess}`)
+          .send({ decision: 'REJECTED', expectedVersion: 0 })
+      ).status,
+    ).toBe(409);
+  });
+
+  it('does not collect payment while a cancellation request is still pending', async () => {
+    const { cookie, payload, sessionId } = await startVisit();
+    const order = await place(cookie, payload);
+    expect(
+      (
+        await request(app)
+          .patch(`/api/v1/staff/orders/${order._id}/status`)
+          .set('Authorization', `Bearer ${staffAccess}`)
+          .send({ status: 'CONFIRMED' })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/orders/${order._id}/cancel-requests`)
+          .set('Cookie', cookie)
+          .send({ reason: 'Khách muốn đổi món' })
+      ).status,
+    ).toBe(201);
+    for (const status of ['PREPARING', 'READY', 'SERVED']) {
+      expect(
+        (
+          await request(app)
+            .patch(`/api/v1/staff/orders/${order._id}/status`)
+            .set('Authorization', `Bearer ${staffAccess}`)
+            .send({ status })
+        ).status,
+      ).toBe(200);
+    }
+    const version = await checkout(sessionId);
+    const response = await pay(sessionId, order.total, version, randomToken(16));
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('CANCEL_REQUEST_PENDING');
+    expect(await PaymentModel.countDocuments()).toBe(0);
+  });
+
+  it('assigns a concurrent payment to exactly one valid cash shift while closing', async () => {
+    const { cookie, payload, sessionId } = await startVisit();
+    const order = await place(cookie, payload);
+    await serve(order._id);
+    const sessionVersion = await checkout(sessionId);
+    const opened = await request(app)
+      .post('/api/v1/staff/cash-shifts')
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ openingCash: 0 });
+    expect(opened.status).toBe(201);
+    const initialShiftId = opened.body.data.shift._id as string;
+    const [paymentResponse, closeResponse] = await Promise.all([
+      pay(sessionId, order.total, sessionVersion, randomToken(16)),
+      request(app)
+        .post(`/api/v1/staff/cash-shifts/${initialShiftId}/close`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send({ expectedVersion: 0, countedCash: 0, note: 'Bàn giao ca' }),
+    ]);
+
+    expect(paymentResponse.status).toBe(201);
+    expect([200, 409]).toContain(closeResponse.status);
+    const payment = await PaymentModel.findById(paymentResponse.body.data.payment._id);
+    expect(payment?.shiftId).toBeTruthy();
+    if (closeResponse.status === 200) {
+      expect(payment!.shiftId!.toString()).not.toBe(initialShiftId);
+    }
+  });
+
+  it('reconciles an overnight shift once under payment replay and concurrent close', async () => {
+    const { cookie, payload, sessionId } = await startVisit();
+    const order = await place(cookie, payload);
+    await serve(order._id);
+    const sessionVersion = await checkout(sessionId);
+    const opened = await request(app)
+      .post('/api/v1/staff/cash-shifts')
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ openingCash: 100_000 });
+    const shiftId = opened.body.data.shift._id as string;
+    await CashShiftModel.updateOne(
+      { _id: shiftId },
+      { $set: { openedAt: new Date(Date.now() - 26 * 60 * 60_000) } },
+    );
+    const paymentKey = randomToken(16);
+    const first = await pay(sessionId, order.total, sessionVersion, paymentKey);
+    const replay = await pay(sessionId, order.total, sessionVersion, paymentKey);
+    expect(first.status).toBe(201);
+    expect(replay.status).toBe(200);
+    expect(await PaymentModel.countDocuments({ shiftId })).toBe(1);
+
+    const current = await request(app)
+      .get('/api/v1/staff/cash-shifts/current')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(Date.now() - Date.parse(current.body.data.shift.openedAt)).toBeGreaterThan(
+      24 * 60 * 60_000,
+    );
+    expect(current.body.data.shift.paymentsByMethod.CASH).toMatchObject({
+      total: order.total,
+      count: 1,
+    });
+    const closePayload = {
+      expectedVersion: current.body.data.shift.version,
+      countedCash: 100_000 + order.total,
+      note: 'Ca qua đêm',
+    };
+    const closed = await Promise.all([
+      request(app)
+        .post(`/api/v1/staff/cash-shifts/${shiftId}/close`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send(closePayload),
+      request(app)
+        .post(`/api/v1/staff/cash-shifts/${shiftId}/close`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send(closePayload),
+    ]);
+    expect(closed.map((response) => response.status).sort()).toEqual([200, 409]);
+    const stored = await CashShiftModel.findById(shiftId);
+    expect(stored).toMatchObject({
+      status: 'CLOSED',
+      expectedCash: 100_000 + order.total,
+      difference: 0,
+    });
+  });
+
+  it('transfers an open visit to an empty table atomically while guest access remains valid', async () => {
+    const { cookie, sessionId } = await startVisit();
+    const targetToken = randomToken(24);
+    const target = await TableModel.create({
+      code: 'B02',
+      name: 'Bàn 02',
+      capacity: 4,
+      publicTokenHash: sha256(targetToken),
+      isActive: true,
+    });
+    const moved = await request(app)
+      .post(`/api/v1/staff/table-sessions/${sessionId}/transfer`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ targetTableId: target.id, expectedVersion: 0 });
+    expect(moved.status).toBe(200);
+    expect(moved.body.data.session.tableId).toBe(target.id);
+    const current = await request(app).get('/api/v1/table-sessions/current').set('Cookie', cookie);
+    expect(current.body.data.table).toMatchObject({ id: target.id, code: 'B02' });
+    const targetJoin = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: targetToken });
+    expect(targetJoin.body.data.tableSessionId).toBe(sessionId);
+    const sourceJoin = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    expect(sourceJoin.body.data.tableSessionId).not.toBe(sessionId);
+  });
+
+  it('allows only one of two sessions racing for the same target table', async () => {
+    const first = await startVisit();
+    const sourceTwo = await TableModel.create({
+      code: 'B03',
+      name: 'Bàn 03',
+      capacity: 4,
+      publicTokenHash: sha256(randomToken(24)),
+      isActive: true,
+    });
+    const target = await TableModel.create({
+      code: 'B04',
+      name: 'Bàn 04',
+      capacity: 4,
+      publicTokenHash: sha256(randomToken(24)),
+      isActive: true,
+    });
+    const openedTwo = await request(app)
+      .post(`/api/v1/staff/tables/${sourceTwo.id}/sessions`)
+      .set('Authorization', `Bearer ${staffAccess}`);
+    const secondSessionId = openedTwo.body.data.session._id as string;
+    const responses = await Promise.all([
+      request(app)
+        .post(`/api/v1/staff/table-sessions/${first.sessionId}/transfer`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send({ targetTableId: target.id, expectedVersion: 0 }),
+      request(app)
+        .post(`/api/v1/staff/table-sessions/${secondSessionId}/transfer`)
+        .set('Authorization', `Bearer ${staffAccess}`)
+        .send({ targetTableId: target.id, expectedVersion: 0 }),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(
+      await TableSessionModel.countDocuments({
+        tableId: target._id,
+        status: { $in: ['OPEN', 'CHECKOUT'] },
+      }),
+    ).toBe(1);
+  });
+
+  it('lets staff change availability without granting price-edit permission', async () => {
+    const product = (await ProductModel.findOne({ slug: 'espresso-may' }))!;
+    const changed = await request(app)
+      .patch(`/api/v1/staff/catalog/products/${product.id}/availability`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ isAvailable: false, basePrice: 1 });
+    expect(changed.status).toBe(200);
+    const stored = (await ProductModel.findById(product.id))!;
+    expect(stored.isAvailable).toBe(false);
+    expect(stored.basePrice).toBe(35_000);
+    expect(
+      await AuditLogModel.countDocuments({
+        action: 'product.availabilityChanged',
+        entityId: product.id,
+      }),
+    ).toBe(1);
+    expect(
+      await OutboxEventModel.countDocuments({
+        eventType: 'menu.availabilityChanged',
+        aggregateId: product.id,
+      }),
+    ).toBe(1);
+  });
+
+  it('revalidates the final AI configuration against dairy metadata and total budget', async () => {
+    const { cookie } = await startVisit();
+    const product = (await ProductModel.findOne({ slug: 'espresso-may' }))!;
+    const topping = (await ToppingModel.findOne())!;
+    const response = await request(app)
+      .post('/api/v1/ai/recommendations/validate')
+      .set('Cookie', cookie)
+      .send({
+        productId: product.id,
+        variantId: product.variants[1]!._id!.toString(),
+        toppingIds: [topping.id],
+        constraints: { noDairy: true, maxBudget: 40_000 },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.valid).toBe(false);
+    expect(response.body.data.total).toBe(53_000);
+    expect(response.body.data.violations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Không thể xác nhận topping'),
+        expect.stringContaining('vượt ngân sách'),
+      ]),
+    );
+  });
+
+  it('paginates more than 100 immutable bills and protects admin-only history', async () => {
+    const paidAt = new Date('2026-09-23T03:00:00.000Z');
+    await BillModel.insertMany(
+      Array.from({ length: 105 }, (_, index) => ({
+        invoiceCode: `MC-ARCHIVE-${String(index + 1).padStart(3, '0')}`,
+        tableSessionId: new mongoose.Types.ObjectId(),
+        tableId: new mongoose.Types.ObjectId(),
+        tableCode: 'OLD-01',
+        tableName: 'Bàn Archive',
+        cashierName: 'Thu ngân cũ',
+        source: 'STAFF',
+        openedAt: new Date(paidAt.getTime() - 60_000),
+        closedAt: paidAt,
+        participants: [],
+        orders: [],
+        subtotal: index + 1,
+        total: index + 1,
+        paidAmount: index + 1,
+        paymentIds: [],
+        payments: [{ method: 'CASH', amount: index + 1, paidAt }],
+      })),
+    );
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin@test.vn', password: 'Password@123' });
+    const page = await request(app)
+      .get('/api/v1/admin/bills?table=Archive&cashier=cũ&page=6&limit=20')
+      .set('Authorization', `Bearer ${adminLogin.body.data.accessToken}`);
+
+    expect(page.status).toBe(200);
+    expect(page.body.data).toMatchObject({ total: 105, page: 6, limit: 20 });
+    expect(page.body.data.items).toHaveLength(5);
+    expect(page.body.data.items[0]).toMatchObject({
+      tableName: 'Bàn Archive',
+      cashierName: 'Thu ngân cũ',
+    });
+    expect(
+      (await request(app).get('/api/v1/admin/bills').set('Authorization', `Bearer ${staffAccess}`))
+        .status,
+    ).toBe(403);
+    expect((await request(app).get('/api/v1/admin/bills')).status).toBe(401);
+  });
 
   describe('guest auto-open sessions', () => {
     function cookieNamed(res: { headers: Record<string, unknown> }, name: string): string {
@@ -1175,6 +1741,14 @@ describe('order flow integration', () => {
       expect(replay.body.data.billId).toBe(first.body.data.billId);
       expect(await BillModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
       expect(await PaymentModel.countDocuments({ tableSessionId: sessionId })).toBe(1);
+      expect(await AuditLogModel.countDocuments({ action: 'payment.confirmed' })).toBe(1);
+      expect(
+        await OutboxEventModel.countDocuments({
+          aggregateType: 'TableSession',
+          aggregateId: sessionId,
+          eventType: 'payment.confirmed',
+        }),
+      ).toBe(2);
     }, 60_000);
 
     it('serves the frozen bill snapshot and a receipt free of internal fields', async () => {
@@ -1207,6 +1781,11 @@ describe('order flow integration', () => {
       }
 
       await OrderModel.updateOne({ _id: order._id }, { $set: { total: 1 } });
+      const frozenReceipt = await request(app)
+        .get('/api/v1/receipts/current')
+        .set('Cookie', receiptCookie);
+      expect(frozenReceipt.body.data.source).toBe('BILL_SNAPSHOT');
+      expect(frozenReceipt.body.data.total).toBe(order.total);
       const bill = await request(app)
         .get(`/api/v1/staff/table-sessions/${sessionId}/bill`)
         .set('Authorization', `Bearer ${staffAccess}`);
@@ -1215,6 +1794,19 @@ describe('order flow integration', () => {
       expect(bill.body.data.orders).toHaveLength(1);
       expect(bill.body.data.orders[0]._id).toBe(order._id);
       expect(bill.body.data.orders[0].total).toBe(order.total);
+
+      await Promise.all([
+        BillModel.deleteOne({ tableSessionId: sessionId }),
+        OrderModel.updateOne({ _id: order._id }, { $set: { total: order.total } }),
+      ]);
+      const legacyReceipt = await request(app)
+        .get('/api/v1/receipts/current')
+        .set('Cookie', receiptCookie);
+      expect(legacyReceipt.status).toBe(200);
+      expect(legacyReceipt.body.data).toMatchObject({
+        source: 'LEGACY_ORDER_FALLBACK',
+        total: order.total,
+      });
     }, 60_000);
 
     it('refuses guests when auto-open is disabled', async () => {

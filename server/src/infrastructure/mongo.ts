@@ -11,7 +11,7 @@ export async function connectMongo(): Promise<Mongoose> {
   mongoose.set('strictQuery', true);
   await mongoose.connect(config.mongoUri, {
     serverSelectionTimeoutMS: 8000,
-    autoIndex: true,
+    autoIndex: config.env !== 'production',
   });
   connected = true;
   setDependencyReadiness('mongodb', true);
@@ -31,7 +31,10 @@ export async function checkMongoReadiness(timeoutMs = 1_000): Promise<boolean> {
 
   let timeout: NodeJS.Timeout | undefined;
   try {
-    const ping = mongoose.connection.db.admin().ping().then(() => true);
+    const ping = mongoose.connection.db
+      .admin()
+      .ping()
+      .then(() => true);
     const expired = new Promise<boolean>((resolve) => {
       timeout = setTimeout(() => resolve(false), timeoutMs);
       timeout.unref();

@@ -36,9 +36,18 @@ export const billOrderSchema = new Schema(
 // Snapshot bất biến của một phiên đã thanh toán; chỉ ghi một lần, không có API sửa/xoá.
 export const billSchema = new Schema(
   {
-    tableSessionId: { type: Schema.Types.ObjectId, ref: 'TableSession', required: true, unique: true, index: true },
+    invoiceCode: { type: String, unique: true, sparse: true, index: true },
+    tableSessionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'TableSession',
+      required: true,
+      unique: true,
+      index: true,
+    },
     tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
     tableCode: { type: String, required: true },
+    tableName: { type: String, required: true, default: '' },
+    cashierName: { type: String, required: true, default: '' },
     source: { type: String, enum: ['STAFF', 'GUEST'], default: 'STAFF', required: true },
     openedAt: { type: Date, required: true },
     closedAt: { type: Date, required: true },
@@ -50,6 +59,18 @@ export const billSchema = new Schema(
     total: { type: Number, required: true },
     paidAmount: { type: Number, required: true },
     paymentIds: { type: [Schema.Types.ObjectId], ref: 'Payment', default: [] },
+    payments: {
+      type: [
+        {
+          paymentId: Schema.Types.ObjectId,
+          method: String,
+          amount: Number,
+          paidAt: Date,
+          _id: false,
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );

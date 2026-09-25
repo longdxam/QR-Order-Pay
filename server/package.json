@@ -6,18 +6,22 @@
   "main": "dist/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0 && tsx scripts/check-boundaries.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p e2e/tsconfig.json",
     "test": "vitest run src/__tests__/unit",
     "test:watch": "vitest src/__tests__/unit",
     "test:integration": "vitest run src/__tests__/integration",
+    "test:queue-drill": "tsx scripts/queue-recovery-drill.ts",
     "test:e2e": "playwright test",
     "seed": "tsx src/seeds/run.ts",
     "seed:benchmark": "tsx src/seeds/benchmark.ts",
     "check:benchmark": "tsx scripts/benchmark-invariants.ts",
-    "db:wait": "tsx scripts/wait-db.ts"
+    "db:wait": "tsx scripts/wait-db.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:migrate:prod": "node dist/scripts/migrate.js"
   },
   "dependencies": {
     "@may-cafe/contracts": "*",

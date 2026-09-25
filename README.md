@@ -11,13 +11,13 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - Tìm kiếm menu bằng câu tiếng Việt có/không dấu, typo nhẹ, ngân sách và ràng buộc caffeine/sữa; kết quả rỗng minh bạch và có bộ lọc sửa tay.
 - AI Barista gợi ý món từ menu thật theo sở thích & ngân sách (có fallback minh bạch khi không có API key).
-- Giỏ hàng theo thiết bị, idempotency khi gửi đơn.
-- KDS (Kitchen Display) với 4 cột trạng thái: Chờ xác nhận → Đã nhận → Đang pha → Sẵn sàng → Đã phục vụ.
+- Giỏ hàng theo thiết bị, quote ký trước khi đặt và idempotency khi gửi đơn.
+- KDS có tuổi công đoạn/SLA, duyệt yêu cầu hủy; staff có màn hình báo hết món, chuyển bàn và đối soát ca.
 - Realtime qua Socket.IO cho cả guest và staff.
 - Thanh toán tại quầy với xác nhận của Staff: phiên được chốt thành hóa đơn bất biến (`Bill` snapshot), trả bàn về trạng thái tự do.
 - Hóa đơn riêng theo thiết bị và đánh giá sau thanh toán, không cấp lại quyền đặt món.
 - Admin tạo ảnh QR để tải PNG/in; khách có thể dán token hoặc liên kết QR để vào bàn.
-- Dashboard doanh thu (30 ngày), biểu đồ ngày/giờ, top sản phẩm.
+- Dashboard doanh thu, lịch sử/in lại hóa đơn snapshot, biểu đồ ngày/giờ và top sản phẩm.
 - Dashboard vận hành riêng cho ADMIN: dependency, hàng đợi, socket, lỗi HTTP, tài nguyên và thời gian công đoạn.
 - Detector bất thường định kỳ cho lỗi/độ trễ/pha chế/hủy đơn, có baseline, “chưa đủ dữ liệu”, bằng chứng, cooldown và giải thích fallback an toàn.
 - PWA giữ giao diện và giỏ khi mất mạng, hiển thị trạng thái kết nối; đơn chỉ được gửi khi online.
@@ -38,6 +38,7 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 npm ci
 npm run db:up          # khởi MongoDB replica set
 npm run db:wait        # đợi sẵn sàng
+npm run db:migrate     # áp migration/index có lock và checksum
 npm run seed           # seed dữ liệu demo, in QR token cho mỗi bàn
 npm run dev            # chạy client + server
 ```
@@ -80,11 +81,13 @@ Khi Staff thu đủ tiền, phiên được đóng và **chốt thành `Bill` b�
 | `npm run typecheck`                           | TypeScript typecheck toàn bộ                                                            |
 | `npm run lint`                                | ESLint client + server                                                                  |
 | `npm run test`                                | Unit + integration tests                                                                |
+| `npm run test:queue-drill`                    | Drill queue trên Redis DB 15 cô lập (cần env guard; xem test report)                    |
 | `npm run test:e2e`                            | Playwright responsive/browser suite; cần production build đang chạy và biến E2E phù hợp |
 | `npm run seed`                                | Seed lại dữ liệu demo                                                                   |
 | `npm -w @may-cafe/server run seed:benchmark`  | Reset database benchmark riêng và dựng lại index                                        |
 | `npm -w @may-cafe/server run check:benchmark` | Kiểm tra bất biến dữ liệu sau load test                                                 |
 | `npm run db:up` / `db:down`                   | Khởi/dừng MongoDB                                                                       |
+| `npm run db:migrate` / `db:migrate:prod`      | Migration từ source / artifact production                                               |
 
 ## Production build local bằng container
 
@@ -94,7 +97,7 @@ Tạo `.env.production` với hai JWT secret khác nhau, mỗi secret tối thi�
 docker compose -f compose.production.yaml --env-file .env.production up -d --build
 ```
 
-Production-local được tách thành ba portal qua cùng Nginx: Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Guest đi vào pool `server-guest-a/b`; Staff và Admin đi vào pool ưu tiên `server-internal-a/b`. Mỗi portal dùng API/Socket.IO cùng origin và Nginx chặn route/API gọi chéo vai trò; backend vẫn kiểm tra JWT/role. Worker riêng xử lý báo cáo/CSV, thông báo realtime, sweeper và anomaly scheduler; menu công khai được cache ngắn hạn trong Redis và tự đổi generation khi catalog thay đổi. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem cấu hình resource limit, health check, backup và rollback tại `docs/deployment.md`; xem số tải baseline tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
+Production-local được tách thành ba portal qua cùng Nginx: Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Guest đi vào pool `server-guest-a/b`; Staff và Admin đi vào pool ưu tiên `server-internal-a/b`. Mỗi portal dùng API/Socket.IO cùng origin và Nginx chặn route/API gọi chéo vai trò; backend vẫn kiểm tra JWT/role. Migration one-shot hoàn tất trước API; scheduler/outbox, realtime và report chạy bằng ba worker role có heartbeat. Menu công khai được cache ngắn hạn trong Redis và invalidation qua outbox. Compose dùng project riêng `maycafe-production` để không va chạm stack dev. Xem resource limit, health check, backup và rollback tại `docs/deployment.md`; xem số tải baseline tại `docs/performance-report.md`. Chưa deploy cloud/HTTPS thật.
 
 ## Cấu trúc thư mục
 

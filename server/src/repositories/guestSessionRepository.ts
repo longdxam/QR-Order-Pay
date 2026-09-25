@@ -18,6 +18,7 @@ export interface IGuestSessionRepository {
   touch(id: string): Promise<void>;
   revokeByTableSession(tableSessionId: string, session?: ClientSession): Promise<number>;
   revokeByHash(hash: string): Promise<boolean>;
+  clearReceiptByHash(hash: string): Promise<boolean>;
 }
 
 export const guestSessionRepository: IGuestSessionRepository = {
@@ -51,7 +52,17 @@ export const guestSessionRepository: IGuestSessionRepository = {
     return r.modifiedCount ?? 0;
   },
   async revokeByHash(hash) {
-    const r = await GuestSessionModel.updateOne({ tokenHash: hash, revokedAt: null }, { $set: { revokedAt: new Date() } });
+    const r = await GuestSessionModel.updateOne(
+      { tokenHash: hash, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
     return r.modifiedCount > 0;
+  },
+  async clearReceiptByHash(hash) {
+    const result = await GuestSessionModel.updateOne(
+      { receiptTokenHash: hash },
+      { $unset: { receiptTokenHash: 1 } },
+    );
+    return result.modifiedCount > 0;
   },
 };

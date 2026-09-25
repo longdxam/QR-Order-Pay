@@ -14,6 +14,11 @@ import { GuestSessionModel } from '../../models/GuestSession.js';
 import { AuditLogModel } from '../../models/AuditLog.js';
 import { hashPassword, randomToken, sha256 } from '../../utils/crypto.js';
 import { sweepIdleSessions } from '../../services/idleSessionSweeper.js';
+import { OutboxEventModel } from '../../models/OutboxEvent.js';
+import { unitOfWork } from '../../infrastructure/unitOfWork.js';
+import { tableSessionRepository } from '../../repositories/tableSessionRepository.js';
+import { auditRepository } from '../../repositories/auditRepository.js';
+import { outboxRepository } from '../../repositories/outboxRepository.js';
 
 let replSet: MongoMemoryReplSet;
 let app: Express;
@@ -26,9 +31,26 @@ let otherTableToken = '';
 async function seedBasic() {
   await Promise.all(Object.values(mongoose.models).map((model) => model.deleteMany({})));
   const passwordHash = await hashPassword('Password@123');
-  await UserModel.create({ name: 'Admin', email: 'admin@test.vn', passwordHash, role: 'ADMIN', isActive: true });
-  await UserModel.create({ name: 'Staff', email: 'staff@test.vn', passwordHash, role: 'STAFF', isActive: true });
-  const cat = await CategoryModel.create({ name: 'Cà phê', slug: 'cafe', sortOrder: 0, isActive: true });
+  await UserModel.create({
+    name: 'Admin',
+    email: 'admin@test.vn',
+    passwordHash,
+    role: 'ADMIN',
+    isActive: true,
+  });
+  await UserModel.create({
+    name: 'Staff',
+    email: 'staff@test.vn',
+    passwordHash,
+    role: 'STAFF',
+    isActive: true,
+  });
+  const cat = await CategoryModel.create({
+    name: 'Cà phê',
+    slug: 'cafe',
+    sortOrder: 0,
+    isActive: true,
+  });
   await ProductModel.create({
     categoryId: cat._id,
     name: 'Espresso Mây',
@@ -40,7 +62,12 @@ async function seedBasic() {
       { name: 'S', price: 35000, isAvailable: true },
       { name: 'M', price: 45000, isAvailable: true },
     ],
-    allowedOptions: { sizes: ['S', 'M'], sugarLevels: ['0%', '50%', '100%'], iceLevels: ['less-ice', 'normal-ice'], toppingIds: [] },
+    allowedOptions: {
+      sizes: ['S', 'M'],
+      sugarLevels: ['0%', '50%', '100%'],
+      iceLevels: ['less-ice', 'normal-ice'],
+      toppingIds: [],
+    },
     toppingIds: [],
     tags: [],
     isAvailable: true,
@@ -72,7 +99,9 @@ function joinGuest(token: string = tableToken) {
 }
 
 function openStaffSession(id: string = tableId) {
-  return request(app).post(`/api/v1/staff/tables/${id}/sessions`).set('Authorization', `Bearer ${staffAccess}`);
+  return request(app)
+    .post(`/api/v1/staff/tables/${id}/sessions`)
+    .set('Authorization', `Bearer ${staffAccess}`);
 }
 
 /** Đổi timeout nhưng luôn khôi phục giá trị cũ, kể cả khi assertion bên trong ném lỗi. */
@@ -107,6 +136,46 @@ beforeEach(async () => {
   staffAccess = loginRes.body.data.accessToken as string;
 });
 
+describe('transactional outbox', () => {
+  it('rolls back the business record, audit and event together', async () => {
+    await expect(
+      unitOfWork.withTransaction(async (session) => {
+        const tableSession = await tableSessionRepository.create(
+          { tableId, source: 'GUEST' },
+          session,
+        );
+        await auditRepository.log(
+          {
+            actorType: 'SYSTEM',
+            action: 'test.forcedRollback',
+            entityType: 'TableSession',
+            entityId: tableSession.id,
+          },
+          session,
+        );
+        await outboxRepository.createRealtimeEvents(
+          [
+            {
+              eventType: 'tableSession.statusChanged',
+              aggregateType: 'TableSession',
+              aggregateId: tableSession.id,
+              aggregateVersion: tableSession.version,
+              target: { scope: 'staff' },
+              payload: { tableSessionId: tableSession.id, status: 'OPEN' },
+            },
+          ],
+          session,
+        );
+        throw new Error('forced rollback');
+      }),
+    ).rejects.toThrow('forced rollback');
+
+    expect(await TableSessionModel.countDocuments({ tableId })).toBe(0);
+    expect(await AuditLogModel.countDocuments({ action: 'test.forcedRollback' })).toBe(0);
+    expect(await OutboxEventModel.countDocuments({ aggregateType: 'TableSession' })).toBe(0);
+  });
+});
+
 describe('guest auto-open session', () => {
   it('serves two truly concurrent guest joins with the same session and a single created flag', async () => {
     const [first, second] = await Promise.all([joinGuest(), joinGuest()]);
@@ -124,7 +193,10 @@ describe('guest auto-open session', () => {
   });
 
   it('serves a concurrent guest join and staff open without conflict on the same table', async () => {
-    const [guest, staff] = await Promise.all([joinGuest(otherTableToken), openStaffSession(otherTableId)]);
+    const [guest, staff] = await Promise.all([
+      joinGuest(otherTableToken),
+      openStaffSession(otherTableId),
+    ]);
 
     expect([guest.status, staff.status]).not.toContain(409);
     expect([guest.status, staff.status]).not.toContain(500);
@@ -132,7 +204,10 @@ describe('guest auto-open session', () => {
     expect(staff.status).toBe(200);
     expect([guest.body.data.created, staff.body.data.created].filter(Boolean)).toHaveLength(1);
 
-    const active = await TableSessionModel.find({ tableId: otherTableId, status: { $in: ['OPEN', 'CHECKOUT'] } });
+    const active = await TableSessionModel.find({
+      tableId: otherTableId,
+      status: { $in: ['OPEN', 'CHECKOUT'] },
+    });
     expect(active).toHaveLength(1);
   });
 
@@ -166,7 +241,9 @@ describe('idle session sweeper', () => {
     const guestCountBefore = await GuestSessionModel.countDocuments({ tableSessionId: sessionId });
     expect(guestCountBefore).toBe(1);
 
-    const closedCount = await withIdleTimeout(60, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000)));
+    const closedCount = await withIdleTimeout(60, () =>
+      sweepIdleSessions(new Date(Date.now() + 61 * 60_000)),
+    );
     expect(closedCount).toBe(1);
 
     const session = await TableSessionModel.findById(sessionId);
@@ -178,7 +255,10 @@ describe('idle session sweeper', () => {
     const guest = await GuestSessionModel.findOne({ tableSessionId: sessionId });
     expect(guest!.revokedAt).not.toBeNull();
 
-    const audit = await AuditLogModel.findOne({ action: 'tableSession.idleClosed', entityId: sessionId });
+    const audit = await AuditLogModel.findOne({
+      action: 'tableSession.idleClosed',
+      entityId: sessionId,
+    });
     expect(audit).not.toBeNull();
   });
 
@@ -186,25 +266,35 @@ describe('idle session sweeper', () => {
     const joined = await joinGuest();
     const sessionId = joined.body.data.tableSessionId as string;
     const product = (await ProductModel.findOne({ slug: 'espresso-may' }))!;
+    const cookie = ((joined.headers['set-cookie'] as unknown as string[]) ?? [])
+      .map((value) => value.split(';')[0])
+      .join('; ');
+    const payload = {
+      items: [
+        {
+          productId: product.id,
+          variantId: product.variants[0]!._id!.toString(),
+          sugarLevel: '50%',
+          iceLevel: 'normal-ice',
+          toppingIds: [],
+          quantity: 1,
+        },
+      ],
+    };
+    const quote = await request(app)
+      .post('/api/v1/orders/quote')
+      .set('Cookie', cookie)
+      .send(payload);
     const placed = await request(app)
       .post('/api/v1/orders')
-      .set('Cookie', ((joined.headers['set-cookie'] as unknown as string[]) ?? []).map((c) => c.split(';')[0]).join('; '))
+      .set('Cookie', cookie)
       .set('Idempotency-Key', randomToken(16))
-      .send({
-        items: [
-          {
-            productId: product.id,
-            variantId: product.variants[0]!._id!.toString(),
-            sugarLevel: '50%',
-            iceLevel: 'normal-ice',
-            toppingIds: [],
-            quantity: 1,
-          },
-        ],
-      });
+      .send({ ...payload, quoteToken: quote.body.data.quoteToken });
     expect(placed.status).toBe(201);
 
-    const closedCount = await withIdleTimeout(60, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000)));
+    const closedCount = await withIdleTimeout(60, () =>
+      sweepIdleSessions(new Date(Date.now() + 61 * 60_000)),
+    );
     expect(closedCount).toBe(0);
 
     const session = await TableSessionModel.findById(sessionId);
@@ -217,7 +307,9 @@ describe('idle session sweeper', () => {
     expect(opened.status).toBe(200);
     const sessionId = opened.body.data.session._id as string;
 
-    const closedCount = await withIdleTimeout(60, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000)));
+    const closedCount = await withIdleTimeout(60, () =>
+      sweepIdleSessions(new Date(Date.now() + 61 * 60_000)),
+    );
     expect(closedCount).toBe(0);
 
     const session = await TableSessionModel.findById(sessionId);
@@ -229,7 +321,9 @@ describe('idle session sweeper', () => {
     const joined = await joinGuest();
     const sessionId = joined.body.data.tableSessionId as string;
 
-    const closedCount = await withIdleTimeout(0, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000)));
+    const closedCount = await withIdleTimeout(0, () =>
+      sweepIdleSessions(new Date(Date.now() + 61 * 60_000)),
+    );
     expect(closedCount).toBe(0);
 
     const session = await TableSessionModel.findById(sessionId);
@@ -242,7 +336,9 @@ describe('idle session sweeper', () => {
     const first = await joinGuest();
     const firstSessionId = first.body.data.tableSessionId as string;
 
-    expect(await withIdleTimeout(60, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000)))).toBe(1);
+    expect(
+      await withIdleTimeout(60, () => sweepIdleSessions(new Date(Date.now() + 61 * 60_000))),
+    ).toBe(1);
     expect((await TableSessionModel.findById(firstSessionId))!.status).toBe('CLOSED');
 
     const second = await joinGuest();

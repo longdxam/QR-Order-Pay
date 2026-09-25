@@ -3,17 +3,23 @@ import { BillModel, type BillDoc } from '../models/Bill.js';
 import type { TableSessionDoc } from '../models/TableSession.js';
 import type { OrderDoc } from '../models/Order.js';
 import type { PaymentDoc } from '../models/Payment.js';
+import { randomShortCode } from '../utils/crypto.js';
 
 export interface FinalizeBillInput {
   tableSession: TableSessionDoc;
   tableCode: string;
+  tableName: string;
+  cashierName: string;
   orders: OrderDoc[];
   payments: PaymentDoc[];
   closedAt: Date;
 }
 
 export interface IBillRepository {
-  finalize(input: FinalizeBillInput, session?: ClientSession | null): Promise<{ bill: BillDoc; created: boolean }>;
+  finalize(
+    input: FinalizeBillInput,
+    session?: ClientSession | null,
+  ): Promise<{ bill: BillDoc; created: boolean }>;
   findBySession(tableSessionId: string, session?: ClientSession | null): Promise<BillDoc | null>;
 }
 
@@ -33,12 +39,17 @@ export const billRepository: IBillRepository = {
     const orders = input.orders.filter((o) => o.status !== 'CANCELLED');
     const paidPayments = input.payments.filter((p) => p.status === 'SUCCESS');
     const subtotal = orders.reduce((s, o) => s + o.total, 0);
-    const participants = [...new Set(orders.map((o) => o.participantId).filter((p): p is string => !!p))];
+    const participants = [
+      ...new Set(orders.map((o) => o.participantId).filter((p): p is string => !!p)),
+    ];
 
     const doc = {
+      invoiceCode: `HD${input.closedAt.toISOString().slice(0, 10).replaceAll('-', '')}-${randomShortCode(6)}`,
       tableSessionId: input.tableSession._id,
       tableId: input.tableSession.tableId,
       tableCode: input.tableCode,
+      tableName: input.tableName,
+      cashierName: input.cashierName,
       source: input.tableSession.source ?? 'STAFF',
       openedAt: input.tableSession.startedAt,
       closedAt: input.closedAt,
@@ -73,6 +84,12 @@ export const billRepository: IBillRepository = {
       total: subtotal,
       paidAmount: paidPayments.reduce((s, p) => s + p.amount, 0),
       paymentIds: paidPayments.map((p) => p._id),
+      payments: paidPayments.map((p) => ({
+        paymentId: p._id,
+        method: p.method,
+        amount: p.amount,
+        paidAt: p.paidAt,
+      })),
     };
 
     try {
@@ -89,7 +106,10 @@ export const billRepository: IBillRepository = {
     }
   },
 
-  async findBySession(tableSessionId: string, session?: ClientSession | null): Promise<BillDoc | null> {
+  async findBySession(
+    tableSessionId: string,
+    session?: ClientSession | null,
+  ): Promise<BillDoc | null> {
     return BillModel.findOne({ tableSessionId }, null, { session: session ?? undefined });
   },
 };

@@ -15,18 +15,24 @@ Ngày bắt đầu: 20/09/2026. Điều phối CoDev theo `HUONG_DAN_DIEU_PHOI_C
 
 ## Giao việc và nghiệm thu
 
-| Gói | Phạm vi                                                          | Trạng thái                                                    |
-| --- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
-| P0  | CoDev khảo sát chỉ đọc; coordinator chạy baseline                | Hoàn thành                                                    |
-| P1  | Refresh token, request ID, hợp đồng API và lint nền              | Hoàn thành; nghiệm thu local 22/09/2026                       |
-| P2  | Production containers, proxy, readiness và shutdown              | Đã nghiệm thu production-local 22/09/2026; chưa deploy cloud  |
-| P3  | Logs, metrics và dashboard operations                            | Hoàn thành production-local 22/09/2026                        |
-| P4A | Tìm kiếm tiếng Việt có ràng buộc và đánh giá                     | Hoàn thành local và production-local 22/09/2026               |
-| P4B | Detector, AI giải thích và cảnh báo                              | Hoàn thành local và production-local 22/09/2026               |
-| P5A | Realtime/rate limit/worker nhiều instance                        | Hoàn thành production-local 22/09/2026                        |
-| P5B | Load test và báo cáo thực đo                                     | Hoàn thành phép đo; không đạt 600–700 RPS                     |
-| P6  | CI, browser QA và tài liệu bàn giao                              | Hoàn thành; GitHub Actions remote PASS, cloud/QR thật còn chờ |
-| P7  | Bundle, offline/PWA, dashboard, contracts và dependency security | Hoàn thành local và CI remote 23/09/2026                      |
+| Gói   | Phạm vi                                                          | Trạng thái                                                    |
+| ----- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| P0    | CoDev khảo sát chỉ đọc; coordinator chạy baseline                | Hoàn thành                                                    |
+| P1    | Refresh token, request ID, hợp đồng API và lint nền              | Hoàn thành; nghiệm thu local 22/09/2026                       |
+| P2    | Production containers, proxy, readiness và shutdown              | Đã nghiệm thu production-local 22/09/2026; chưa deploy cloud  |
+| P3    | Logs, metrics và dashboard operations                            | Hoàn thành production-local 22/09/2026                        |
+| P4A   | Tìm kiếm tiếng Việt có ràng buộc và đánh giá                     | Hoàn thành local và production-local 22/09/2026               |
+| P4B   | Detector, AI giải thích và cảnh báo                              | Hoàn thành local và production-local 22/09/2026               |
+| P5A   | Realtime/rate limit/worker nhiều instance                        | Hoàn thành production-local 22/09/2026                        |
+| P5B   | Load test và báo cáo thực đo                                     | Hoàn thành phép đo; không đạt 600–700 RPS                     |
+| P6    | CI, browser QA và tài liệu bàn giao                              | Hoàn thành; GitHub Actions remote PASS, cloud/QR thật còn chờ |
+| P7    | Bundle, offline/PWA, dashboard, contracts và dependency security | Hoàn thành local và CI remote 23/09/2026                      |
+| A1    | Transactional outbox và audit nguyên tử cho mutation cốt lõi     | Hoàn thành local 23/09/2026                                   |
+| A2    | Queue lease/retry/reclaim và worker tách theo vai trò            | Hoàn thành local + Redis drill 23/09/2026                     |
+| A3    | Realtime envelope, dedupe/version và reconnect recovery          | Hoàn thành local 23/09/2026                                   |
+| B1–B4 | Bill receipt, quote, contracts/module boundary, migration/backup | Hoàn thành local + restore drill 23/09/2026                   |
+| C1–C7 | KDS, availability, hóa đơn, hủy, chuyển bàn, ca, AI              | Hoàn thành local 23/09/2026                                   |
+| D1    | Failure tests và quality gate                                    | Hoàn thành local 23/09/2026                                   |
 
 ## Quyết định điều phối
 
@@ -117,11 +123,22 @@ Log chẩn đoán local nằm ở `.cache/codev-control/` (Git bỏ qua). Chỉ 
 
 ## Nghiệm thu P7 — 23/09/2026
 
-- Tách toàn bộ route bằng `React.lazy`; entry production còn 382,54 kB (gzip 117,26 kB), chunk lớn nhất 385,02 kB, không còn cảnh báo 500 kB.
+- Tách toàn bộ route bằng `React.lazy`; entry production hiện 389,20 kB (gzip 118,78 kB), chunk lớn nhất 384,70 kB, không còn cảnh báo 500 kB.
 - PWA cache toàn bộ asset production từ Vite manifest, hỗ trợ reload offline; API mutation và Socket.IO bị loại khỏi service-worker cache. Có banner offline/reconnected và Playwright khóa hồi quy cache `Vary`.
 - P8 congestion isolation (23/09): cổng Guest/Internal có upstream pool riêng; Guest có Nginx burst/connection limit và limiter theo bàn; menu public cache Redis có generation invalidation. Dashboard/CSV và notification realtime chạy qua worker queue có retry/dead-letter. Runtime smoke xác nhận pool routing, 200/429 dưới burst, report JSON/CSV và notification drain.
 - Dashboard có lọc ngày, CSV, in/PDF; backend aggregation toàn bộ đơn PAID theo múi giờ Việt Nam, không còn sai lệch do repository giới hạn 100 dòng. Integration 105 đơn đạt.
 - Shared contracts bổ sung join/current table session và transition request; root scripts luôn build contracts trước dev/typecheck/test, tránh CI dùng `dist` cũ không được Git theo dõi.
 - Nâng Vite/Vitest/React Router/UUID lên bản vá; `npm audit` từ 8 vulnerability (có 1 critical, 1 high) về 0. Toàn bộ lint/typecheck/unit/integration/build đạt.
-- CI thêm dependency audit và Chromium production-frontend smoke. Docker Desktop tắt nên lượt local mới chỉ đạt 7 frontend ca và skip 4 ca cần backend/token; không tuyên bố API-backed 11/11.
+- CI thêm dependency audit và Chromium production-frontend smoke. Lượt local mới trên frontend vừa build đạt 7 ca và ghi SKIP 4 ca cần token bàn/backend; không tuyên bố API-backed 11/11.
 - Commit `b61a8f0` đã push lên `main`; GitHub Actions run `35807566033` PASS cả ba job quality/build, integration và browser smoke trên checkout sạch.
+
+## Nghiệm thu A1–A3, B1–B4, C1–C7 và D1 — 23/09/2026
+
+- **A1:** catalog, order, payment, table session, service request và cancel request ghi business state/audit/outbox trong transaction; Admin xem và replay outbox/job lỗi có audit.
+- **A2:** realtime và report có consumer riêng; claim/lease/renew/ACK/retry/dead-letter/replay dùng Redis atomic script; scheduler có leader lease; heartbeat/progress, tuổi job, lease quá hạn, Redis RAM/key count và graceful drain dùng cho health/vận hành. Redis drill còn xác nhận report giữ lease không chặn realtime.
+- **A3:** realtime dùng envelope có `eventId`, `schemaVersion`, `entityId`, `entityVersion`, `occurredAt`; client dedupe bounded và bỏ event cũ, reconnect refetch snapshot đúng quyền.
+- **B1–B4:** receipt lấy Bill snapshot bất biến với fallback legacy; quote ký và place order dùng chung pricing; contracts/DTO được mở rộng và lint kiểm ranh giới controller; production tắt auto-index, migration có lock/checksum/preflight. Ba migration trong artifact build apply rồi skip an toàn; restore giữ đủ dữ liệu và index bắt buộc.
+- **C1–C7:** KDS có tuổi công đoạn/SLA; staff availability riêng; Admin tra cứu/in lại hóa đơn; cancel approval; chuyển bàn trống; đối soát ca; AI evidence và kiểm tra cấu hình cuối đều có API/UI/test tương ứng.
+- **D1:** `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm audit` và Compose config đều PASS. Kết quả hiện tại: server 67/67, client 17/17, integration 42/42. E2E trên frontend vừa build đạt 7 PASS/4 SKIP do thiếu token bàn; không ghi SKIP thành PASS.
+
+Migration/rollback và vận hành backup nằm ở `docs/backup-restore-runbook.md`; biên bản drill tại `docs/restore-drill-2026-09-23.md`. Cloud/HTTPS, QR camera thật và LLM live với key hợp lệ vẫn cần môi trường/credential bên ngoài.

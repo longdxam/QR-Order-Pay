@@ -10,20 +10,20 @@ Giá dùng để lọc là giá thấp nhất của size còn bán cho **một m
 
 ### Ma trận đánh giá
 
-| Nhóm | Ví dụ | Bất biến cần giữ |
-| --- | --- | --- |
-| Có dấu/không dấu | `cà phê`, `ca phe`, `caphe` | Cùng nhận ra nhóm cà phê |
-| Lỗi gõ nhẹ | `caphee`, `traa daoo` | Sửa trong từ điển giới hạn, không fuzzy toàn câu |
-| Nhóm/khẩu vị | `cà phê đậm`, `trà trái cây ít ngọt` | Đúng nhóm; khẩu vị chỉ dùng để xếp hạng |
-| Không caffeine | `không caffeine`, `khong cafein`, `decaf` | Chỉ nhận món có metadata `caffeine=false`; thiếu metadata cũng bị loại |
-| Không sữa | `không sữa` | Chỉ nhận món có metadata `dairy=false`; thiếu metadata cũng bị loại |
-| Loại nhóm | `không cà phê, trà đào` | Loại nhóm cà phê; **không** suy diễn thành không caffeine |
-| Ngân sách nghiêm ngặt | `dưới 40 nghìn` | Giá mỗi món phải `< 40.000đ` |
-| Ngân sách bao gồm | `không quá 40 nghìn`, `tối đa 40k` | Giá mỗi món được `<= 40.000đ` |
-| Định dạng giá | `40k`, `40.000đ`, `39,5k` | Chuẩn hóa đúng VND |
-| Tình trạng bán | Món/size ngừng bán | Không xuất hiện trong kết quả |
-| Không có kết quả | Từ khóa không khớp | Trả danh sách rỗng và thông báo trung thực; không chèn món rẻ nhất |
-| Bộ lọc sửa tay | Budget/caffeine/dairy trên UI | Giá trị người dùng sửa ghi đè phần tương ứng đã suy ra |
+| Nhóm                  | Ví dụ                                     | Bất biến cần giữ                                                       |
+| --------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| Có dấu/không dấu      | `cà phê`, `ca phe`, `caphe`               | Cùng nhận ra nhóm cà phê                                               |
+| Lỗi gõ nhẹ            | `caphee`, `traa daoo`                     | Sửa trong từ điển giới hạn, không fuzzy toàn câu                       |
+| Nhóm/khẩu vị          | `cà phê đậm`, `trà trái cây ít ngọt`      | Đúng nhóm; khẩu vị chỉ dùng để xếp hạng                                |
+| Không caffeine        | `không caffeine`, `khong cafein`, `decaf` | Chỉ nhận món có metadata `caffeine=false`; thiếu metadata cũng bị loại |
+| Không sữa             | `không sữa`                               | Chỉ nhận món có metadata `dairy=false`; thiếu metadata cũng bị loại    |
+| Loại nhóm             | `không cà phê, trà đào`                   | Loại nhóm cà phê; **không** suy diễn thành không caffeine              |
+| Ngân sách nghiêm ngặt | `dưới 40 nghìn`                           | Giá mỗi món phải `< 40.000đ`                                           |
+| Ngân sách bao gồm     | `không quá 40 nghìn`, `tối đa 40k`        | Giá mỗi món được `<= 40.000đ`                                          |
+| Định dạng giá         | `40k`, `40.000đ`, `39,5k`                 | Chuẩn hóa đúng VND                                                     |
+| Tình trạng bán        | Món/size ngừng bán                        | Không xuất hiện trong kết quả                                          |
+| Không có kết quả      | Từ khóa không khớp                        | Trả danh sách rỗng và thông báo trung thực; không chèn món rẻ nhất     |
+| Bộ lọc sửa tay        | Budget/caffeine/dairy trên UI             | Giá trị người dùng sửa ghi đè phần tương ứng đã suy ra                 |
 
 ### Kết quả tự động
 
@@ -45,6 +45,12 @@ Tìm kiếm P4A vẫn không gọi LLM; nếu bổ sung sau này, LLM chỉ đư
 Ngày 22/09/2026 đã thử smoke test live có giới hạn bằng key đọc tạm thời từ `apikey.txt`: ba ca recommendation và một ca giải thích anomaly. Provider trả HTTP 401 cho cả bốn lần; ứng dụng đều chuyển sang fallback an toàn và không làm gián đoạn request chính. Vì không có response live hợp lệ, **không công bố chất lượng, latency hoặc chi phí LLM**. Cần thay key bằng credential hợp lệ rồi chạy lại `server/scripts/ai-live-smoke.ts`.
 
 Provider logger không ghi response body lỗi vì body của nhà cung cấp có thể lặp lại định danh key đã che một phần. Key không được copy vào `.env`, tài liệu, log hay Git; `apikey.txt` đã nằm trong `.gitignore`. AI live chỉ được bật ở môi trường có hạn mức chi phí rõ ràng.
+
+### Evidence và kiểm tra cấu hình cuối — 23/09/2026
+
+Mỗi recommendation nay kèm evidence do backend dựng từ đúng product/variant trong MongoDB: giá được kiểm chứng, ngân sách, caffeine và dairy. Lý do hiển thị không dùng trực tiếp câu khẳng định do LLM tự sinh.
+
+Trước khi thêm món từ AI vào giỏ, client gọi `POST /api/v1/ai/recommendations/validate` với variant/topping cuối cùng. Backend kiểm tra lại availability, topping được phép, tổng giá gồm topping và toàn bộ ràng buộc. Metadata dairy/caffeine chưa biết không được coi là đạt. Integration đã xác nhận variant 45.000đ + topping 8.000đ bị chặn khi ngân sách 40.000đ, đồng thời topping không có metadata dairy không được khẳng định là không sữa.
 
 ## Đảm bảo an toàn chung
 

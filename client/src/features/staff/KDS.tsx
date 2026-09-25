@@ -37,6 +37,14 @@ interface Order {
   status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED';
   createdAt: string;
+  statusHistory: Array<{ to: Order['status']; at: string }>;
+}
+interface CancelRequest {
+  _id: string;
+  reason: string;
+  version: number;
+  createdAt: string;
+  orderId: { _id: string; code: string; status: string };
 }
 
 const COLUMNS: Array<{ status: Order['status']; label: string; next?: Order['status'] }> = [
@@ -45,17 +53,34 @@ const COLUMNS: Array<{ status: Order['status']; label: string; next?: Order['sta
   { status: 'PREPARING', label: 'Đang pha', next: 'READY' },
   { status: 'READY', label: 'Sẵn sàng', next: 'SERVED' },
 ];
+const LATE_AFTER_MINUTES: Partial<Record<Order['status'], number>> = {
+  PENDING: 5,
+  CONFIRMED: 5,
+  PREPARING: 10,
+  READY: 5,
+};
 
 export function StaffKDS(): JSX.Element {
   useDocumentTitle('KDS');
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock((value) => value + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const ordersQuery = useQuery({
     queryKey: ['staff-orders'],
     queryFn: async () => unwrap(await api.get<{ items: Order[] }>('/staff/orders')),
     refetchInterval: 10_000,
+  });
+  const cancelRequests = useQuery({
+    queryKey: ['staff-cancel-requests'],
+    queryFn: async () =>
+      unwrap<{ items: CancelRequest[] }>(await api.get('/staff/cancel-requests')),
+    refetchInterval: 8_000,
   });
 
   useEffect(() => {
@@ -78,7 +103,35 @@ export function StaffKDS(): JSX.Element {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff-orders'] });
     },
-    onError: (err) => toast({ title: 'Không thể chuyển trạng thái', description: getErrorMessage(err), tone: 'danger' }),
+    onError: (err) =>
+      toast({
+        title: 'Không thể chuyển trạng thái',
+        description: getErrorMessage(err),
+        tone: 'danger',
+      }),
+  });
+  const decideCancel = useMutation({
+    mutationFn: ({
+      request,
+      decision,
+    }: {
+      request: CancelRequest;
+      decision: 'APPROVED' | 'REJECTED';
+    }) =>
+      api.patch(`/staff/cancel-requests/${request._id}`, {
+        decision,
+        expectedVersion: request.version,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['staff-cancel-requests'] });
+      void queryClient.invalidateQueries({ queryKey: ['staff-orders'] });
+    },
+    onError: (error) =>
+      toast({
+        title: 'Không thể xử lý yêu cầu hủy',
+        description: getErrorMessage(error),
+        tone: 'danger',
+      }),
   });
 
   const grouped = useMemo(() => {
@@ -89,6 +142,8 @@ export function StaffKDS(): JSX.Element {
         const col = map.get(o.status);
         if (col) col.push(o);
       }
+      for (const orders of map.values())
+        orders.sort((left, right) => stageStartedAt(left) - stageStartedAt(right));
     }
     return map;
   }, [ordersQuery.data]);
@@ -104,15 +159,56 @@ export function StaffKDS(): JSX.Element {
   }
 
   if (ordersQuery.isError) {
-    return <ErrorState message={getErrorMessage(ordersQuery.error)} onRetry={() => ordersQuery.refetch()} />;
+    return (
+      <ErrorState
+        message={getErrorMessage(ordersQuery.error)}
+        onRetry={() => ordersQuery.refetch()}
+      />
+    );
   }
 
   return (
     <div className="space-y-3">
       <div>
         <h1 className="font-display text-2xl font-semibold">Kitchen Display</h1>
-        <p className="text-sm text-muted-foreground">Đơn mới tự cập nhật. Kiểm tra số bàn và tùy chọn trước khi pha chế.</p>
+        <p className="text-sm text-muted-foreground">
+          Đơn mới tự cập nhật. Kiểm tra số bàn và tùy chọn trước khi pha chế.
+        </p>
       </div>
+      {(cancelRequests.data?.items.length ?? 0) > 0 ? (
+        <Card className="border-warning/50 p-3">
+          <h2 className="font-display font-semibold">Yêu cầu hủy đang chờ</h2>
+          <div className="mt-2 space-y-2">
+            {cancelRequests.data!.items.map((request) => (
+              <div
+                key={request._id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warning/10 p-2 text-sm"
+              >
+                <span>
+                  <strong>{request.orderId.code}</strong> · {request.reason}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={decideCancel.isPending}
+                    onClick={() => decideCancel.mutate({ request, decision: 'REJECTED' })}
+                  >
+                    Từ chối
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={decideCancel.isPending}
+                    onClick={() => decideCancel.mutate({ request, decision: 'APPROVED' })}
+                  >
+                    Duyệt hủy
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {COLUMNS.map((c) => {
@@ -120,13 +216,25 @@ export function StaffKDS(): JSX.Element {
           return (
             <div key={c.status} className="space-y-2">
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">{c.label}</h2>
+                <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  {c.label}
+                </h2>
                 <Badge>{items.length}</Badge>
               </div>
               {items.length === 0 ? (
                 <Card className="p-3 text-center text-xs text-muted-foreground">Trống</Card>
               ) : (
-                items.map((order) => <OrderCard key={order._id} order={order} busy={transition.isPending} nextStatus={c.next} onCancel={() => transition.mutate({ id: order._id, status: 'CANCELLED' })} onAdvance={() => transition.mutate({ id: order._id, status: c.next! })} onView={() => setDetailId(order._id)} />)
+                items.map((order) => (
+                  <OrderCard
+                    key={order._id}
+                    order={order}
+                    busy={transition.isPending}
+                    nextStatus={c.next}
+                    onCancel={() => transition.mutate({ id: order._id, status: 'CANCELLED' })}
+                    onAdvance={() => transition.mutate({ id: order._id, status: c.next! })}
+                    onView={() => setDetailId(order._id)}
+                  />
+                ))
               )}
             </div>
           );
@@ -137,18 +245,40 @@ export function StaffKDS(): JSX.Element {
   );
 }
 
-function OrderCard({ order, nextStatus, onAdvance, onCancel, busy, onView }: { order: Order; nextStatus?: Order['status']; onAdvance: () => void; onCancel: () => void; busy: boolean; onView: () => void }): JSX.Element {
-  const ageMin = Math.max(0, Math.round((Date.now() - new Date(order.createdAt).getTime()) / 60000));
-  const isLate = ageMin > 10;
+function OrderCard({
+  order,
+  nextStatus,
+  onAdvance,
+  onCancel,
+  busy,
+  onView,
+}: {
+  order: Order;
+  nextStatus?: Order['status'];
+  onAdvance: () => void;
+  onCancel: () => void;
+  busy: boolean;
+  onView: () => void;
+}): JSX.Element {
+  const ageMin = Math.max(0, Math.floor((Date.now() - stageStartedAt(order)) / 60000));
+  const threshold = LATE_AFTER_MINUTES[order.status] ?? 10;
+  const isLate = ageMin >= threshold;
   return (
-    <Card className="p-3 space-y-2">
+    <Card className={`p-3 space-y-2 ${isLate ? 'border-danger/60' : ''}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-display font-semibold">{order.code}</p>
           <p className="font-semibold text-primary">{order.tableName}</p>
-          <p className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
+          <p className="text-xs text-muted-foreground">
+            {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </p>
         </div>
-        <Badge tone={isLate ? 'danger' : 'info'}>{ageMin} phút</Badge>
+        <Badge tone={isLate ? 'danger' : 'info'}>
+          {isLate ? `Quá hạn · ${ageMin} phút` : `${ageMin} phút`}
+        </Badge>
       </div>
       <ul className="space-y-1 text-sm">
         {order.items.map((it, idx) => (
@@ -160,8 +290,12 @@ function OrderCard({ order, nextStatus, onAdvance, onCancel, busy, onView }: { o
             <span className="text-xs text-muted-foreground">
               Đường {it.sugarLevel} · {labelIce(it.iceLevel)} · {vnd(it.lineTotal)}
             </span>
-            {it.note ? <span className="text-xs italic text-accent">Ghi chú: {it.note}</span> : null}
-            {it.toppingNamesSnapshot?.length ? <span className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</span> : null}
+            {it.note ? (
+              <span className="text-xs italic text-accent">Ghi chú: {it.note}</span>
+            ) : null}
+            {it.toppingNamesSnapshot?.length ? (
+              <span className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -175,19 +309,44 @@ function OrderCard({ order, nextStatus, onAdvance, onCancel, busy, onView }: { o
           <Eye className="h-4 w-4" />
         </Button>
       </div>
-      {['PENDING', 'CONFIRMED'].includes(order.status) ? <Button variant="outline" size="sm" disabled={busy} className="w-full" onClick={() => { if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel(); }}>Hủy đơn</Button> : null}
+      {['PENDING', 'CONFIRMED'].includes(order.status) ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          className="w-full"
+          onClick={() => {
+            if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel();
+          }}
+        >
+          Hủy đơn
+        </Button>
+      ) : null}
     </Card>
   );
 }
 
+function stageStartedAt(order: Order): number {
+  const entry = [...(order.statusHistory ?? [])]
+    .reverse()
+    .find((value) => value.to === order.status);
+  return new Date(entry?.at ?? order.createdAt).getTime();
+}
+
 function statusLabel(s: Order['status']): string {
   switch (s) {
-    case 'PENDING': return 'Chờ xác nhận';
-    case 'CONFIRMED': return 'Đã nhận';
-    case 'PREPARING': return 'Đang pha';
-    case 'READY': return 'Sẵn sàng';
-    case 'SERVED': return 'Đã phục vụ';
-    case 'CANCELLED': return 'Đã huỷ';
+    case 'PENDING':
+      return 'Chờ xác nhận';
+    case 'CONFIRMED':
+      return 'Đã nhận';
+    case 'PREPARING':
+      return 'Đang pha';
+    case 'READY':
+      return 'Sẵn sàng';
+    case 'SERVED':
+      return 'Đã phục vụ';
+    case 'CANCELLED':
+      return 'Đã huỷ';
   }
 }
 

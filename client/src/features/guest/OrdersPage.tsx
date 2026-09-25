@@ -69,7 +69,27 @@ export function OrdersPage(): JSX.Element {
       toast({ title: 'Đã huỷ đơn', tone: 'success' });
       queryClient.invalidateQueries({ queryKey: ['my-orders'] });
     },
-    onError: (err) => toast({ title: 'Không thể huỷ', description: getErrorMessage(err), tone: 'danger' }),
+    onError: (err) =>
+      toast({ title: 'Không thể huỷ', description: getErrorMessage(err), tone: 'danger' }),
+  });
+  const cancelRequestMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const reason = window.prompt('Lý do muốn hủy đơn (ít nhất 3 ký tự):')?.trim();
+      if (!reason) throw new Error('Bạn chưa nhập lý do.');
+      return unwrap(await api.post(`/orders/${id}/cancel-requests`, { reason }));
+    },
+    onSuccess: () =>
+      toast({
+        title: 'Đã gửi yêu cầu hủy',
+        description: 'Nhân viên sẽ xem xét trước khi pha chế.',
+        tone: 'success',
+      }),
+    onError: (error) =>
+      toast({
+        title: 'Không gửi được yêu cầu hủy',
+        description: getErrorMessage(error),
+        tone: 'danger',
+      }),
   });
 
   const requestBill = useMutation({
@@ -77,8 +97,14 @@ export function OrdersPage(): JSX.Element {
       // No dedicated endpoint yet; trigger service request to ask for bill.
       await api.post('/service-requests', { type: 'REQUEST_BILL' });
     },
-    onSuccess: () => toast({ title: 'Đã gửi yêu cầu thanh toán', description: 'Nhân viên sẽ đến hỗ trợ.', tone: 'success' }),
-    onError: (err) => toast({ title: 'Không gửi được yêu cầu', description: getErrorMessage(err), tone: 'danger' }),
+    onSuccess: () =>
+      toast({
+        title: 'Đã gửi yêu cầu thanh toán',
+        description: 'Nhân viên sẽ đến hỗ trợ.',
+        tone: 'success',
+      }),
+    onError: (err) =>
+      toast({ title: 'Không gửi được yêu cầu', description: getErrorMessage(err), tone: 'danger' }),
   });
 
   if (ordersQuery.isLoading) {
@@ -92,7 +118,12 @@ export function OrdersPage(): JSX.Element {
   }
 
   if (ordersQuery.isError) {
-    return <ErrorState message={getErrorMessage(ordersQuery.error)} onRetry={() => ordersQuery.refetch()} />;
+    return (
+      <ErrorState
+        message={getErrorMessage(ordersQuery.error)}
+        onRetry={() => ordersQuery.refetch()}
+      />
+    );
   }
 
   const orders = ordersQuery.data?.orders ?? [];
@@ -110,7 +141,11 @@ export function OrdersPage(): JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold">Đơn của bạn</h1>
-        <Button variant="outline" onClick={() => requestBill.mutate()} disabled={requestBill.isPending}>
+        <Button
+          variant="outline"
+          onClick={() => requestBill.mutate()}
+          disabled={requestBill.isPending}
+        >
           <ReceiptText className="h-4 w-4" /> Yêu cầu thanh toán
         </Button>
       </div>
@@ -122,7 +157,15 @@ export function OrdersPage(): JSX.Element {
               <p className="text-sm text-muted-foreground">Mã đơn</p>
               <p className="font-display text-lg font-semibold">{order.code}</p>
             </div>
-            <Badge tone={order.status === 'CANCELLED' ? 'danger' : order.status === 'SERVED' ? 'success' : 'info'}>
+            <Badge
+              tone={
+                order.status === 'CANCELLED'
+                  ? 'danger'
+                  : order.status === 'SERVED'
+                    ? 'success'
+                    : 'info'
+              }
+            >
               {statusLabel(order.status)}
             </Badge>
           </div>
@@ -147,8 +190,21 @@ export function OrdersPage(): JSX.Element {
           <Timeline status={order.status} paymentStatus={order.paymentStatus} />
 
           {order.status === 'PENDING' ? (
-            <Button variant="outline" onClick={() => cancelMutation.mutate(order._id)} disabled={cancelMutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => cancelMutation.mutate(order._id)}
+              disabled={cancelMutation.isPending}
+            >
               <BellRing className="h-4 w-4" /> Huỷ đơn
+            </Button>
+          ) : null}
+          {order.status === 'CONFIRMED' ? (
+            <Button
+              variant="outline"
+              onClick={() => cancelRequestMutation.mutate(order._id)}
+              disabled={cancelRequestMutation.isPending}
+            >
+              <BellRing className="h-4 w-4" /> Yêu cầu nhân viên hủy
             </Button>
           ) : null}
         </Card>
@@ -174,9 +230,15 @@ function statusLabel(s: Order['status']): string {
   }
 }
 
-function Timeline({ status, paymentStatus }: { status: Order['status']; paymentStatus: Order['paymentStatus'] }): JSX.Element {
+function Timeline({
+  status,
+  paymentStatus,
+}: {
+  status: Order['status'];
+  paymentStatus: Order['paymentStatus'];
+}): JSX.Element {
   const steps = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED'] as const;
-  const reached = status === 'CANCELLED' ? 0 : steps.indexOf(status as typeof steps[number]) + 1;
+  const reached = status === 'CANCELLED' ? 0 : steps.indexOf(status as (typeof steps)[number]) + 1;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">

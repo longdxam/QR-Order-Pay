@@ -25,7 +25,8 @@ function num(name: string, fallback: number): number {
 
 function nonNegativeInt(name: string, fallback: number): number {
   const value = num(name, fallback);
-  if (!Number.isInteger(value) || value < 0) throw new Error(`Invalid non-negative integer env ${name}=${value}`);
+  if (!Number.isInteger(value) || value < 0)
+    throw new Error(`Invalid non-negative integer env ${name}=${value}`);
   return value;
 }
 
@@ -37,13 +38,15 @@ function positiveInt(name: string, fallback: number): number {
 
 function positiveNumber(name: string, fallback: number): number {
   const value = num(name, fallback);
-  if (!Number.isFinite(value) || value <= 0) throw new Error(`Invalid positive number env ${name}=${value}`);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`Invalid positive number env ${name}=${value}`);
   return value;
 }
 
 function fraction(name: string, fallback: number): number {
   const value = num(name, fallback);
-  if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`Invalid fraction env ${name}=${value}`);
+  if (!Number.isFinite(value) || value < 0 || value > 1)
+    throw new Error(`Invalid fraction env ${name}=${value}`);
   return value;
 }
 
@@ -71,7 +74,9 @@ const allowedOrigins = [...new Set([publicAppUrl, staffAppUrl, adminAppUrl, serv
 function authSecret(name: string, developmentFallback: string): string {
   const value = required(name, developmentFallback);
   if (environment === 'production' && (value.length < 32 || /^(change-me|dev-)/i.test(value))) {
-    throw new Error(`${name} must be at least 32 characters and must not use a development placeholder in production`);
+    throw new Error(
+      `${name} must be at least 32 characters and must not use a development placeholder in production`,
+    );
   }
   return value;
 }
@@ -91,7 +96,10 @@ export const config = {
   logLevel: required('LOG_LEVEL', 'info'),
   instanceId: process.env.INSTANCE_ID?.trim() || hostname(),
   trafficClass: trafficClass(),
-  mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/maycafe?replicaSet=rs0&directConnection=true'),
+  mongoUri: required(
+    'MONGODB_URI',
+    'mongodb://127.0.0.1:27017/maycafe?replicaSet=rs0&directConnection=true',
+  ),
   redisUrl: required('REDIS_URL', 'redis://127.0.0.1:6379'),
   rateLimits: {
     authPerMinute: positiveInt('RATE_LIMIT_AUTH_MAX', 30),
@@ -103,10 +111,25 @@ export const config = {
     aiPerMinute: positiveInt('RATE_LIMIT_AI_MAX', 20),
   },
   menuCacheTtlSeconds: positiveInt('MENU_CACHE_TTL_SECONDS', 60),
+  orderQuoteTtlMs: positiveInt('ORDER_QUOTE_TTL_MS', 120_000),
   backgroundJobs: {
     pollIntervalMs: positiveInt('BACKGROUND_JOB_POLL_MS', 250),
     maxAttempts: positiveInt('BACKGROUND_JOB_MAX_ATTEMPTS', 3),
     resultTtlSeconds: positiveInt('BACKGROUND_JOB_RESULT_TTL_SECONDS', 900),
+    resultMaxBytes: positiveInt('BACKGROUND_JOB_RESULT_MAX_BYTES', 5 * 1024 * 1024),
+    leaseMs: positiveInt('BACKGROUND_JOB_LEASE_MS', 30_000),
+    retryBaseMs: positiveInt('BACKGROUND_JOB_RETRY_BASE_MS', 1_000),
+    retryMaxMs: positiveInt('BACKGROUND_JOB_RETRY_MAX_MS', 60_000),
+    heartbeatIntervalMs: positiveInt('WORKER_HEARTBEAT_INTERVAL_MS', 5_000),
+    heartbeatTtlMs: positiveInt('WORKER_HEARTBEAT_TTL_MS', 20_000),
+  },
+  outbox: {
+    pollIntervalMs: positiveInt('OUTBOX_POLL_MS', 250),
+    batchSize: positiveInt('OUTBOX_BATCH_SIZE', 50),
+    leaseMs: positiveInt('OUTBOX_LEASE_MS', 30_000),
+    maxAttempts: positiveInt('OUTBOX_MAX_ATTEMPTS', 20),
+    retryBaseMs: positiveInt('OUTBOX_RETRY_BASE_MS', 1_000),
+    retryMaxMs: positiveInt('OUTBOX_RETRY_MAX_MS', 60_000),
   },
   jwtAccessSecret: authSecret('JWT_ACCESS_SECRET', 'dev-access-secret'),
   jwtRefreshSecret: authSecret('JWT_REFRESH_SECRET', 'dev-refresh-secret'),

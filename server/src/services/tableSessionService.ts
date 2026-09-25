@@ -1,7 +1,12 @@
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { tableRepository } from '../repositories/tableRepository.js';
-import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../errors/AppError.js';
 import { sha256, randomToken } from '../utils/crypto.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import type { TableSessionStatus } from '@may-cafe/contracts';
@@ -10,7 +15,8 @@ import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { ServiceRequestModel } from '../models/ServiceRequest.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { config } from '../config/index.js';
-import type { TableSessionDoc } from '../models/TableSession.js';
+import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.js';
+import { outboxRepository } from '../repositories/outboxRepository.js';
 
 /**
  * Single entry point for "this table must have a live session".
@@ -23,11 +29,30 @@ export async function ensureActiveSession(input: {
   const active = await tableSessionRepository.findActiveByTable(input.tableId);
   if (active) {
     if (input.actor.type === 'STAFF' && active.status === 'CHECKOUT') {
-      // revert to OPEN so they can add more orders
-      const reverted = await tableSessionRepository.updateStatus(active._id.toString(), active.version, {
-        status: 'OPEN',
+      const reverted = await unitOfWork.withTransaction(async (mongoSession) => {
+        const result = await tableSessionRepository.updateStatus(
+          active._id.toString(),
+          active.version,
+          {
+            status: 'OPEN',
+          },
+          mongoSession,
+        );
+        if (!result) throw new ConflictError('CONFLICT', 'Phiên đang thay đổi, vui lòng thử lại.');
+        await auditRepository.log(
+          {
+            actorType: 'USER',
+            actorId: input.actor.id ?? null,
+            action: 'tableSession.reopened',
+            entityType: 'TableSession',
+            entityId: result.id,
+            metadata: { tableId: input.tableId, from: 'CHECKOUT', to: 'OPEN' },
+          },
+          mongoSession,
+        );
+        await createSessionStatusEvents(result, mongoSession);
+        return result;
       });
-      if (!reverted) throw new ConflictError('CONFLICT', 'Phiên đang thay đổi, vui lòng thử lại.');
       return { session: reverted, created: false };
     }
     return { session: active, created: false };
@@ -38,21 +63,29 @@ export async function ensureActiveSession(input: {
   }
 
   try {
-    const session = await tableSessionRepository.create({
-      tableId: input.tableId,
-      openedBy: input.actor.id ?? null,
-      source: input.actor.type,
+    const session = await unitOfWork.withTransaction(async (mongoSession) => {
+      const created = await tableSessionRepository.create(
+        {
+          tableId: input.tableId,
+          openedBy: input.actor.id ?? null,
+          source: input.actor.type,
+        },
+        mongoSession,
+      );
+      await auditRepository.log(
+        {
+          actorType: input.actor.type === 'GUEST' ? 'SYSTEM' : 'USER',
+          actorId: input.actor.id ?? null,
+          action: input.actor.type === 'GUEST' ? 'tableSession.autoOpened' : 'tableSession.opened',
+          entityType: 'TableSession',
+          entityId: created._id.toString(),
+          metadata: { tableId: input.tableId, source: input.actor.type },
+        },
+        mongoSession,
+      );
+      await createSessionStatusEvents(created, mongoSession);
+      return created;
     });
-    if (input.actor.type === 'GUEST') {
-      await auditRepository.log({
-        actorType: 'SYSTEM',
-        actorId: null,
-        action: 'tableSession.autoOpened',
-        entityType: 'TableSession',
-        entityId: session._id.toString(),
-        metadata: { tableId: input.tableId, source: 'GUEST' },
-      });
-    }
     return { session, created: true };
   } catch (e: unknown) {
     const mongoCode = e !== null && typeof e === 'object' && 'code' in e ? e.code : undefined;
@@ -67,7 +100,10 @@ export async function ensureActiveSession(input: {
 export async function openSession(tableId: string, openedBy: string) {
   const table = await tableRepository.findById(tableId);
   if (!table || !table.isActive) throw new NotFoundError('Bàn không khả dụng.');
-  return ensureActiveSession({ tableId: table._id.toString(), actor: { type: 'STAFF', id: openedBy } });
+  return ensureActiveSession({
+    tableId: table._id.toString(),
+    actor: { type: 'STAFF', id: openedBy },
+  });
 }
 
 export async function transition(
@@ -80,24 +116,96 @@ export async function transition(
   if (!session) throw new NotFoundError('Phiên không tồn tại.');
   const allowed = allowedTransitions(session.status);
   if (!allowed.includes(next)) {
-    throw new ConflictError('STATE_TRANSITION_INVALID', `Không thể chuyển phiên từ ${session.status} sang ${next}.`);
+    throw new ConflictError(
+      'STATE_TRANSITION_INVALID',
+      `Không thể chuyển phiên từ ${session.status} sang ${next}.`,
+    );
   }
   const updated = await unitOfWork.withTransaction(async (mongoSession) => {
     // Updating the session serializes closing against new order creation.
     const update: Parameters<typeof tableSessionRepository.updateStatus>[2] =
-      next === 'CLOSED' ? { status: next, closedBy, closedReason: 'STAFF' } : { status: next, closedBy };
-    const result = await tableSessionRepository.updateStatus(id, expectedVersion, update, mongoSession);
+      next === 'CLOSED'
+        ? { status: next, closedBy, closedReason: 'STAFF' }
+        : { status: next, closedBy };
+    const result = await tableSessionRepository.updateStatus(
+      id,
+      expectedVersion,
+      update,
+      mongoSession,
+    );
     if (!result) throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng tải lại.');
     if (next === 'CLOSED') {
-      const outstanding = await OrderModel.exists({ tableSessionId: id, status: { $ne: 'CANCELLED' }, paymentStatus: 'UNPAID' }).session(mongoSession);
-      if (outstanding) throw new ForbiddenError('Cần xử lý và thanh toán hết đơn trước khi đóng phiên.');
+      const outstanding = await OrderModel.exists({
+        tableSessionId: id,
+        status: { $ne: 'CANCELLED' },
+        paymentStatus: 'UNPAID',
+      }).session(mongoSession);
+      if (outstanding)
+        throw new ForbiddenError('Cần xử lý và thanh toán hết đơn trước khi đóng phiên.');
       await guestSessionRepository.revokeByTableSession(id, mongoSession);
-      await ServiceRequestModel.updateMany({ tableSessionId: id, status: 'OPEN' }, { $set: { status: 'RESOLVED', resolvedBy: closedBy, resolvedAt: new Date() } }, { session: mongoSession });
+      await ServiceRequestModel.updateMany(
+        { tableSessionId: id, status: 'OPEN' },
+        { $set: { status: 'RESOLVED', resolvedBy: closedBy, resolvedAt: new Date() } },
+        { session: mongoSession },
+      );
     }
+    await auditRepository.log(
+      {
+        actorType: 'USER',
+        actorId: closedBy,
+        action: 'tableSession.transition',
+        entityType: 'TableSession',
+        entityId: id,
+        metadata: { from: session.status, to: next },
+      },
+      mongoSession,
+    );
+    await createSessionStatusEvents(result, mongoSession, next === 'CLOSED');
     return result;
   });
-  if (!updated) throw new ConflictError('CONFLICT', 'Phiên đã được cập nhật bởi người khác, vui lòng tải lại.');
+  if (!updated)
+    throw new ConflictError('CONFLICT', 'Phiên đã được cập nhật bởi người khác, vui lòng tải lại.');
   return updated;
+}
+
+async function createSessionStatusEvents(
+  session: TableSessionDoc,
+  mongoSession: import('mongoose').ClientSession,
+  resolvedServiceRequests = false,
+): Promise<void> {
+  const tableSessionId = session.id;
+  const payload = {
+    tableSessionId,
+    status: session.status,
+    source: session.source,
+    version: session.version,
+  };
+  const base = {
+    aggregateType: 'TableSession',
+    aggregateId: tableSessionId,
+    aggregateVersion: session.version,
+    payload,
+  } as const;
+  await outboxRepository.createRealtimeEvents(
+    [
+      { ...base, eventType: 'tableSession.statusChanged', target: { scope: 'staff' } },
+      {
+        ...base,
+        eventType: 'tableSession.statusChanged',
+        target: { scope: 'session', tableSessionId },
+      },
+      ...(resolvedServiceRequests
+        ? [
+            {
+              ...base,
+              eventType: 'serviceRequest.resolved' as const,
+              target: { scope: 'staff' as const },
+            },
+          ]
+        : []),
+    ],
+    mongoSession,
+  );
 }
 
 function allowedTransitions(from: TableSessionStatus): TableSessionStatus[] {
@@ -138,9 +246,12 @@ export async function joinAsGuest(tablePublicToken: string) {
 export async function guestCanOrder(tableSessionId: string): Promise<void> {
   const session = await tableSessionRepository.findById(tableSessionId);
   if (!session) throw new NotFoundError();
-  if (session.status === 'CLOSED') throw new ForbiddenError('Phiên đã kết thúc, vui lòng liên hệ nhân viên.');
+  if (session.status === 'CLOSED')
+    throw new ForbiddenError('Phiên đã kết thúc, vui lòng liên hệ nhân viên.');
   if (session.status === 'CHECKOUT')
-    throw new ForbiddenError('Phiên đang thanh toán, không thể thêm món mới. Vui lòng liên hệ nhân viên.');
+    throw new ForbiddenError(
+      'Phiên đang thanh toán, không thể thêm món mới. Vui lòng liên hệ nhân viên.',
+    );
 }
 
 export async function listOpenSessions() {
@@ -148,8 +259,109 @@ export async function listOpenSessions() {
   return Promise.all(
     sessions.map(async (session) => {
       const table = await tableRepository.findById(session.tableId.toString());
-      const orderCount = await orderRepository.list({ tableSessionId: session._id.toString(), limit: 1 });
+      const orderCount = await orderRepository.list({
+        tableSessionId: session._id.toString(),
+        limit: 1,
+      });
       return { session, table, orderCount: orderCount.total };
     }),
   );
+}
+
+export async function transferSession(
+  id: string,
+  targetTableId: string,
+  expectedVersion: number,
+  actorId: string,
+) {
+  return unitOfWork.withTransaction(async (session) => {
+    const [source, target] = await Promise.all([
+      tableSessionRepository.findById(id, session),
+      tableRepository.findById(targetTableId, session),
+    ]);
+    if (!source) throw new NotFoundError('Phiên không tồn tại.');
+    if (!target?.isActive) throw new NotFoundError('Bàn đích không hoạt động.');
+    if (source.status !== 'OPEN')
+      throw new ConflictError('STATE_TRANSITION_INVALID', 'Chỉ chuyển được phiên đang mở.');
+    if (source.version !== expectedVersion)
+      throw new ConflictError('CONFLICT', 'Phiên vừa được cập nhật.');
+    if (source.tableId.toString() === targetTableId)
+      throw new ValidationError('Bàn đích phải khác bàn hiện tại.');
+    if (await tableSessionRepository.findActiveByTable(targetTableId, session))
+      throw new ConflictError('TABLE_SESSION_ALREADY_OPEN', 'Bàn đích đang có phiên phục vụ.');
+    let moved;
+    try {
+      moved = await TableSessionModel.findOneAndUpdate(
+        { _id: id, status: 'OPEN', version: expectedVersion },
+        {
+          $set: { tableId: target._id },
+          $inc: { version: 1 },
+          $push: {
+            tableTransfers: {
+              fromTableId: source.tableId,
+              toTableId: target._id,
+              by: actorId,
+              at: new Date(),
+            },
+          },
+        },
+        { new: true, session },
+      );
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000)
+        throw new ConflictError('TABLE_SESSION_ALREADY_OPEN', 'Bàn đích vừa được sử dụng.');
+      throw error;
+    }
+    if (!moved) throw new ConflictError('CONFLICT', 'Phiên vừa được cập nhật.');
+    await OrderModel.updateMany(
+      { tableSessionId: source._id },
+      { $set: { tableId: target._id } },
+      { session },
+    );
+    await auditRepository.log(
+      {
+        actorType: 'USER',
+        actorId,
+        action: 'tableSession.transferred',
+        entityType: 'TableSession',
+        entityId: id,
+        metadata: { fromTableId: source.tableId.toString(), toTableId: targetTableId },
+      },
+      session,
+    );
+    await outboxRepository.createRealtimeEvents(
+      [
+        {
+          eventType: 'tableSession.statusChanged',
+          aggregateType: 'TableSession',
+          aggregateId: id,
+          aggregateVersion: moved.version,
+          target: { scope: 'session', tableSessionId: id },
+          payload: {
+            tableSessionId: id,
+            status: moved.status,
+            tableId: targetTableId,
+            tableName: target.name,
+            version: moved.version,
+          },
+        },
+        {
+          eventType: 'tableSession.statusChanged',
+          aggregateType: 'TableSession',
+          aggregateId: id,
+          aggregateVersion: moved.version,
+          target: { scope: 'staff' },
+          payload: {
+            tableSessionId: id,
+            status: moved.status,
+            tableId: targetTableId,
+            tableName: target.name,
+            version: moved.version,
+          },
+        },
+      ],
+      session,
+    );
+    return moved;
+  });
 }

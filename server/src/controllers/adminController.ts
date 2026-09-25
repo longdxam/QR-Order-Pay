@@ -1,22 +1,40 @@
 import type { Request, Response, NextFunction } from 'express';
 import { overview } from '../services/dashboardService.js';
-import { invalidatePublicMenuCache, listAdminCategories, listAdminProducts, listAdminToppings } from '../services/menuService.js';
+import {
+  listAdminCategories,
+  listAdminProducts,
+  listAdminToppings,
+} from '../services/menuService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { AppError, NotFoundError, ValidationError } from '../errors/AppError.js';
-import { productRepository } from '../repositories/productRepository.js';
-import { categoryRepository } from '../repositories/categoryRepository.js';
-import { toppingRepository } from '../repositories/toppingRepository.js';
-import { notifyMenuChange } from '../services/notificationService.js';
+import * as catalogMutation from '../services/catalogMutationService.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
 import { hashPassword } from '../utils/crypto.js';
 import { operationsSummary } from '../services/operationsService.js';
 import { anomalyDashboard, updateAnomalyStatus } from '../services/anomalyService.js';
-import { updateAnomalyStatusRequestSchema } from '@may-cafe/contracts';
+import {
+  availabilityRequestSchema,
+  billHistoryDetailSchema,
+  billHistoryListResponseSchema,
+  billHistoryQuerySchema,
+  updateAnomalyStatusRequestSchema,
+} from '@may-cafe/contracts';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { enqueueReportJob, getReportJobState } from '../infrastructure/backgroundQueue.js';
+import {
+  enqueueReportJob,
+  getReportJobState,
+  listDeadLetters,
+  replayDeadLetter,
+} from '../infrastructure/backgroundQueue.js';
+import { outboxRepository } from '../repositories/outboxRepository.js';
+import { getBillHistory, listBillHistory } from '../services/billHistoryService.js';
 
-export async function reportsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function reportsOverview(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);
@@ -27,7 +45,32 @@ export async function reportsOverview(req: Request, res: Response, next: NextFun
   }
 }
 
-export async function createOverviewJob(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function bills(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const filters = billHistoryQuerySchema.parse(req.query);
+    const data = billHistoryListResponseSchema.parse(await listBillHistory(filters));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function billDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json({
+      success: true,
+      data: billHistoryDetailSchema.parse(await getBillHistory(String(req.params['id'] ?? ''))),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createOverviewJob(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const from = parseDate(req.body?.from);
     const to = parseDate(req.body?.to);
@@ -43,14 +86,24 @@ export async function createOverviewJob(req: Request, res: Response, next: NextF
     res.status(202).json({ success: true, data: state });
   } catch (error) {
     if ((error as Error).message === 'BACKGROUND_QUEUE_UNAVAILABLE') {
-      next(new AppError('BACKGROUND_QUEUE_UNAVAILABLE', 'Worker báo cáo tạm thời không khả dụng.', 503));
+      next(
+        new AppError(
+          'BACKGROUND_QUEUE_UNAVAILABLE',
+          'Worker báo cáo tạm thời không khả dụng.',
+          503,
+        ),
+      );
       return;
     }
     next(error);
   }
 }
 
-export async function reportJobStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function reportJobStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
     const state = await getReportJobState(id);
@@ -64,10 +117,69 @@ export async function reportJobStatus(req: Request, res: Response, next: NextFun
 export async function operations(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const data = await operationsSummary();
-    req.log.info({ requestId: req.id, operation: 'admin.operations.read' }, 'operations summary viewed');
+    req.log.info(
+      { requestId: req.id, operation: 'admin.operations.read' },
+      'operations summary viewed',
+    );
     res.json({ success: true, data });
   } catch (e) {
     next(e);
+  }
+}
+
+export async function operationFailures(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const [outbox, deadLetters] = await Promise.all([
+      outboxRepository.listFailed(),
+      listDeadLetters(),
+    ]);
+    res.json({ success: true, data: { outbox, deadLetters } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function replayOutbox(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const eventId = String(req.params['id'] ?? '');
+    if (!(await outboxRepository.replayFailed(eventId)))
+      throw new NotFoundError('Không tìm thấy sự kiện outbox lỗi.');
+    await auditRepository.log({
+      actorType: 'USER',
+      actorId: req.user!.id,
+      action: 'outbox.replayed',
+      entityType: 'OutboxEvent',
+      entityId: eventId,
+    });
+    res.json({ success: true, data: { eventId, status: 'PENDING' } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function replayQueueJob(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const jobId = String(req.params['id'] ?? '');
+    if (!(await replayDeadLetter(jobId)))
+      throw new NotFoundError('Không tìm thấy dead-letter job.');
+    await auditRepository.log({
+      actorType: 'USER',
+      actorId: req.user!.id,
+      action: 'queueJob.replayed',
+      entityType: 'BackgroundJob',
+      entityId: jobId,
+    });
+    res.json({ success: true, data: { jobId, status: 'QUEUED' } });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -80,7 +192,11 @@ export async function anomalies(req: Request, res: Response, next: NextFunction)
   }
 }
 
-export async function setAnomalyStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function setAnomalyStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const input = updateAnomalyStatusRequestSchema.parse(req.body);
     const id = String(req.params['id'] ?? '');
@@ -100,7 +216,11 @@ export async function setAnomalyStatus(req: Request, res: Response, next: NextFu
   }
 }
 
-export async function listProducts(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function listProducts(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const products = await listAdminProducts();
     res.json({ success: true, data: { products } });
@@ -109,7 +229,11 @@ export async function listProducts(_req: Request, res: Response, next: NextFunct
   }
 }
 
-export async function listCategories(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function listCategories(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const categories = await listAdminCategories();
     res.json({ success: true, data: { categories } });
@@ -118,12 +242,84 @@ export async function listCategories(_req: Request, res: Response, next: NextFun
   }
 }
 
-export async function listToppings(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function listToppings(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const toppings = await listAdminToppings();
     res.json({ success: true, data: { toppings } });
   } catch (e) {
     next(e);
+  }
+}
+
+export async function staffAvailabilityCatalog(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const [products, toppings] = await Promise.all([listAdminProducts(), listAdminToppings()]);
+    res.json({ success: true, data: { products, toppings } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function setProductAvailability(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = availabilityRequestSchema.parse(req.body);
+    const product = await catalogMutation.setProductAvailability(
+      String(req.params['id'] ?? ''),
+      input.isAvailable,
+      req.user!.id,
+    );
+    res.json({ success: true, data: { product } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function setVariantAvailability(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = availabilityRequestSchema.parse(req.body);
+    const product = await catalogMutation.setVariantAvailability(
+      String(req.params['id'] ?? ''),
+      String(req.params['variantId'] ?? ''),
+      input.isAvailable,
+      req.user!.id,
+    );
+    res.json({ success: true, data: { product } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function setToppingAvailability(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = availabilityRequestSchema.parse(req.body);
+    const topping = await catalogMutation.setToppingAvailability(
+      String(req.params['id'] ?? ''),
+      input.isAvailable,
+      req.user!.id,
+    );
+    res.json({ success: true, data: { topping } });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -136,12 +332,19 @@ export async function listTables(_req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function rotateTableToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function rotateTableToken(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
     const table = await tableRepository.findById(id);
     if (!table) {
-      res.status(404).json({ success: false, error: { code: 'TABLE_NOT_FOUND', message: 'Không tìm thấy bàn.' } });
+      res.status(404).json({
+        success: false,
+        error: { code: 'TABLE_NOT_FOUND', message: 'Không tìm thấy bàn.' },
+      });
       return;
     }
     const newToken = (await import('../utils/crypto.js')).randomToken(24);
@@ -164,7 +367,19 @@ export async function rotateTableToken(req: Request, res: Response, next: NextFu
 export async function listUsers(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const users = await userRepository.list();
-    res.json({ success: true, data: { users: users.map((u) => ({ id: u._id.toString(), name: u.name, email: u.email, role: u.role, isActive: u.isActive, createdAt: u.createdAt })) } });
+    res.json({
+      success: true,
+      data: {
+        users: users.map((u) => ({
+          id: u._id.toString(),
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          isActive: u.isActive,
+          createdAt: u.createdAt,
+        })),
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -183,78 +398,110 @@ export async function listReviews(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function createProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function createProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = req.body as Record<string, unknown>;
-    if (!body.name || !body.categoryId || !body.image) throw new ValidationError('Thiếu trường bắt buộc.');
-    const product = await productRepository.create({
-      ...body,
-      variants: body.variants ?? [],
-      allowedOptions: body.allowedOptions ?? { sizes: [], sugarLevels: [], iceLevels: [], toppingIds: [] },
-      tags: body.tags ?? [],
-      toppingIds: body.toppingIds ?? [],
-      ingredientMetadata: body.ingredientMetadata ?? {},
-      isAvailable: body.isAvailable ?? true,
-      isArchived: false,
-      isFeatured: body.isFeatured ?? false,
-      sortOrder: body.sortOrder ?? 0,
-    });
-    await menuChanged();
+    if (!body.name || !body.categoryId || !body.image)
+      throw new ValidationError('Thiếu trường bắt buộc.');
+    const product = await catalogMutation.createProduct(
+      {
+        ...body,
+        variants: body.variants ?? [],
+        allowedOptions: body.allowedOptions ?? {
+          sizes: [],
+          sugarLevels: [],
+          iceLevels: [],
+          toppingIds: [],
+        },
+        tags: body.tags ?? [],
+        toppingIds: body.toppingIds ?? [],
+        ingredientMetadata: body.ingredientMetadata ?? {},
+        isAvailable: body.isAvailable ?? true,
+        isArchived: false,
+        isFeatured: body.isFeatured ?? false,
+        sortOrder: body.sortOrder ?? 0,
+      },
+      req.user!.id,
+    );
     res.status(201).json({ success: true, data: { product } });
   } catch (e) {
     next(e);
   }
 }
 
-export async function updateProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function updateProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const product = await productRepository.update(id, body);
+    const product = await catalogMutation.updateProduct(id, body, req.user!.id);
     if (!product) {
-      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Không tìm thấy món.' } });
+      res
+        .status(404)
+        .json({ success: false, error: { code: 'NOT_FOUND', message: 'Không tìm thấy món.' } });
       return;
     }
-    await menuChanged();
     res.json({ success: true, data: { product } });
   } catch (e) {
     next(e);
   }
 }
 
-export async function deleteProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function deleteProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
-    const product = await productRepository.archive(id);
-    await menuChanged();
+    const product = await catalogMutation.archiveProduct(id, req.user!.id);
     res.json({ success: true, data: { product } });
   } catch (e) {
     next(e);
   }
 }
 
-export async function createCategory(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function createCategory(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = req.body as { name?: string; slug?: string; sortOrder?: number };
     if (!body.name || !body.slug) throw new ValidationError('Thiếu tên hoặc slug.');
-    const created = await categoryRepository.create({ name: body.name, slug: body.slug, sortOrder: body.sortOrder ?? 0 });
-    await menuChanged();
+    const created = await catalogMutation.createCategory(
+      { name: body.name, slug: body.slug, sortOrder: body.sortOrder ?? 0 },
+      req.user!.id,
+    );
     res.status(201).json({ success: true, data: { category: created } });
   } catch (e) {
     next(e);
   }
 }
 
-export async function updateCategory(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function updateCategory(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const updated = await categoryRepository.update(id, body);
+    const updated = await catalogMutation.updateCategory(id, body, req.user!.id);
     if (!updated) {
-      res.status(404).json({ success: false, error: { code: 'CATEGORY_NOT_FOUND', message: 'Không tìm thấy danh mục.' } });
+      res.status(404).json({
+        success: false,
+        error: { code: 'CATEGORY_NOT_FOUND', message: 'Không tìm thấy danh mục.' },
+      });
       return;
     }
-    await menuChanged();
     res.json({ success: true, data: { category: updated } });
   } catch (e) {
     next(e);
@@ -263,12 +510,21 @@ export async function updateCategory(req: Request, res: Response, next: NextFunc
 
 export async function createStaff(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const body = req.body as { name?: string; email?: string; password?: string; role?: 'STAFF' | 'ADMIN' };
-    if (!body.name || !body.email || !body.password) throw new ValidationError('Thiếu tên, email hoặc mật khẩu.');
+    const body = req.body as {
+      name?: string;
+      email?: string;
+      password?: string;
+      role?: 'STAFF' | 'ADMIN';
+    };
+    if (!body.name || !body.email || !body.password)
+      throw new ValidationError('Thiếu tên, email hoặc mật khẩu.');
     if (body.password.length < 8) throw new ValidationError('Mật khẩu tối thiểu 8 ký tự.');
     const existing = await userRepository.findByEmail(body.email);
     if (existing) {
-      res.status(409).json({ success: false, error: { code: 'EMAIL_TAKEN', message: 'Email đã được sử dụng.' } });
+      res.status(409).json({
+        success: false,
+        error: { code: 'EMAIL_TAKEN', message: 'Email đã được sử dụng.' },
+      });
       return;
     }
     const passwordHash = await hashPassword(body.password);
@@ -278,7 +534,18 @@ export async function createStaff(req: Request, res: Response, next: NextFunctio
       passwordHash,
       role: body.role ?? 'STAFF',
     });
-    res.status(201).json({ success: true, data: { user: { id: user._id.toString(), name: user.name, email: user.email, role: user.role, isActive: user.isActive } } });
+    res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive,
+        },
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -295,45 +562,61 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
     }
     const updated = await userRepository.update(id, body);
     if (!updated) {
-      res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'Không tìm thấy nhân viên.' } });
+      res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Không tìm thấy nhân viên.' },
+      });
       return;
     }
     res.json({
       success: true,
-      data: { user: { id: updated._id.toString(), name: updated.name, email: updated.email, role: updated.role, isActive: updated.isActive } },
+      data: {
+        user: {
+          id: updated._id.toString(),
+          name: updated.name,
+          email: updated.email,
+          role: updated.role,
+          isActive: updated.isActive,
+        },
+      },
     });
   } catch (e) {
     next(e);
   }
 }
 
-export async function createTopping(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function createTopping(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = req.body as { name?: string; price?: number; isAvailable?: boolean };
-    if (!body.name || typeof body.price !== 'number') throw new ValidationError('Thiếu tên hoặc giá topping.');
-    const created = await toppingRepository.create({ name: body.name, price: body.price, isAvailable: body.isAvailable ?? true });
-    await menuChanged();
+    if (!body.name || typeof body.price !== 'number')
+      throw new ValidationError('Thiếu tên hoặc giá topping.');
+    const created = await catalogMutation.createTopping(
+      { name: body.name, price: body.price, isAvailable: body.isAvailable ?? true },
+      req.user!.id,
+    );
     res.status(201).json({ success: true, data: { topping: created } });
   } catch (e) {
     next(e);
   }
 }
 
-export async function updateTopping(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function updateTopping(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const id = String(req.params['id'] ?? '');
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const topping = await toppingRepository.update(id, body);
-    await menuChanged();
+    const topping = await catalogMutation.updateTopping(id, body, req.user!.id);
     res.json({ success: true, data: { topping } });
   } catch (e) {
     next(e);
   }
-}
-
-async function menuChanged(): Promise<void> {
-  await invalidatePublicMenuCache();
-  await notifyMenuChange();
 }
 
 function parseDate(v: unknown, nextDay = false): Date | undefined {
@@ -347,7 +630,8 @@ function parseDate(v: unknown, nextDay = false): Date | undefined {
 function parseRating(v: unknown): number | undefined {
   if (v === undefined || v === '') return undefined;
   const rating = Number(v);
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new ValidationError('Số sao phải từ 1 đến 5.');
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5)
+    throw new ValidationError('Số sao phải từ 1 đến 5.');
   return rating;
 }
 

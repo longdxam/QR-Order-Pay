@@ -1,6 +1,6 @@
 # Observability và dashboard vận hành
 
-Cập nhật: 23/09/2026. Phạm vi hiện tại là hai API Guest, hai API Internal, một worker, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
+Cập nhật: 23/09/2026. Phạm vi hiện tại là hai API Guest, hai API Internal, ba worker theo vai trò, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
 
 ## Điểm truy cập và phân quyền
 
@@ -40,4 +40,5 @@ Anomaly HTTP là luồng riêng với Prometheus: mỗi API ghi số mẫu, tổ
 - Gửi lỗi kiểm soát 404 với `x-request-id: p3-controlled-error`: log tìm được đúng request ID, route `unmatched`, status 404; `clientErrors` trên Admin summary tăng từ 3 lên 4.
 - Admin summary trả `mongodbReady=true`, dữ liệu hàng đợi thật từ MongoDB và `scope=instance`/`scope=database` rõ ràng.
 - Unit test kiểm tra route labels không chứa ID/URL thật, socket gauge không âm và stage metrics; integration test xác nhận payment replay không tăng `payment_confirmed` lần hai.
-- Với bốn backend chia hai pool, event Socket.IO và thu hồi phiên đi qua Redis adapter; worker phát notification qua Redis emitter. Rate limit và menu cache dùng chung giữa các pool. Chỉ worker chạy queue/scheduler nên không nhân đôi report hay cảnh báo.
+- Với bốn backend chia hai pool, event Socket.IO và thu hồi phiên đi qua Redis adapter; realtime worker phát notification qua Redis emitter. Rate limit và menu cache dùng chung giữa các pool. Scheduler, realtime và report chạy ở ba process riêng; leader lease ngăn nhân đôi scheduler, còn queue owner lease ngăn hai consumer ACK cùng job.
+- Admin Operations hiển thị pending/processing, tuổi job cũ nhất, lease processing quá hạn, mẫu retry, Redis RAM/key count và heartbeat/progress/job đang chạy của từng worker. Healthcheck dùng heartbeat TTL; job dài gia hạn lease đồng thời cập nhật tiến triển.

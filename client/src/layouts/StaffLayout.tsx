@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Coffee, ClipboardList, UtensilsCrossed, BellRing, LogOut, Volume2, VolumeX, Bell } from 'lucide-react';
+import {
+  Coffee,
+  ClipboardList,
+  UtensilsCrossed,
+  BellRing,
+  LogOut,
+  Volume2,
+  VolumeX,
+  Bell,
+  PackageCheck,
+  WalletCards,
+} from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
 import { connectStaffSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
@@ -31,9 +42,21 @@ interface ServiceReqRow {
 }
 
 const NAV = [
-  { to: '/staff/kds', label: 'KDS', icon: <UtensilsCrossed className="h-4 w-4" />, badgeKey: 'pending' as const },
+  {
+    to: '/staff/kds',
+    label: 'KDS',
+    icon: <UtensilsCrossed className="h-4 w-4" />,
+    badgeKey: 'pending' as const,
+  },
   { to: '/staff/tables', label: 'Bàn & phiên', icon: <ClipboardList className="h-4 w-4" /> },
-  { to: '/staff/service-requests', label: 'Yêu cầu', icon: <BellRing className="h-4 w-4" />, badgeKey: 'requests' as const },
+  {
+    to: '/staff/service-requests',
+    label: 'Yêu cầu',
+    icon: <BellRing className="h-4 w-4" />,
+    badgeKey: 'requests' as const,
+  },
+  { to: '/staff/availability', label: 'Hết món', icon: <PackageCheck className="h-4 w-4" /> },
+  { to: '/staff/cash-shift', label: 'Ca thu ngân', icon: <WalletCards className="h-4 w-4" /> },
 ];
 
 export function StaffLayout(): JSX.Element {
@@ -52,7 +75,8 @@ export function StaffLayout(): JSX.Element {
   });
   const requestsQuery = useQuery({
     queryKey: ['staff-service-requests'],
-    queryFn: async () => unwrap(await api.get<{ items: ServiceReqRow[] }>('/staff/service-requests')),
+    queryFn: async () =>
+      unwrap(await api.get<{ items: ServiceReqRow[] }>('/staff/service-requests')),
     refetchInterval: 8_000,
   });
 
@@ -66,7 +90,12 @@ export function StaffLayout(): JSX.Element {
   );
 
   const refresh = useCallback(() => {
-    for (const key of ['staff-orders', 'staff-table-sessions', 'staff-bill', 'staff-service-requests']) {
+    for (const key of [
+      'staff-orders',
+      'staff-table-sessions',
+      'staff-bill',
+      'staff-service-requests',
+    ]) {
       void qc.invalidateQueries({ queryKey: [key] });
     }
   }, [qc]);
@@ -99,7 +128,10 @@ export function StaffLayout(): JSX.Element {
   useCountDelta(pendingCount, notifyNewOrder);
   useCountDelta(openRequestCount, notifyNewRequest);
 
-  useSocketEvent('connect', () => { setConnected(true); refresh(); });
+  useSocketEvent('connect', () => {
+    setConnected(true);
+    refresh();
+  });
   useSocketEvent('disconnect', () => setConnected(false));
   useSocketEvent('order.created', refresh);
   useSocketEvent('order.statusChanged', refresh);
@@ -143,10 +175,16 @@ export function StaffLayout(): JSX.Element {
               <Coffee className="h-4 w-4" />
             </span>
             <div>
-              <p className="font-display text-base font-semibold leading-tight">Mây Café — Vận hành</p>
+              <p className="font-display text-base font-semibold leading-tight">
+                Mây Café — Vận hành
+              </p>
               <p className="text-xs text-muted-foreground leading-tight">
                 {user?.name ?? 'Nhân viên'} · {user?.role ?? ''} ·{' '}
-                {connected ? <Badge tone="success">Trực tuyến</Badge> : <Badge tone="danger">Mất kết nối</Badge>}
+                {connected ? (
+                  <Badge tone="success">Trực tuyến</Badge>
+                ) : (
+                  <Badge tone="danger">Mất kết nối</Badge>
+                )}
                 {(pendingCount > 0 || openRequestCount > 0) && (
                   <span className="ml-2 inline-flex items-center gap-1 text-foreground/70">
                     <Bell className="h-3 w-3" />
@@ -164,7 +202,9 @@ export function StaffLayout(): JSX.Element {
                   key={n.to}
                   to={n.to}
                   className={`relative flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                    location.pathname === n.to ? 'bg-primary text-primary-foreground' : 'text-foreground/70 hover:bg-muted'
+                    location.pathname === n.to
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground/70 hover:bg-muted'
                   }`}
                 >
                   {n.icon}

@@ -2,6 +2,18 @@ import type { ClientSession } from 'mongoose';
 import { OrderModel, type OrderDoc } from '../models/Order.js';
 import type { OrderStatus, PaymentStatus } from '@may-cafe/contracts';
 
+export const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
+  'PENDING',
+  'CONFIRMED',
+  'PREPARING',
+  'READY',
+];
+
+export interface StaffOrderFeedFilters {
+  tableSessionIds: string[];
+  status?: OrderStatus;
+}
+
 export interface OrderListFilters {
   tableSessionId?: string;
   participantId?: string;
@@ -66,12 +78,13 @@ export const orderRepository = {
     ]);
     return { items, total };
   },
-  async listForStaff(filters: OrderListFilters = {}): Promise<OrderDoc[]> {
-    const query: Record<string, unknown> = {};
-    if (filters.status) query.status = filters.status;
-    else query.status = { $in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED'] };
-    if (filters.tableSessionId) query.tableSessionId = filters.tableSessionId;
-    return OrderModel.find(query).sort({ createdAt: 1 });
+  /** Feed KDS: chỉ đơn của các phiên đang hoạt động, nên không phình theo lịch sử. */
+  async listForStaff(filters: StaffOrderFeedFilters): Promise<OrderDoc[]> {
+    if (filters.tableSessionIds.length === 0) return [];
+    return OrderModel.find({
+      tableSessionId: { $in: filters.tableSessionIds },
+      status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },
+    }).sort({ createdAt: 1 });
   },
   async transitionStatus(
     id: string,
