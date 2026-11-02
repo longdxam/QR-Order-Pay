@@ -9,6 +9,7 @@ import { vnd } from '../../lib/api';
 import './pickup-storefront.css';
 
 type PickupProduct = Product & { categoryId?: string };
+const PICKUP_PAGE_SIZE = 8;
 function pickupStartingPrice(product: Product): number {
   const prices = product.variants
     .filter((v) => v.isAvailable !== false && product.allowedOptions.sizes.includes(v.name))
@@ -45,7 +46,7 @@ export function PickupStorefront({
 }): JSX.Element {
   const [search, setSearch] = useState(''),
     [category, setCategory] = useState('all'),
-    [limit, setLimit] = useState(6),
+    [limit, setLimit] = useState(PICKUP_PAGE_SIZE),
     [cartOpen, setCartOpen] = useState(uncertain);
   useEffect(() => {
     if (uncertain) setCartOpen(true);
@@ -142,7 +143,7 @@ export function PickupStorefront({
               placeholder="Tìm món…"
               onChange={(e) => {
                 setSearch(e.target.value);
-                setLimit(6);
+                setLimit(PICKUP_PAGE_SIZE);
               }}
             />
           </label>
@@ -154,7 +155,7 @@ export function PickupStorefront({
               aria-pressed={category === 'all'}
               onClick={() => {
                 setCategory('all');
-                setLimit(6);
+                setLimit(PICKUP_PAGE_SIZE);
               }}
             >
               Tất cả
@@ -166,7 +167,7 @@ export function PickupStorefront({
                 aria-pressed={category === c._id}
                 onClick={() => {
                   setCategory(c._id);
-                  setLimit(6);
+                  setLimit(PICKUP_PAGE_SIZE);
                 }}
               >
                 {c.name}
@@ -209,7 +210,11 @@ export function PickupStorefront({
               ))}
             </div>
             {filtered.length > limit ? (
-              <button type="button" className="pickup-more" onClick={() => setLimit((v) => v + 6)}>
+              <button
+                type="button"
+                className="pickup-more"
+                onClick={() => setLimit((v) => v + PICKUP_PAGE_SIZE)}
+              >
                 Xem thêm món ({filtered.length - limit}) <ArrowDown className="h-4 w-4" />
               </button>
             ) : null}
@@ -223,7 +228,7 @@ export function PickupStorefront({
               onClick={() => {
                 setSearch('');
                 setCategory('all');
-                setLimit(6);
+                setLimit(PICKUP_PAGE_SIZE);
               }}
             >
               Xem tất cả

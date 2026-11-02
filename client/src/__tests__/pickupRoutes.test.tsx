@@ -250,10 +250,10 @@ describe('independent pickup routes', () => {
               { _id: 'tea', name: 'Trà' },
               { _id: 'coffee', name: 'Cà phê' },
             ],
-            products: Array.from({ length: 8 }, (_, i) => ({
+            products: Array.from({ length: 10 }, (_, i) => ({
               _id: `product-${i}`,
               name: `Món ${i + 1}`,
-              categoryId: i < 6 ? 'tea' : 'coffee',
+              categoryId: i < 8 ? 'tea' : 'coffee',
               isAvailable: true,
               basePrice: 30000,
               variants: [],
@@ -265,15 +265,19 @@ describe('independent pickup routes', () => {
     );
     mount();
     await screen.findByRole('button', { name: /Món 1 ·/ });
-    expect(screen.queryByRole('button', { name: /Món 7 ·/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Xem thêm món (2)' }));
     expect(screen.getByRole('button', { name: /Món 8 ·/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Món 9 ·/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem thêm món (2)' }));
+    expect(screen.getByRole('button', { name: /Món 10 ·/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cà phê' }));
     expect(screen.queryByRole('button', { name: /Món 1 ·/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Món 9 ·/ })).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Tìm món mang đi'), { target: { value: 'không có' } });
     expect(screen.getByText('Không tìm thấy món.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Xem tất cả' }));
     expect(screen.getByRole('button', { name: /Món 1 ·/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Món 8 ·/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Món 9 ·/ })).toBeNull();
     expect(mock.post).not.toHaveBeenCalled();
   });
 });

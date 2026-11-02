@@ -1,4 +1,31 @@
-# Test report — cập nhật 27/10/2026
+# Test report — cập nhật 29/10/2026
+
+## Hiển thị đủ8 món ban đầu — 29/10/2026
+
+- Sau khi đổi4cột, batch6 cũ để trống2ô ở hàng thứ2. Guest PickupStorefront nay initial/reset/increment chung8món; formquầy/legacy giữ batch6. PWA40.17test pickup/pickupRoutes PASS, cập nhật test thực đơn10món kiểm banđầu8/xemthêm/lọc/reset. ESLint source/PrettierTSX/sw syntax/client TypeScript-Vitebuild/Dockerweb/diff-check PASS.
+- Lightpanda/Mongo tạm PASS8card banđầu tại320/375/768/1024/1440, xemthêm/tìm tên dài/chọn/cấu hình/giỏ/tăng lượng/tổng tiền,0Orders/Payments/tableSessions/table reads/JSexception/5xx. `.cache/pickup-full-row-lightpanda.log`. **DOM/hành vi; chưa kiểm bố cục/kích thước render hoặc cảm ứng trên thiết bị thật.**
+- Recreate riêng web giữ public/tunnel/backend; public HTTPS/PWA40/menu/pickup/APIs/WSS/private isolation PASS,0businesswrites/JSexception/5xx. `.cache/pickup-full-row-{tests-final,build,docker,deploy,public-smoke}.log`. User Ctrl+F5 trang pickup để nhận đủ8món nếu danh mục có đủ món.
+
+## Thẻ món mang đi gọn hơn — 29/10/2026
+
+- CSS riêng Pickup:4cột từ1100px/3cột tablet/2cột mobile; ảnh8:5, viền/padding/bo góc và tên/giá gọn, nút cộng xanh. Giữ hành vi chọn món/lọc/phân trang/giỏ hiện có. PWA39.
+- 17test pickup/pickupRoutes PASS; client TypeScript/Vite build, Docker web build, Prettier CSS, sw syntax và diff-check PASS. `.cache/pickup-compact-{tests,build,docker}.log`.
+- Lightpanda/Mongo tạm đăng nhập thật→card DOM ở320/375/768/1024/1440→xem thêm/tìm tên dài/chọn/cấu hình/giỏ/tăng số lượng/tổng tiền PASS,0Orders/Payments/tableSessions/table reads/JSexception/5xx. `.cache/pickup-compact-lightpanda.log`. **Không chứng minh kích thước render/bố cục/clipping hoặc cảm ứng thực tế trên điện thoại.**
+- Recreate riêng web, giữ public origin/tunnel và backend; public PWA39/HTTPS/menu/pickup/APIs/WSS/private isolation PASS,0businesswrites/JSexception/5xx. `.cache/pickup-compact-public-smoke.log`. User reload **https://phrases-sail-send-drilling.trycloudflare.com/pickup** để xem giao diện mới.
+
+## Bật lại public HTTPS — 29/10/2026
+
+- User yêu cầu mở public. `scripts/public-web.ps1` PASS, Guest **https://phrases-sail-send-drilling.trycloudflare.com/menu**, stack healthy/migrate skip, Guest Secure cookie=true/Internal=false,8081/8082 vẫn local. Không rebuild hoặc đổi khóa QR.
+- Lightpanda public PASS HTTPS menu/metaGuest/API health+catalog+session200/WSS/pickup và chặn private Staff/Admin404,0JSexception/5xx/businesswrites. `.cache/public-20261029-smoke-final.log`. Local cả3portal/staticQR public hostname/reopen/download/Jukebox/latte/reservation/pickup/workforce/logout PASS, `.cache/public-20261029-local-smoke-final.log`. Không gửi tin Telegram hoặc tạo phiên/đơn thử trên quán.
+- **Chưa kiểm camera/4G/visual/native trên điện thoại thật.** User mở lại QR trong Staff/Admin để dùng hostname hiện tại; giữ PC/Docker/tunnel chạy. Link tạm có thể đổi khi restart. Browser/relay kiểm tra tạm đã dọn, tunnel thật giữ chạy.
+
+## Pull bản CSKH Telegram và chạy lại web — 29/10/2026
+
+- Pull fast-forward `8696a23` → `a91c55b` (PR #6: liên kết hỗ trợ Telegram trên Guest). **659 tests PASS =106 unit +339 integration +214 client**; typecheck, lint/boundaries, host build và Docker web build PASS. `.cache/pull-20261029-{tests,typecheck,lint,build,web-build}.log`.
+- Lightpanda/Mongo tạm: trước vào bàn ẩn CSKH, QR join thật hiện2anchor header/dock với đúng URL HTTPS/target/rel, kiểm DOM ở375/1280, giữ qua chuyển trang/reload, rời bàn ẩn.0Orders/Payments/JSexception/5xx/request Telegram. `.cache/pull-20261029-support.log`. Unit kiểm thêm trạng thái đã đóng có hóa đơn và URL rỗng/không HTTPS.
+- Local cả3portal, QR tĩnh đọc lại cùng URL, Jukebox/latte/reservation/pickup/workforce/logout PASS,0businesswrite/JSexception/5xx. Toàn stack healthy/PWA38, migration skip,8080/8081/8082 chạy, tunnel tắt. `.cache/pull-20261029-{deploy,local-smoke}.log`.
+- Backup trước startup API: `.cache/maycafe-before-pull-20261029.archive.gz`.34/35collection nghiệp vụ hash/count giữ nguyên; cupphotos7→3 do TTL dọn4ảnh hết hạn từ27/10. Restore collection vào Mongo tạm/noIndexRestore xác minh4expired và3active trùng hash toàn bộ nội dung với live; không restore live, không seed/reset. `.cache/pull-20261029-{business-before,business-after,ttl-backup,ttl-current}.json`.
+- **Chưa nghiệm thu trực quan bố cục, native tab mới/Telegram app/phản hồi bot, âm loa hoặc điện thoại thật.** Chỉ kiểm liên kết trong web; chưa gửi tin nhắn cho bot. User Ctrl+F5, quét QR vào bàn rồi bấm **Hỗ trợ CSKH** để kiểm Telegram thực tế.
 
 ## Vòng quay tiếp và giữ/xóa người trúng — 27/10/2026
 
