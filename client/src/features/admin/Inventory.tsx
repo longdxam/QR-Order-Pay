@@ -63,6 +63,7 @@ export function AdminInventory(): JSX.Element {
   const [moving, setMoving] = useState<IngredientDto | null>(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
   const query = useQuery({
     queryKey: ['admin-inventory'],
     queryFn: async () => unwrap<Overview>(await api.get('/admin/inventory')),
@@ -88,6 +89,10 @@ export function AdminInventory(): JSX.Element {
   if (query.isError)
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />;
   const data = query.data!;
+  const normalizedSearch = normalizeIngredientName(search.trim());
+  const visibleIngredients = data.ingredients.filter((ingredient) =>
+    normalizeIngredientName(ingredient.name).includes(normalizedSearch),
+  );
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -136,61 +141,77 @@ export function AdminInventory(): JSX.Element {
         ))}
       </div>
       {tab === 'ingredients' && (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.ingredients.length === 0 && (
-            <Card className="p-5 md:col-span-2">
-              <p>
-                Chưa có nguyên liệu. Thêm nguyên liệu, nhập tồn đầu và cấu hình công thức cho món.
-              </p>
-            </Card>
-          )}
-          {data.ingredients.map((i) => (
-            <Card key={i.id} className="min-w-0 space-y-3 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h2 className="break-words font-semibold">{i.name}</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {i.code} · {unitLabel(i.unit)}
-                  </p>
+        <section className="space-y-4" aria-label="Danh sách nguyên liệu">
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              type="search"
+              aria-label="Tìm nguyên liệu"
+              placeholder="Tìm theo tên nguyên liệu..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="max-w-md"
+            />
+            <p className="text-sm text-muted-foreground" role="status">
+              {visibleIngredients.length} / {data.ingredients.length} nguyên liệu
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {data.ingredients.length === 0 && (
+              <Card className="p-5 md:col-span-2">
+                <p>
+                  Chưa có nguyên liệu. Thêm nguyên liệu, nhập tồn đầu và cấu hình công thức cho món.
+                </p>
+              </Card>
+            )}
+            {data.ingredients.length > 0 && visibleIngredients.length === 0 && (
+              <Card className="p-5 md:col-span-2">Không tìm thấy nguyên liệu phù hợp.</Card>
+            )}
+            {visibleIngredients.map((i) => (
+              <Card key={i.id} className="min-w-0 space-y-3 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="break-words font-semibold">{i.name}</h2>
+                    <p className="text-xs text-muted-foreground">Đơn vị: {unitLabel(i.unit)}</p>
+                  </div>
+                  <Badge tone={!i.isActive ? 'neutral' : i.isLowStock ? 'danger' : 'success'}>
+                    {!i.isActive ? 'Ngừng dùng' : i.isLowStock ? 'Sắp hết / hết' : 'Đủ tồn'}
+                  </Badge>
                 </div>
-                <Badge tone={!i.isActive ? 'neutral' : i.isLowStock ? 'danger' : 'success'}>
-                  {!i.isActive ? 'Ngừng dùng' : i.isLowStock ? 'Sắp hết / hết' : 'Đủ tồn'}
-                </Badge>
-              </div>
-              <dl className="grid grid-cols-3 gap-2 text-sm">
-                <div>
-                  <dt className="text-muted-foreground">Tồn thực</dt>
-                  <dd>{number(i.onHand)}</dd>
+                <dl className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Tồn thực</dt>
+                    <dd>{number(i.onHand)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Đang giữ</dt>
+                    <dd>{number(i.reserved)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Có thể dùng</dt>
+                    <dd className="font-semibold">{number(i.available)}</dd>
+                  </div>
+                </dl>
+                <p className="text-xs text-muted-foreground">
+                  Ngưỡng cảnh báo: {number(i.lowStockThreshold)} {unitLabel(i.unit)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Giá vốn:{' '}
+                  {i.unitCost === null || i.unitCost === undefined
+                    ? 'Chưa nhập'
+                    : `${number(i.unitCost)} đ/${unitLabel(i.unit)}`}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" disabled={!i.isActive} onClick={() => setMoving(i)}>
+                    Nhập / xuất / kiểm kê
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setIngredientForm(i)}>
+                    Sửa
+                  </Button>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">Đang giữ</dt>
-                  <dd>{number(i.reserved)}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Có thể dùng</dt>
-                  <dd className="font-semibold">{number(i.available)}</dd>
-                </div>
-              </dl>
-              <p className="text-xs text-muted-foreground">
-                Ngưỡng cảnh báo: {number(i.lowStockThreshold)} {unitLabel(i.unit)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Giá vốn:{' '}
-                {i.unitCost === null || i.unitCost === undefined
-                  ? 'Chưa nhập'
-                  : `${number(i.unitCost)} đ/${unitLabel(i.unit)}`}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" disabled={!i.isActive} onClick={() => setMoving(i)}>
-                  Nhập / xuất / kiểm kê
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setIngredientForm(i)}>
-                  Sửa
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </div>
+        </section>
       )}
       {tab === 'recipes' && <RecipePanel data={data} onSaved={refresh} />}
       {tab === 'history' && (
@@ -286,6 +307,14 @@ export function AdminInventory(): JSX.Element {
   );
 }
 
+function normalizeIngredientName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase();
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block space-y-1 text-sm">
@@ -305,7 +334,6 @@ function IngredientForm({
 }) {
   const { toast } = useToast();
   const [name, setName] = useState(ingredient?.name ?? '');
-  const [code, setCode] = useState('');
   const [unit, setUnit] = useState('g');
   const [threshold, setThreshold] = useState(String(ingredient?.lowStockThreshold ?? 0));
   const [active, setActive] = useState(ingredient?.isActive ?? true);
@@ -330,7 +358,6 @@ function IngredientForm({
         : api.post(
             '/admin/inventory/ingredients',
             ingredientCreateSchema.parse({
-              code,
               name,
               unit,
               lowStockThreshold: Number(threshold),
@@ -365,15 +392,6 @@ function IngredientForm({
         </Field>
         {!ingredient && (
           <>
-            <Field label="Mã nguyên liệu">
-              <Input
-                required
-                pattern="[A-Za-z0-9_-]{1,32}"
-                maxLength={32}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </Field>
             <Field label="Đơn vị cơ sở">
               <select
                 className={selectClass}
@@ -386,8 +404,8 @@ function IngredientForm({
               </select>
             </Field>
             <p className="text-xs text-muted-foreground">
-              Mã và đơn vị được giữ cố định. Nguyên liệu mới có tồn bằng 0; dùng Nhập kho để ghi
-              nhận tồn đầu.
+              Đơn vị được giữ cố định. Nguyên liệu mới có tồn bằng 0; dùng Nhập kho để ghi nhận tồn
+              đầu.
             </p>
           </>
         )}

@@ -18,10 +18,22 @@ export function getErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data as ApiErrorPayload | undefined;
     if (data?.error?.message) return data.error.message;
+    if (err.response?.status === 429)
+      return `Bạn thao tác quá nhanh. Vui lòng thử lại sau ${getRetryAfterSeconds(err)} giây.`;
     return err.message;
   }
   if (err instanceof Error) return err.message;
   return 'Đã xảy ra lỗi, vui lòng thử lại.';
+}
+
+export function getRetryAfterSeconds(err: unknown): number {
+  if (!axios.isAxiosError(err)) return 60;
+  const value = err.response?.headers?.['retry-after'];
+  if (typeof value !== 'string' && typeof value !== 'number') return 60;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.max(1, Math.ceil(seconds));
+  const resetAt = Date.parse(String(value));
+  return Number.isFinite(resetAt) ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)) : 60;
 }
 
 export function getErrorCode(err: unknown): string | undefined {

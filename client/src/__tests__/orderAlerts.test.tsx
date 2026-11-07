@@ -13,16 +13,16 @@ afterEach(cleanup);
 describe('new order alerts before payment', () => {
   it('keeps initial history silent and detects new IDs even when the count stays unchanged', () => {
     const notify = vi.fn();
-    const { rerender } = renderHook(({ rows }) => useNewOrderAlerts('staff-a', rows, [], notify), {
+    const { rerender } = renderHook(({ rows }) => useNewOrderAlerts('staff-a', rows, notify), {
       initialProps: { rows: [{ _id: 'old' }] },
     });
     expect(notify).not.toHaveBeenCalled();
     rerender({ rows: [{ _id: 'new-unpaid' }] });
-    expect(notify).toHaveBeenCalledExactlyOnceWith(false, 1);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(1);
   });
-  it('announces unpaid pickup/table creations and suppresses socket replay and polling duplicates', () => {
+  it('ignores retired channel events, announces table creations and suppresses socket replay and polling duplicates', () => {
     const notify = vi.fn();
-    const { rerender } = renderHook(({ rows }) => useNewOrderAlerts('staff-a', [], rows, notify), {
+    const { rerender } = renderHook(({ rows }) => useNewOrderAlerts('staff-a', rows, notify), {
       initialProps: { rows: [] as { _id: string }[] },
     });
     act(() => {
@@ -34,23 +34,17 @@ describe('new order alerts before payment', () => {
         status: 'AWAITING_PAYMENT',
       });
     });
-    rerender({ rows: [{ _id: 'pickup' }] });
-    expect(notify.mock.calls).toEqual([
-      [true, 1],
-      [false, 1],
-    ]);
+    rerender({ rows: [{ _id: 'table' }] });
+    expect(notify.mock.calls).toEqual([[1]]);
   });
-  it('detects missed pickups on refresh and does not treat the first loaded snapshot as new', () => {
+  it('detects missed table orders on refresh and does not treat the first loaded snapshot as new', () => {
     const notify = vi.fn();
-    const { rerender } = renderHook(
-      ({ rows }) => useNewOrderAlerts('staff-a', undefined, rows, notify),
-      {
-        initialProps: { rows: undefined as { _id: string }[] | undefined },
-      },
-    );
+    const { rerender } = renderHook(({ rows }) => useNewOrderAlerts('staff-a', rows, notify), {
+      initialProps: { rows: undefined as { _id: string }[] | undefined },
+    });
     rerender({ rows: [{ _id: 'old' }] });
     expect(notify).not.toHaveBeenCalled();
     rerender({ rows: [{ _id: 'old' }, { _id: 'missed' }] });
-    expect(notify).toHaveBeenCalledExactlyOnceWith(true, 1);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(1);
   });
 });

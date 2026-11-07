@@ -11,7 +11,6 @@ import { useMember } from './useMember';
 
 export function MemberPage(): JSX.Element {
   const pathname = useLocation().pathname;
-  const pickupMode = pathname.startsWith('/pickup');
   const reservationMode = pathname.startsWith('/reservations');
   const navigate = useNavigate();
   useDocumentTitle('Thành viên');
@@ -41,12 +40,9 @@ export function MemberPage(): JSX.Element {
         qc.setQueryData(['member'], { member: null });
       await qc.invalidateQueries({ queryKey: ['member'] });
       qc.removeQueries({ queryKey: ['member-points'] });
-      qc.removeQueries({ queryKey: ['pickups'] });
-      qc.removeQueries({ queryKey: ['pickup-bill'] });
       qc.removeQueries({ queryKey: ['reservations'] });
       qc.removeQueries({ queryKey: ['reservation-availability'] });
       setPage(1);
-      if (pickupMode && (input.path === 'login' || input.path === 'register')) navigate('/pickup');
       if (reservationMode && (input.path === 'login' || input.path === 'register'))
         navigate('/reservations');
     },
@@ -78,9 +74,9 @@ export function MemberPage(): JSX.Element {
             <p className="g-display text-3xl">{member.points} điểm</p>
             <Link
               className="inline-block underline"
-              to={reservationMode ? '/reservations' : pickupMode ? '/pickup' : '/cart'}
+              to={reservationMode ? '/reservations' : '/cart'}
             >
-              {reservationMode ? 'Đặt bàn' : pickupMode ? 'Đặt món' : 'Đổi điểm trong giỏ hàng'}
+              {reservationMode ? 'Đặt bàn' : 'Đổi điểm trong giỏ hàng'}
             </Link>
             <Button
               variant="ghost"

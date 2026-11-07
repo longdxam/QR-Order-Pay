@@ -3,7 +3,6 @@ import { Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast';
 import { NetworkStatus } from './components/ui/NetworkStatus';
 import { GuestLayout } from './layouts/GuestLayout';
-import { PickupLayout } from './layouts/PickupLayout';
 import { ReservationLayout } from './layouts/ReservationLayout';
 import { StaffLayout } from './layouts/StaffLayout';
 import { AdminLayout } from './layouts/AdminLayout';
@@ -26,9 +25,6 @@ const MenuPage = lazy(() =>
 const MemberPage = lazy(() =>
   import('./features/guest/MemberPage').then((m) => ({ default: m.MemberPage })),
 );
-const PickupPage = lazy(() =>
-  import('./features/pickup/PickupPage').then((m) => ({ default: m.PickupPage })),
-);
 const ReservationsPage = lazy(() =>
   import('./features/reservations/ReservationsPage').then((m) => ({ default: m.ReservationsPage })),
 );
@@ -43,15 +39,6 @@ const CartPage = lazy(() =>
 );
 const GiftsPage = lazy(() =>
   import('./features/gifts/GiftsPage').then((m) => ({ default: m.GiftsPage })),
-);
-const GamePage = lazy(() =>
-  import('./features/game/GamePage').then((m) => ({ default: m.GamePage })),
-);
-const FreestyleAdmin = lazy(() =>
-  import('./features/freestyle/FreestyleAdmin').then((m) => ({ default: m.FreestyleAdmin })),
-);
-const SmartInsights = lazy(() =>
-  import('./features/insights/SmartInsights').then((m) => ({ default: m.SmartInsights })),
 );
 const CupPrintPage = lazy(() =>
   import('./features/cupPhotos/CupPrintPage').then((m) => ({ default: m.CupPrintPage })),
@@ -156,15 +143,9 @@ export function App(): JSX.Element {
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/orders" element={<OrdersPage />} />
                 <Route path="/gifts" element={<GiftsPage />} />
-                <Route path="/game" element={<GamePage />} />
                 <Route path="/jukebox" element={<JukeboxPage />} />
                 <Route path="/receipt" element={<ReceiptPage />} />
                 <Route path="/ai" element={<AIPage />} />
-              </Route>
-              <Route element={<PickupLayout />}>
-                <Route path="/pickup" element={<PickupPage view="order" />} />
-                <Route path="/pickup/orders" element={<PickupPage view="orders" />} />
-                <Route path="/pickup/member" element={<MemberPage />} />
               </Route>
               <Route element={<ReservationLayout />}>
                 <Route path="/reservations" element={<ReservationsPage />} />
@@ -191,7 +172,6 @@ export function App(): JSX.Element {
                 <Route path="/staff/payments" element={<PaymentAccounting />} />
                 <Route path="/staff/account" element={<AccountPage />} />
                 <Route path="/staff/workforce" element={<Workforce />} />
-                <Route path="/staff/pickups" element={<PickupPage staff />} />
                 <Route path="/staff/reservations" element={<ReservationsPage staff />} />
               </Route>
             </Route>
@@ -202,8 +182,6 @@ export function App(): JSX.Element {
               <Route element={<AdminLayout />}>
                 <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />
-                <Route path="/admin/freestyle" element={<FreestyleAdmin />} />
-                <Route path="/admin/insights" element={<SmartInsights />} />
                 <Route path="/admin/cup-prints" element={<CupPrintPage admin />} />
                 <Route path="/admin/jukebox" element={<JukeboxRoute />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
@@ -218,7 +196,6 @@ export function App(): JSX.Element {
                 <Route path="/admin/tables" element={<AdminTables />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
                 <Route path="/admin/workforce" element={<Workforce admin />} />
-                <Route path="/admin/pickups" element={<PickupPage staff admin />} />
                 <Route path="/admin/reservations" element={<ReservationsPage staff admin />} />
                 <Route path="/admin/account" element={<AccountPage />} />
                 <Route path="/admin/reviews" element={<AdminReviews />} />

@@ -123,7 +123,7 @@ describe('private photo picker', () => {
         <CupPhotoPicker
           label="Ảnh"
           photoId={pid}
-          endpoint="/pickup/cup-photos"
+          endpoint="/cup-photos"
           onChange={change}
           onBusyChange={vi.fn()}
         />,
@@ -131,7 +131,7 @@ describe('private photo picker', () => {
     expect((await screen.findAllByAltText('Ảnh xem trước để in tem'))[0]!.getAttribute('src')).toBe(
       'blob:private-photo',
     );
-    expect(mock.get).toHaveBeenCalledWith(`/pickup/cup-photos/${pid}`, { responseType: 'blob' });
+    expect(mock.get).toHaveBeenCalledWith(`/cup-photos/${pid}`, { responseType: 'blob' });
     fireEvent.click(screen.getByRole('button', { name: 'Bỏ ảnh' }));
     expect(change).toHaveBeenCalledWith(undefined);
     view.unmount();

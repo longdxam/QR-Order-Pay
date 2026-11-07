@@ -5,7 +5,7 @@ import { Input } from '../../components/ui/Input';
 import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CurrentTableSessionResponse, OrderQuoteResponse } from '@may-cafe/contracts';
-import { getAxiosError } from '../../lib/api';
+import { getAxiosError, getRetryAfterSeconds } from '../../lib/api';
 import { Trash2, ShoppingBag, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { QtyStepper } from './QtyStepper';
@@ -18,8 +18,6 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { MenuPhoto } from './MenuPhoto';
 import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
 import { useCupPhotoBusy } from '../cupPhotos/useCupPhotoBusy';
-import { FreestyleRecipe } from '../../components/FreestyleRecipe';
-import { CompanionSuggestions } from '../insights/CompanionSuggestions';
 
 export function CartPage(): JSX.Element {
   useDocumentTitle('Giỏ hàng');
@@ -39,6 +37,8 @@ export function CartPage(): JSX.Element {
   const [voucherCode, setVoucherCode] = useState('');
   const [redeemPoints, setRedeemPoints] = useState(0);
   const [benefitError, setBenefitError] = useState('');
+  const [retryUntil, setRetryUntil] = useState(0);
+  const [retrySeconds, setRetrySeconds] = useState(0);
   const [benefitPreview, setBenefitPreview] = useState<{
     context: string;
     quote: OrderQuoteResponse;
@@ -63,12 +63,12 @@ export function CartPage(): JSX.Element {
         note: it.note,
         quantity: it.quantity,
         ...(it.cupPhotoId ? { cupPhotoId: it.cupPhotoId } : {}),
-        ...(it.freestyleToken ? { freestyleToken: it.freestyleToken } : {}),
       })),
     }),
     [items, voucherCode, redeemPoints],
   );
   const cartSignature = JSON.stringify(orderPayload);
+  const hasBenefits = !!orderPayload.voucherCode || redeemPoints > 0;
   const benefitContext = JSON.stringify({
     items: orderPayload.items,
     voucherCode: orderPayload.voucherCode,
@@ -85,8 +85,24 @@ export function CartPage(): JSX.Element {
     submission.current = null;
     setBenefitError('');
   }, [cartSignature, member?.id]);
+  useEffect(() => {
+    if (!retryUntil) return;
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000));
+      setRetrySeconds(remaining);
+      if (!remaining) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryUntil]);
+  function handleRateLimit(error: unknown): void {
+    if (getAxiosError(error)?.response?.status !== 429) return;
+    const seconds = getRetryAfterSeconds(error);
+    setRetryUntil(Date.now() + seconds * 1000);
+    setRetrySeconds(seconds);
+  }
   const preview = useMutation({
     mutationFn: async () => {
+      if (quote && Date.parse(quote.expiresAt) > Date.now()) return quote;
       // Read voucher policy/cap even if the full selection is later rejected.
       if (orderPayload.voucherCode && redeemPoints > 0 && !checkedBenefits) {
         const voucherQuote = unwrap<OrderQuoteResponse>(
@@ -103,6 +119,7 @@ export function CartPage(): JSX.Element {
     },
     onError: (e) => {
       setQuote(null);
+      handleRateLimit(e);
       setBenefitError(getErrorMessage(e));
     },
   });
@@ -140,9 +157,11 @@ export function CartPage(): JSX.Element {
       submission.current = null;
       queryClient.invalidateQueries({ queryKey: ['my-orders'] });
       queryClient.invalidateQueries({ queryKey: ['member'] });
+      queryClient.invalidateQueries({ queryKey: ['member-points'] });
       navigate('/orders');
     },
     onError: (err) => {
+      handleRateLimit(err);
       const errorData = getAxiosError(err)?.response?.data as
         { error?: { code?: string } } | undefined;
       // Giữ nguyên key cho mọi lỗi khác: gửi lại cùng key chỉ nhận về đơn cũ nếu đơn đã được
@@ -208,7 +227,6 @@ export function CartPage(): JSX.Element {
                     {it.note ? (
                       <p className="text-sm italic text-muted-foreground">“{it.note}”</p>
                     ) : null}
-                    <FreestyleRecipe value={it.freestyle} />
                     <CupPhotoPicker
                       label={`Ảnh cho ${it.name}`}
                       photoId={it.cupPhotoId}
@@ -237,26 +255,6 @@ export function CartPage(): JSX.Element {
           </fieldset>
 
           <div className="slip-rule" />
-          {sessionQuery.data?.active && sessionQuery.data.status === 'OPEN' && (
-            <CompanionSuggestions
-              key={`${sessionQuery.data.tableSessionId}:${sessionQuery.data.participantId}`}
-              context="TABLE"
-              items={items}
-              disabled={busy}
-              onAdd={(item) => {
-                const s = queryClient.getQueryData<CurrentTableSessionResponse>(['guest-session']),
-                  c = useCart.getState();
-                if (
-                  !s?.active ||
-                  s.status !== 'OPEN' ||
-                  c.tableSessionId !== s.tableSessionId ||
-                  c.participantId !== s.participantId
-                )
-                  return false;
-                c.add(item);
-              }}
-            />
-          )}
           <fieldset disabled={busy} className="space-y-3 py-4">
             <legend className="pt-4 font-semibold">Ưu đãi</legend>
             <label className="block text-sm">
@@ -299,7 +297,7 @@ export function CartPage(): JSX.Element {
             </details>
             {orderPayload.voucherCode && !checkedBenefits ? (
               <p className="text-sm text-muted-foreground">
-                Kiểm tra ưu đãi để biết voucher có cho dùng kèm điểm và số điểm tối đa.
+                Bấm Áp dụng ưu đãi để xem số tiền giảm và số điểm tối đa có thể dùng kèm voucher.
               </p>
             ) : null}
             {orderPayload.voucherCode && checkedBenefits?.voucherAllowsPoints === false ? (
@@ -311,9 +309,24 @@ export function CartPage(): JSX.Element {
                 Có thể đổi tối đa {maxRedeemPoints} điểm với lựa chọn hiện tại.
               </p>
             ) : null}
-            <Button type="button" variant="ghost" onClick={() => preview.mutate()}>
-              Kiểm tra ưu đãi
-            </Button>
+            {hasBenefits ? (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={
+                  busy ||
+                  memberQuery.isPending ||
+                  retrySeconds > 0 ||
+                  !sessionQuery.data?.active ||
+                  sessionQuery.data.status !== 'OPEN'
+                }
+                onClick={() => {
+                  if (!busy && retrySeconds === 0) preview.mutate();
+                }}
+              >
+                {preview.isPending ? 'Đang áp dụng...' : 'Áp dụng ưu đãi'}
+              </Button>
+            ) : null}
             {benefitError ? (
               <p role="alert" className="text-sm text-danger">
                 {benefitError}
@@ -337,6 +350,11 @@ export function CartPage(): JSX.Element {
       </div>
 
       <div className="space-y-3">
+        {retrySeconds > 0 ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Vui lòng chờ {retrySeconds} giây trước khi thử lại.
+          </p>
+        ) : null}
         {quote && ((quote.voucherDiscount ?? 0) > 0 || (quote.pointsDiscount ?? 0) > 0) ? (
           <p role="status" className="text-sm">
             Đã kiểm tra ưu đãi. Tổng cần thanh toán: {vnd(quote.total)}.
@@ -365,6 +383,7 @@ export function CartPage(): JSX.Element {
           onClick={() => placeMutation.mutate()}
           disabled={
             busy ||
+            retrySeconds > 0 ||
             memberQuery.isPending ||
             !sessionQuery.data?.active ||
             sessionQuery.data.status !== 'OPEN'

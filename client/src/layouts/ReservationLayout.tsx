@@ -11,7 +11,7 @@ export function ReservationLayout(): JSX.Element {
           <Link to="/reservations" className="flex items-center gap-3">
             <CloudMark className="h-6 w-8 text-primary" />
             <span>
-              <span className="g-title block text-lg">Fantastic cafe</span>
+              <span className="g-title block text-lg">Fantastic Cafe</span>
               <span className="block text-xs text-muted-foreground">Hẹn một chỗ quen</span>
             </span>
           </Link>
@@ -48,12 +48,6 @@ export function ReservationLayout(): JSX.Element {
               {label}
             </NavLink>
           ))}
-          <Link
-            to="/pickup"
-            className="shrink-0 rounded-full px-4 py-2.5 text-sm text-muted-foreground hover:bg-card"
-          >
-            Mang đi
-          </Link>
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 lg:py-8">

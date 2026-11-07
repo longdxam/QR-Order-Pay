@@ -5,7 +5,7 @@ import { PaymentModel } from '../models/Payment.js';
 import { UserModel } from '../models/User.js';
 import { randomShortCode } from '../utils/crypto.js';
 
-/** One immutable invoice for one completed pickup, written in the order transaction. */
+/** Legacy settlement only: preserve invoices for pickup orders created before retirement. */
 export async function finalizePickupBill(order: OrderDoc, actorId: string, session: ClientSession) {
   const existing = await BillModel.findOne({ pickupOrderId: order._id }).session(session);
   if (existing) return existing;

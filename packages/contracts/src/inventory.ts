@@ -29,9 +29,10 @@ export const ingredientCreateSchema = z
       .string()
       .trim()
       .toUpperCase()
-      .regex(/^[A-Z0-9_-]{1,32}$/),
+      .regex(/^[A-Z0-9_-]{1,32}$/)
+      .optional(),
     name: z.string().trim().min(1).max(100),
-    unit: z.enum(['g', 'ml', 'unit']),
+    unit: z.enum(['g', 'ml', 'unit']).default('g'),
     lowStockThreshold: inventoryQuantitySchema.default(0),
     unitCost: ingredientCostSchema,
   })

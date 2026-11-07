@@ -11,7 +11,6 @@ export const realtimeEventTypeSchema = z.enum([
   'workforce.changed',
   'reservation.changed',
   'gift.changed',
-  'game.changed',
   'jukebox.changed',
   'order.created',
   'order.statusChanged',
@@ -397,7 +396,9 @@ export const placeOrderRequestSchema = z.object({
         toppingIds: z.array(z.string()),
         note: z.string().max(280).optional(),
         quantity: z.number().int().positive().max(50),
-        freestyleToken: z.string().min(20).max(8192).optional(),
+        // Reject retired off-menu inputs while preserving server-side price stripping.
+        freestyleToken: z.never().optional(),
+        freestyle: z.never().optional(),
         cupPhotoId: z
           .string()
           .regex(/^[a-f\d]{24}$/i)

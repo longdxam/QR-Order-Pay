@@ -1,4 +1,4 @@
-# Fantastic cafe — QR Ordering & AI Barista
+# Fantastic Cafe — QR Ordering & AI Barista
 
 Trạng thái triển khai và ghi nhớ cho lần làm việc tiếp theo: [PROJECT_MEMORY.md](PROJECT_MEMORY.md).
 Kết quả kiểm chứng mới nhất: [docs/test-report.md](docs/test-report.md).
@@ -8,20 +8,18 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+Từ 07/11/2026 đã gỡ mini-game (#2), mang đi/đặt trước nhận tại quầy (#6), AI Freestyle ngoài menu (#8), Smart Insights và gợi ý bán kèm (#12). AI Barista gợi ý từ thực đơn và Dashboard doanh thu vẫn được giữ. Các API tương ứng trả 404; dữ liệu đơn, khoản thu, kho và hóa đơn lịch sử không bị xóa. Xem [phạm vi gỡ chức năng](docs/retired-features.md).
+
 - **Latte art từ ảnh**: khách tạo/chọn3 kiểu tông cà phê, lưu đúng bản theo dòng món; Staff xuấtPNG cho máy in đồ uống sau thanh toán. Hiện chưa kết nối máy in thực phẩm. [Hướng dẫn và14ca](docs/latte-art.md).
 
-- **Smart Insights (#12)**: Admin xem giờ đông, món bán nhiều, cặp món và lãi gộp nguyên liệu dự kiến khi nhập đủ giá vốn; giỏ tại bàn/mang đi gợi ý món thường gọi kèm khi đủ mẫu, khách xác nhận mới thêm. [Hướng dẫn và 12 ca thử](docs/smart-insights.md).
-- **AI Barista Freestyle (#8)**: phối nền/vị đã duyệt thành món ngoài thực đơn, một giá/size do Admin đặt, kiểm tồn và lưu công thức vào đơn/KDS; dùng tại bàn, member mang đi và quà. Cần Admin cấu hình rồi bật bán. [Hướng dẫn và 12 ca thử](docs/freestyle.md).
-- **Ảnh in tem dán cốc (#9)**: tải JPEG/PNG/WebP riêng cho từng dòng món ở giỏ tại bàn, mang đi hoặc quà; xem trước ảnh đã chuẩn hóa, Staff/Admin in tem60×80mm trên A4/giấy tem sau thanh toán. [Hướng dẫn và 14 ca thử](docs/cup-photos.md).
+- **Ảnh in tem dán cốc (#9)**: tải JPEG/PNG/WebP riêng cho từng dòng món ở giỏ tại bàn hoặc quà; xem trước ảnh đã chuẩn hóa, Staff/Admin in tem60×80mm trên A4/giấy tem sau thanh toán. [Hướng dẫn và 14 ca thử](docs/cup-photos.md).
 
 - **Jukebox (#3)**: Admin thêm link YouTube hoặc audio HTTPS; khách QR vote chung theo phiên bàn (5 lượt), hàng đợi theo vote, quầy giữ một thiết bị phát có pause/volume/next và tự chuyển khi hết bài. [Hướng dẫn và 14 ca thử](docs/jukebox.md).
 
-- **Mini-game “Ai trả tiền?” (#2)**: `/game` trong phiên QR, chủ vòng tự thêm tên để chơi cả nhóm trên một máy hoặc các thiết bị tự tham gia; vòng quay chung do server chốt kết quả, retry không bốc lại. Có nút Quay/lắc trên thiết bị hỗ trợ; game không sửa đơn hay tự thu/chuyển tiền. [Hướng dẫn và 14 ca thử](docs/mini-game.md).
 
 - **Tặng quà cho bàn khác (#1)**: `/gifts`, chọn Ẩn danh hoặc Hiện bàn gửi (tên/mã bàn); lời mời Nhận/Từ chối trong 5 phút, nhận rồi người gửi xác nhận giá/đặt/trả tiền. KDS giao đúng bàn nhận, đơn và hóa đơn thuộc người gửi; giỏ quà riêng, retry an toàn và thông báo realtime. [Quy tắc và kịch bản test](docs/gifts.md).
 
 - **Đặt bàn theo khung giờ (#10)**: trang độc lập `/reservations`, mỗi lượt 60 phút, lọc bàn đủ chỗ/trống, chống trùng; Staff/Admin check-in mở phiên QR, tự đánh no-show sau hạn đến 15 phút, hủy/lịch sử/thông báo. [Hướng dẫn và 14 ca test](docs/reservations.md).
-- **Mang đi & đặt trước nhận tại quầy (#6)**: trang riêng `/pickup` với thực đơn/AI/giỏ, `/pickup/orders` xem đơn và `/pickup/member` đăng nhập; độc lập luồng QR tại bàn. Nhân viên tạo tại quầy; giờ hẹn Việt Nam, thu đủ trước pha, KDS/giao khách, hủy/hoàn/no-show và hóa đơn snapshot. Staff/Admin → Mang đi & đặt trước. Xem [quy tắc và 18 kịch bản test](docs/pickup.md).
 
 - Kho nguyên liệu, nhập/xuất/kiểm kê và công thức theo món/size/topping; giữ kho khi đặt, xuất khi pha chế, trả giữ khi hủy và tự báo hết trên menu/AI. Quản lý ở **Admin → Kho & công thức**. Xem [hướng dẫn kho](docs/inventory.md).
   Dữ liệu mẫu và kiểm thử: [32 nguyên liệu và công thức theo menu](docs/inventory-demo-data.md), [12 kịch bản test kho](docs/inventory-test-scenarios.md). Bộ nạp cộng thêm qua API: `node scripts/setup-inventory-demo.mjs --apply` (cần `INVENTORY_ADMIN_PASSWORD`), không dùng seed/reset tổng.

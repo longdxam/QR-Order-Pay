@@ -11,7 +11,6 @@ export const giftItemInputSchema = z
     note: z.string().trim().max(280).default(''),
     quantity: z.number().int().min(1).max(10),
     cupPhotoId: objectId.optional(),
-    freestyleToken: z.string().min(20).max(8192).optional(),
   })
   .strict();
 export const giftCreateSchema = z

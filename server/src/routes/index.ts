@@ -17,14 +17,10 @@ import * as cashShift from '../controllers/cashShiftController.js';
 import * as inventory from '../controllers/inventoryController.js';
 import * as promotion from '../controllers/promotionController.js';
 import * as workforce from '../controllers/workforceController.js';
-import * as pickup from '../controllers/pickupController.js';
 import * as reservations from '../controllers/reservationController.js';
 import * as gifts from '../controllers/giftController.js';
-import * as miniGame from '../controllers/miniGameController.js';
 import * as jukebox from '../controllers/jukeboxController.js';
 import * as cupPhotos from '../controllers/cupPhotoController.js';
-import * as freestyle from '../controllers/freestyleController.js';
-import * as insights from '../controllers/insightsController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -61,6 +57,16 @@ const rateLimitOrPassthrough = (
         store: createRateLimitStore(prefix),
         passOnStoreError: false,
         keyGenerator,
+        handler: (_req, res) => {
+          res.status(429).json({
+            success: false,
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'Bạn thao tác quá nhanh. Vui lòng chờ một chút rồi thử lại.',
+            },
+            requestId: res.getHeader('x-request-id'),
+          });
+        },
       });
       limiter(req, res, next);
     } catch (error) {
@@ -94,44 +100,17 @@ const guestOrderLimiter = rateLimitOrPassthrough(
   'guest-order',
   tableKey,
 );
+const guestQuoteLimiter = rateLimitOrPassthrough(
+  config.rateLimits.guestQuotePerMinute,
+  'guest-quote',
+  tableKey,
+);
 const guestServiceLimiter = rateLimitOrPassthrough(
   config.rateLimits.guestServicePerMinute,
   'guest-service',
   tableKey,
 );
 const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
-apiRouter.get(
-  '/recommendations/companions',
-  rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'companions'),
-  insights.recommendations,
-);
-apiRouter.get(
-  '/admin/insights',
-  requireAuth,
-  requireRole('ADMIN'),
-  rateLimitOrPassthrough(30, 'insights'),
-  insights.overview,
-);
-apiRouter.get('/ai/freestyle', loadGuest, requireAiCustomer, freestyle.catalog);
-apiRouter.post(
-  '/ai/freestyle',
-  loadGuest,
-  requireAiCustomer,
-  guestCsrfGuard,
-  aiLimiter,
-  freestyle.recommend,
-);
-apiRouter.post(
-  '/ai/freestyle/validate',
-  loadGuest,
-  requireAiCustomer,
-  guestCsrfGuard,
-  aiLimiter,
-  freestyle.validate,
-);
-apiRouter.get('/admin/freestyle', requireAuth, requireRole('ADMIN'), freestyle.admin);
-apiRouter.put('/admin/freestyle', requireAuth, requireRole('ADMIN'), freestyle.save);
-
 apiRouter.get('/reservations/availability', authLimiter, reservations.availability(false));
 apiRouter.get('/reservations', authLimiter, reservations.list(false));
 apiRouter.post('/reservations', guestCsrfGuard, guestMutationLimiter, reservations.create(false));
@@ -149,26 +128,6 @@ for (const prefix of ['/staff/reservations', '/admin/reservations']) {
   apiRouter.post(prefix, reservations.create(true));
   apiRouter.post(`${prefix}/:id/cancel`, reservations.action(true, 'cancel'));
   apiRouter.post(`${prefix}/:id/check-in`, reservations.action(true, 'check-in'));
-}
-
-apiRouter.get('/pickups', authLimiter, pickup.list(false));
-apiRouter.post('/pickups/quote', guestCsrfGuard, guestMutationLimiter, pickup.quote(false));
-apiRouter.post('/pickups', guestCsrfGuard, guestMutationLimiter, pickup.create(false));
-apiRouter.post('/pickups/:id/cancel', guestCsrfGuard, guestMutationLimiter, pickup.cancel(false));
-apiRouter.get('/pickups/:id/bill', authLimiter, pickup.bill(false));
-for (const prefix of ['/staff/pickups', '/admin/pickups']) {
-  const roles = prefix.startsWith('/admin') ? (['ADMIN'] as const) : (['STAFF', 'ADMIN'] as const);
-  apiRouter.use(prefix, requireAuth, requireRole(...roles));
-  apiRouter.get(prefix, pickup.list(true));
-  apiRouter.get(`${prefix}/catalog`, pickup.catalog);
-  apiRouter.post(`${prefix}/quote`, pickup.quote(true));
-  apiRouter.post(prefix, pickup.create(true));
-  apiRouter.post(`${prefix}/:id/cancel`, pickup.cancel(true));
-  apiRouter.post(`${prefix}/:id/no-show`, pickup.cancel(true, true));
-  apiRouter.post(`${prefix}/:id/payments`, pickup.pay);
-  apiRouter.post(`${prefix}/:id/refund`, pickup.refund);
-  apiRouter.patch(`${prefix}/:id/status`, pickup.transition);
-  apiRouter.get(`${prefix}/:id/bill`, pickup.bill(true));
 }
 
 // auth
@@ -224,12 +183,23 @@ apiRouter.get('/table-sessions/current', loadGuest, tableSession.current);
 apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.leave);
 
 // guest orders
-const gameLimiter = rateLimitOrPassthrough(40, 'table-game', tableKey);
 const photoLimiter = rateLimitOrPassthrough(5, 'cup-photo-upload', tableKey);
-apiRouter.get('/cup-photos/:id/details', loadGuest, requireGuest, cupPhotos.authorize('guest'), cupPhotos.details);
-apiRouter.post('/cup-photos/:id/latte-art', loadGuest, requireGuest, guestCsrfGuard, photoLimiter, cupPhotos.authorize('guest'), cupPhotos.latteArt);
-apiRouter.get('/pickup/cup-photos/:id/details', cupPhotos.authorize('member'), cupPhotos.details);
-apiRouter.post('/pickup/cup-photos/:id/latte-art', guestCsrfGuard, photoLimiter, cupPhotos.authorize('member'), cupPhotos.latteArt);
+apiRouter.get(
+  '/cup-photos/:id/details',
+  loadGuest,
+  requireGuest,
+  cupPhotos.authorize('guest'),
+  cupPhotos.details,
+);
+apiRouter.post(
+  '/cup-photos/:id/latte-art',
+  loadGuest,
+  requireGuest,
+  guestCsrfGuard,
+  photoLimiter,
+  cupPhotos.authorize('guest'),
+  cupPhotos.latteArt,
+);
 apiRouter.post(
   '/cup-photos',
   loadGuest,
@@ -247,15 +217,6 @@ apiRouter.get(
   cupPhotos.authorize('guest'),
   cupPhotos.own,
 );
-apiRouter.post(
-  '/pickup/cup-photos',
-  guestCsrfGuard,
-  photoLimiter,
-  cupPhotos.authorize('member'),
-  cupPhotos.rawUpload,
-  cupPhotos.upload,
-);
-apiRouter.get('/pickup/cup-photos/:id', cupPhotos.authorize('member'), cupPhotos.own);
 for (const prefix of ['/staff/cup-photos', '/admin/cup-photos']) {
   apiRouter.use(
     prefix,
@@ -273,7 +234,12 @@ for (const prefix of ['/staff/cup-photos', '/admin/cup-photos']) {
   );
   apiRouter.get(`${prefix}/:id`, cupPhotos.authorize('staff'), cupPhotos.own);
   apiRouter.get(`${prefix}/:id/details`, cupPhotos.authorize('staff'), cupPhotos.details);
-  apiRouter.post(`${prefix}/:id/latte-art`, photoLimiter, cupPhotos.authorize('staff'), cupPhotos.latteArt);
+  apiRouter.post(
+    `${prefix}/:id/latte-art`,
+    photoLimiter,
+    cupPhotos.authorize('staff'),
+    cupPhotos.latteArt,
+  );
 }
 for (const prefix of ['/staff/cup-prints', '/admin/cup-prints']) {
   apiRouter.use(
@@ -315,18 +281,6 @@ for (const prefix of ['/staff/jukebox', '/admin/jukebox']) {
 apiRouter.get('/admin/jukebox/tracks', jukebox.catalog);
 apiRouter.post('/admin/jukebox/tracks', jukebox.saveTrack);
 apiRouter.put('/admin/jukebox/tracks/:id', jukebox.saveTrack);
-apiRouter.get('/game', loadGuest, requireGuest, miniGame.feed);
-apiRouter.post('/game', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.create);
-apiRouter.post('/game/:id/continue', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.continueRound);
-for (const kind of ['join', 'leave', 'spin', 'cancel', 'add-player', 'remove-player'] as const)
-  apiRouter.post(
-    `/game/:id/${kind}`,
-    loadGuest,
-    requireGuest,
-    guestCsrfGuard,
-    gameLimiter,
-    miniGame.action(kind),
-  );
 apiRouter.get('/gifts/tables', loadGuest, requireGuest, gifts.tables);
 apiRouter.get('/gifts', loadGuest, requireGuest, gifts.list);
 apiRouter.post('/gifts', loadGuest, requireGuest, guestCsrfGuard, guestOrderLimiter, gifts.create);
@@ -342,7 +296,7 @@ apiRouter.post(
   '/orders/quote',
   loadGuest,
   guestCsrfGuard,
-  guestOrderLimiter,
+  guestQuoteLimiter,
   requireGuest,
   order.quote,
 );
@@ -509,7 +463,12 @@ apiRouter.post(
   requireRole('STAFF', 'ADMIN'),
   payment.refundOrder,
 );
-apiRouter.get('/staff/tables/:id/qr', requireAuth, requireRole('STAFF', 'ADMIN'), tableDisplay.staticQr);
+apiRouter.get(
+  '/staff/tables/:id/qr',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableDisplay.staticQr,
+);
 apiRouter.get('/admin/tables/:id/qr', requireAuth, requireRole('ADMIN'), tableDisplay.staticQr);
 apiRouter.post(
   '/staff/tables/:id/display',

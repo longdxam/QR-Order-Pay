@@ -35,8 +35,15 @@ export function useCancellationAlerts(
   }, []);
 
   useSocketEvent('order.statusChanged', (data) => {
-    const event = data as { orderId?: string; orderCode?: string; status?: string } | undefined;
-    if (event?.status === 'CANCELLED' && event.orderId && remember('cancelled', event.orderId))
+    const event = data as
+      | { orderId?: string; orderCode?: string; status?: string; tableSessionId?: string }
+      | undefined;
+    if (
+      event?.status === 'CANCELLED' &&
+      event.tableSessionId &&
+      event.orderId &&
+      remember('cancelled', event.orderId)
+    )
       notify('cancelled', event.orderCode);
   });
   useSocketEvent('cancelRequest.created', (data) => {

@@ -24,7 +24,10 @@ import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import type { GameActor } from './miniGameService.js';
+interface JukeboxActor {
+  tableSessionId: string;
+  participantId: string;
+}
 
 const idSchema = z.string().regex(/^[a-f\d]{24}$/i);
 // Every mutation writes this singleton in the same transaction: catalog/vote/advance races serialize.
@@ -110,7 +113,7 @@ async function queue(session?: ClientSession) {
     });
   return { tracks, ranked, tally, votes };
 }
-export async function jukeboxFeed(actor?: GameActor): Promise<JukeboxFeed> {
+export async function jukeboxFeed(actor?: JukeboxActor): Promise<JukeboxFeed> {
   const [state, q, vote, table] = await Promise.all([
     JukeboxStateModel.findById('main'),
     queue(),
@@ -141,7 +144,7 @@ export async function jukeboxFeed(actor?: GameActor): Promise<JukeboxFeed> {
       : null,
   };
 }
-export async function voteJukebox(actor: GameActor, input: unknown) {
+export async function voteJukebox(actor: JukeboxActor, input: unknown) {
   const body = jukeboxVoteSchema.parse(input),
     who = `table:${actor.tableSessionId}`,
     data = { kind: 'vote', ...body };

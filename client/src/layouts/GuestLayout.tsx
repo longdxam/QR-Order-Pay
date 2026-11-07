@@ -9,7 +9,6 @@ import {
   ReceiptText,
   QrCode,
   Gift,
-  Dices,
   Music2,
   MessageCircle,
 } from 'lucide-react';
@@ -74,13 +73,14 @@ export function GuestLayout(): JSX.Element {
   };
   const refreshOrders = () => {
     void qc.invalidateQueries({ queryKey: ['my-orders'] });
+    void qc.invalidateQueries({ queryKey: ['member'] });
+    void qc.invalidateQueries({ queryKey: ['member-points'] });
   };
   useSocketEvent('connect', () => {
     setConnected(true);
     refreshSession();
     refreshOrders();
     void qc.invalidateQueries({ queryKey: ['gifts'] });
-    void qc.invalidateQueries({ queryKey: ['game'] });
     void qc.invalidateQueries({ queryKey: ['menu'] });
   });
   useSocketEvent('disconnect', () => {
@@ -112,10 +112,7 @@ export function GuestLayout(): JSX.Element {
       setSession(session.tableSessionId, session.participantId);
     else if (session && !session.active) {
       resetSession();
-      if (
-        session.receiptAvailable &&
-        !['/receipt', '/member', '/pickup', '/ai'].includes(location.pathname)
-      )
+      if (session.receiptAvailable && !['/receipt', '/member', '/ai'].includes(location.pathname))
         navigate('/receipt', { replace: true });
     }
   }, [session, setSession, resetSession, navigate, location.pathname]);
@@ -171,7 +168,7 @@ export function GuestLayout(): JSX.Element {
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3 lg:px-6">
           <CloudMark className="h-6 w-8 shrink-0 text-primary" />
           <div className="min-w-[9rem] flex-1 leading-tight">
-            <p className="g-title text-lg lg:text-xl">Fantastic cafe</p>
+            <p className="g-title text-lg lg:text-xl">Fantastic Cafe</p>
             <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
               {activeSession ? (
                 <>
@@ -209,7 +206,6 @@ export function GuestLayout(): JSX.Element {
               ...(activeSession
                 ? [{ to: '/gifts', label: `Tặng quà${giftCount ? ` (${giftCount})` : ''}` }]
                 : []),
-              ...(activeSession ? [{ to: '/game', label: 'Vòng quay' }] : []),
               ...(activeSession ? [{ to: '/jukebox', label: 'Chọn nhạc' }] : []),
               {
                 to: receiptAvailable ? '/receipt' : '/orders',
@@ -251,12 +247,6 @@ export function GuestLayout(): JSX.Element {
               </a>
             ) : null}
           </nav>
-          <NavLink
-            to="/pickup"
-            className="shrink-0 rounded-full px-2 py-2 text-sm font-semibold hover:bg-card"
-          >
-            Mang đi
-          </NavLink>
           <NavLink
             to="/member"
             className="shrink-0 rounded-full px-3 py-2 text-sm font-semibold hover:bg-card"
@@ -336,9 +326,6 @@ export function GuestLayout(): JSX.Element {
           >
             <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
             <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />
-            {activeSession && (
-              <DockLink to="/game" label="Vòng quay" icon={<Dices className="h-5 w-5" />} />
-            )}
             {activeSession && (
               <DockLink to="/jukebox" label="Chọn nhạc" icon={<Music2 className="h-5 w-5" />} />
             )}

@@ -89,7 +89,7 @@ export function TableDisplayPage(): JSX.Element {
   return (
     <main className="grid min-h-dvh place-items-center bg-background p-6 text-center">
       <div className="w-full max-w-lg space-y-4">
-        <p className="font-display text-3xl font-semibold">Fantastic cafe</p>
+        <p className="font-display text-3xl font-semibold">Fantastic Cafe</p>
         <h1 className="text-2xl font-semibold">{qr?.tableName ?? 'Màn hình bàn'}</h1>
         {qr && seconds > 0 ? (
           <>

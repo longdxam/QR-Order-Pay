@@ -219,6 +219,48 @@ describe('inventory and recipes', () => {
     expect((await request(app).get(`${base}/movements?page=-1`).set(admin)).status).toBe(422);
   });
 
+  it('creates an ingredient from its name with safe defaults and a generated internal code', async () => {
+    const created = await request(app)
+      .post(`${base}/ingredients`)
+      .set(admin)
+      .send({ name: 'Bột cacao mới' });
+    expect(created.status).toBe(201);
+    const item = created.body.data.ingredient;
+    expect(item).toMatchObject({
+      name: 'Bột cacao mới',
+      unit: 'g',
+      onHand: 0,
+      reserved: 0,
+      available: 0,
+      lowStockThreshold: 0,
+    });
+    expect(item.code).toBe(`NL_${item.id.toUpperCase()}`);
+    const audit = await AuditLogModel.findOne({
+      action: 'inventory.ingredientCreated',
+      entityId: item.id,
+    });
+    expect(audit?.metadata).toMatchObject({ code: item.code, unit: 'g' });
+    expect(await StockMovementModel.countDocuments({ ingredientId: item.id })).toBe(0);
+    expect((await ingredient()).code).toBe('TEA');
+    expect(
+      (await request(app).post(`${base}/ingredients`).set(admin).send({ name: '  ' })).status,
+    ).toBe(422);
+  });
+
+  it('generates distinct codes for concurrent name-only creates and preserves a chosen unit', async () => {
+    const results = await Promise.all(
+      ['Sữa hạt A', 'Sữa hạt B'].map((name) =>
+        request(app).post(`${base}/ingredients`).set(admin).send({ name, unit: 'ml' }),
+      ),
+    );
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    const items = results.map((result) => result.body.data.ingredient);
+    expect(new Set(items.map((item) => item.code)).size).toBe(2);
+    expect(
+      items.every((item) => item.unit === 'ml' && item.onHand === 0 && item.reserved === 0),
+    ).toBe(true);
+  });
+
   it('records receipts, issues and absolute counts with audit, history and idempotent retry', async () => {
     const input = {
       type: 'RECEIPT' as const,

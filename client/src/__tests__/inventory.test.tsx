@@ -16,7 +16,7 @@ const productId = '222222222222222222222222';
 const variantId = '333333333333333333333333';
 const clients: QueryClient[] = [];
 const response = (data: unknown) => ({ data: { success: true, data } });
-function mount() {
+function mount(additional: Array<Record<string, unknown>> = []) {
   mock.get.mockResolvedValue(
     response({
       ingredients: [
@@ -33,6 +33,7 @@ function mount() {
           isActive: true,
           version: 7,
         },
+        ...additional,
       ],
       recipes: [],
       products: [
@@ -65,6 +66,63 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 describe('inventory management', () => {
+  it('creates an ingredient without asking for or submitting a manual code', async () => {
+    mock.post.mockResolvedValue(response({}));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Thêm nguyên liệu' }));
+    expect(screen.queryByLabelText('Mã nguyên liệu')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Tên nguyên liệu'), {
+      target: { value: 'Sữa dừa mới' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu nguyên liệu' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledWith(
+        '/admin/inventory/ingredients',
+        expect.objectContaining({ name: 'Sữa dừa mới', unit: 'g', lowStockThreshold: 0 }),
+      ),
+    );
+    expect(mock.post.mock.calls[0]![1]).not.toHaveProperty('code');
+  });
+
+  it('searches ingredient names without accents or case and hides codes from inventory and recipes', async () => {
+    mount([
+      {
+        id: '444444444444444444444444',
+        code: 'COFFEE_BEANS',
+        name: 'Cà phê hạt rang',
+        unit: 'g',
+        onHand: 200,
+        reserved: 0,
+        available: 200,
+        lowStockThreshold: 10,
+        isLowStock: false,
+        isActive: true,
+        version: 0,
+      },
+    ]);
+    await screen.findByText('Cà phê hạt rang');
+    expect(screen.queryByText('TEA')).toBeNull();
+    expect(screen.queryByText(/COFFEE_BEANS/)).toBeNull();
+    const search = screen.getByRole('searchbox', { name: 'Tìm nguyên liệu' });
+    fireEvent.change(search, { target: { value: 'TRA KHO' } });
+    expect(screen.getByText('Trà khô')).toBeTruthy();
+    expect(screen.queryByText('Cà phê hạt rang')).toBeNull();
+    fireEvent.change(search, { target: { value: 'ca phe' } });
+    expect(screen.getByText('Cà phê hạt rang')).toBeTruthy();
+    expect(screen.queryByText('Trà khô')).toBeNull();
+    fireEvent.change(search, { target: { value: 'khong ton tai' } });
+    expect(screen.getByText('Không tìm thấy nguyên liệu phù hợp.')).toBeTruthy();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(screen.getByText('2 / 2 nguyên liệu')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Công thức' }));
+    fireEvent.change(screen.getByLabelText('Món hoặc topping'), {
+      target: { value: `PRODUCT:${productId}` },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm dòng nguyên liệu' }));
+    expect(screen.getByRole('option', { name: 'Trà khô (g)' })).toBeTruthy();
+    expect(screen.queryByText(/COFFEE_BEANS|^TEA$/)).toBeNull();
+  });
+
   it('submits stock receipt with the observed version, reason and idempotency key', async () => {
     mock.post.mockResolvedValue(response({}));
     mount();

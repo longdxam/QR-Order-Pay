@@ -4,10 +4,11 @@
 
 Admin mở **Kho & công thức** (`/admin/inventory`):
 
-1. Thêm nguyên liệu với mã duy nhất, tên, đơn vị cơ sở **g**, **ml** hoặc **đơn vị/cái**, và ngưỡng cảnh báo sắp hết. Mã và đơn vị không đổi sau khi tạo để giữ ý nghĩa lịch sử.
+1. Thêm nguyên liệu chỉ cần nhập **tên**; đơn vị mặc định **g**, ngưỡng cảnh báo mặc định **0**, giá vốn có thể để trống. Chọn **ml** hoặc **đơn vị/cái** nếu phù hợp trước khi lưu; đơn vị không đổi sau khi tạo để giữ ý nghĩa lịch sử. Hệ thống tự sinh mã nội bộ duy nhất, không yêu cầu Admin nhập hoặc hiển thị mã trong kho/công thức. Mã cũ và API gửi mã vẫn được giữ tương thích.
 2. Bấm **Nhập / xuất / kiểm kê** để nhập tồn đầu hoặc nhập thêm. Xuất khác/hao hụt giảm tồn; kiểm kê nhập **tổng tồn thực tế**, bao gồm phần đang giữ cho đơn. Mỗi thao tác cần lý do.
 3. Trong tab **Công thức**, chọn món hoặc topping, thêm định lượng cho **một phần** và bật áp dụng. Công thức nền dùng cho mọi size; công thức riêng của size **thay thế toàn bộ** nền. Topping cộng định lượng riêng theo mỗi phần món.
 4. Tab **Lịch sử kho** có biến động nhập, xuất khác, kiểm kê, giữ, trả giữ và xuất pha chế; lọc nguyên liệu và phân trang 30 dòng. Lịch sử giữ tên/đơn vị, tồn sau, lượng giữ sau, đơn và người thao tác.
+5. Tab **Nguyên liệu** có ô tìm theo tên, không phân biệt hoa/thường hoặc dấu tiếng Việt. Ví dụ nhập `ca phe` tìm được **Cà phê hạt rang**; số lượng kết quả hiển thị trên tổng số nguyên liệu, không làm thay đổi các thống kê kho.
 
 Số lượng có tối đa 3 chữ số thập phân. Ví dụ nhập 1 kg đường phải đổi sang **1000 g**, 1 lít sữa thành **1000 ml**. Một công thức bật cần ít nhất một nguyên liệu nền; không cho lặp nguyên liệu trong cùng công thức. Không quy đổi đơn vị tự động, tính nguyên liệu theo mức đường/đá, quản lý lô/hạn dùng hoặc giá vốn trong phiên bản này.
 

@@ -29,10 +29,9 @@ import '../src/models/Voucher.js';
 import '../src/models/WorkShift.js';
 import '../src/models/Reservation.js';
 import '../src/models/Gift.js';
-import '../src/models/MiniGame.js';
+import './legacyFeatureModels.js';
 import '../src/models/Jukebox.js';
 import '../src/models/CupPhoto.js';
-import '../src/models/Freestyle.js';
 import { migratePickupIndexes } from '../src/infrastructure/pickupIndexes.js';
 
 interface Migration {

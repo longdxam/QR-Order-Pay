@@ -6,7 +6,7 @@ export function overviewToCsv(
   to: string | null,
 ): string {
   const rows: Array<Array<string | number>> = [
-    ['Báo cáo Fantastic cafe', `${displayDate(from)} - ${displayDate(to)}`],
+    ['Báo cáo Fantastic Cafe', `${displayDate(from)} - ${displayDate(to)}`],
     ['Thực thu ròng', data.totalRevenue],
     ['Tiền đã thu', data.grossCollected ?? 0],
     ['Tiền đã hoàn', data.totalRefunded ?? 0],

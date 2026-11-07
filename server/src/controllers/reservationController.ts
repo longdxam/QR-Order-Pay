@@ -1,6 +1,25 @@
 import { z } from 'zod';
-import { handler } from './pickupController.js';
+import type { Request, Response, NextFunction } from 'express';
+import { MEMBER_COOKIE, requireMember } from '../services/memberService.js';
 import * as reservations from '../services/reservationService.js';
+
+function handler(
+  staff: boolean,
+  work: (req: Request, actor: { staff: boolean; id: string }) => Promise<unknown>,
+) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actor = {
+        staff,
+        id: staff ? req.user!.id : (await requireMember(req.cookies?.[MEMBER_COOKIE])).id,
+      };
+      res.set('Cache-Control', 'no-store');
+      res.json({ success: true, data: await work(req, actor) });
+    } catch (error) {
+      next(error);
+    }
+  };
+}
 
 export const availability = (staff: boolean) =>
   handler(staff, (req) => reservations.reservationAvailability(req.query));

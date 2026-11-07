@@ -58,7 +58,7 @@ export function ReceiptPage(): JSX.Element {
           <article className="slip px-5 pt-5">
             <header className="flex items-start justify-between gap-3">
               <div>
-                <p className="g-title text-lg">Fantastic cafe</p>
+                <p className="g-title text-lg">Fantastic Cafe</p>
                 <p className="text-sm text-muted-foreground">{data.tableName}, đã kết thúc phiên</p>
               </div>
               <p className="text-right text-sm text-muted-foreground">
@@ -123,7 +123,7 @@ export function ReceiptPage(): JSX.Element {
       ) : null}
 
       <p className="text-sm text-muted-foreground print:mt-4">
-        Cảm ơn bạn đã ghé Fantastic cafe! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể
+        Cảm ơn bạn đã ghé Fantastic Cafe! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể
         từ lúc vào bàn hoặc khi bạn rời bàn.
       </p>
     </div>

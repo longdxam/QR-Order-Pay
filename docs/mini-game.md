@@ -1,3 +1,5 @@
+> **Đã gỡ ngày 07/11/2026.** Tài liệu này chỉ lưu lịch sử, không mô tả chức năng đang cung cấp. Xem [phạm vi gỡ](retired-features.md).
+
 # Mini-game “Ai trả tiền?” (#2)
 
 Khách đã quét QR mở **Vòng quay** (`/game`) trên Guest 8080. Game giải trí cho nhóm đang dùng cùng phiên bàn. Kết quả không sửa đơn, không đổi chủ đơn, không phân chia hóa đơn và không tự tạo/thu/chuyển tiền. Mọi người tự thống nhất chuyện trả tiền.

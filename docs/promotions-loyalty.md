@@ -4,7 +4,8 @@
 
 - Khách mở **Thành viên** (`/member`), đăng ký tên, SĐT và mật khẩu. SĐT di động Việt Nam dạng `0…` hoặc `+84…` được chuẩn hóa về cùng tài khoản. Không dùng SMS; SĐT là tên đăng nhập, không phải bằng chứng sở hữu số điện thoại.
 - Đăng nhập **trước khi đặt đơn** để đơn được gắn thành viên. Không gắn lại thành viên hay cộng điểm ngược cho đơn đã đặt.
-- Giỏ hàng có **Mã voucher**, **Điểm muốn đổi**, nút **Kiểm tra ưu đãi**; xem số tiền giảm và tổng cần trả trước khi đặt. Đăng nhập thành viên không thay thế quyền vào bàn qua QR.
+- Giỏ hàng có **Mã voucher**, **Điểm muốn đổi**; nút **Áp dụng ưu đãi** xuất hiện khi đã nhập mã hoặc chọn điểm để xem số tiền giảm và tổng cần trả trước khi đặt. Không dùng ưu đãi thì đặt món bình thường. Đăng nhập thành viên không thay thế quyền vào bàn qua QR.
+- Báo giá/áp dụng ưu đãi có hạn mức riêng60lần/phút/phiên bàn (`RATE_LIMIT_GUEST_QUOTE_MAX`), không dùng chung12lần/phút tạo đơn. Nút khóa khi đang xử lý, kết quả còn hạn được dùng lại nếu giỏ/ưu đãi không đổi. Gặp429 giữ giỏ và lựa chọn, hiện thông báo tiếng Việt/thời gian chờ theo `Retry-After`, không tự gửi lại hoặc tự tạo đơn.
 - Admin mở **Voucher** (`/admin/vouchers`) để tạo/sửa/tạm dừng chương trình. Bật **Cho phép dùng kèm điểm** nếu muốn voucher kết hợp với điểm. Mặc định tắt, kể cả voucher cũ. Mã không đổi sau khi tạo; muốn mã khác phải tạo chương trình mới.
 - Admin mở **Thành viên** (`/admin/members`) để tìm theo SĐT/tên, xem điểm/lịch sử, khóa/mở và đặt lại mật khẩu. Không có API tự sửa số dư điểm. Đặt lại mật khẩu sau khi kiểm tra yêu cầu khách tại quầy; vì không có SMS/email xác minh nên không có chức năng tự khôi phục mật khẩu qua SĐT.
 
@@ -57,6 +58,8 @@ Ví dụ: tiền món 60.000đ, voucher giảm 10.000đ → còn 50.000đ, đư�
 Schemas chính xác tại `packages/contracts/src/promotions.ts`, `schemas.ts`. Ví dụ voucher: `{code:"CAFE10", name:"Giảm 10k", type:"FIXED", value:10000, minSubtotal:50000, maxDiscount:null, startsAt:"2026-10-19T00:00:00.000Z", endsAt:"2026-12-31T16:59:59.000Z", maxUses:100, perMemberLimit:1, memberRequired:true, allowPointRedemption:true, isActive:true}`. Khi test hãy chọn thời gian đang có hiệu lực. Bản cập nhật kết hợp điểm không cần migration hoặc viết lại dữ liệu cũ.
 
 ## Kịch bản tự test
+
+Trang **Thành viên** của Admin tự làm mới danh sách, số dư trong hộp chi tiết đang mở và lịch sử điểm khi có sự kiện đặt đơn, đổi trạng thái đơn, xác nhận thanh toán hoặc kết nối socket trở lại; polling 10 giây dự phòng. Phía khách cũng làm mới số dư/lịch sử qua các sự kiện này và sau đặt đơn. Đổi điểm trừ ngay khi tạo đơn thành công, hủy hợp lệ trả điểm; điểm tích chỉ cộng khi đơn **PAID + SERVED**, không cộng ngay lúc đặt hoặc chỉ thu đủ tiền. Không cần tải lại trang để thấy số dư mới.
 
 Thử trên bàn/đơn riêng; không dùng dữ liệu khách thật. Không tự chỉnh số dư để giả lập tích điểm.
 

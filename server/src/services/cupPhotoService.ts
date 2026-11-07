@@ -69,9 +69,7 @@ const formats: Record<string, string> = {
   'image/webp': 'webp',
 };
 export function photoOwner(tableSessionId: string, participantId: string) {
-  return tableSessionId.startsWith('pickup:')
-    ? participantId
-    : `guest:${tableSessionId}:${participantId}`;
+  return `guest:${tableSessionId}:${participantId}`;
 }
 export async function normalizeCupPhoto(input: Buffer, mime: string) {
   if (!formats[mime])

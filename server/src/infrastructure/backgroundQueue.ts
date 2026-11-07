@@ -11,7 +11,6 @@ export const DEAD_LETTER_QUEUE = 'maycafe:queue:dead-letter';
 export type RealtimeEvent =
   | 'reservation.changed'
   | 'gift.changed'
-  | 'game.changed'
   | 'jukebox.changed'
   | 'workforce.changed'
   | 'order.created'

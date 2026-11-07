@@ -23,7 +23,7 @@ function Trigger() {
           toast({
             title: 'Đơn mang đi mới',
             description: 'Kiểm tra và thu tiền.',
-            onClick: () => navigate('/staff/pickups'),
+            onClick: () => navigate('/staff/tables'),
           })
         }
       >
@@ -45,7 +45,7 @@ describe('clickable notifications', () => {
     const notice = await screen.findByRole('button', { name: 'Mở: Đơn mang đi mới' });
     expect(notice.tagName).toBe('BUTTON');
     fireEvent.click(notice);
-    expect(screen.getByText('/staff/pickups')).toBeTruthy();
+    expect(screen.getByText('/staff/tables')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Mở: Đơn mang đi mới' })).toBeNull();
   });
   it('allows dismissing without opening the destination', async () => {

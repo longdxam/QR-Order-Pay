@@ -16,7 +16,6 @@ import { socketRedisClients } from '../infrastructure/redis.js';
 interface ServerToClientEvents {
   'reservation.changed': (payload: RealtimeEventEnvelope) => void;
   'gift.changed': (payload: RealtimeEventEnvelope) => void;
-  'game.changed': (payload: RealtimeEventEnvelope) => void;
   'jukebox.changed': (payload: RealtimeEventEnvelope) => void;
   'workforce.changed': (payload: RealtimeEventEnvelope) => void;
   'order.created': (payload: RealtimeEventEnvelope) => void;

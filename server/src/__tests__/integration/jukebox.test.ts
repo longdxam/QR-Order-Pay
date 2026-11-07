@@ -31,13 +31,16 @@ import {
   controlJukebox,
 } from '../../services/jukeboxService.js';
 import { transferSession, transition } from '../../services/tableSessionService.js';
-import type { GameActor } from '../../services/miniGameService.js';
+interface JukeboxActor {
+  tableSessionId: string;
+  participantId: string;
+}
 
 const app = buildApp();
 let repl: MongoMemoryReplSet,
-  a: GameActor,
-  b: GameActor,
-  c: GameActor,
+  a: JukeboxActor,
+  b: JukeboxActor,
+  c: JukeboxActor,
   user: string,
   staffToken: string,
   adminToken: string;
@@ -51,7 +54,7 @@ const track = (extra = {}) => ({
   enabled: true,
   ...extra,
 });
-const choose = async (actor: GameActor, trackId: string | null, extra = {}) =>
+const choose = async (actor: JukeboxActor, trackId: string | null, extra = {}) =>
   voteJukebox(actor, {
     requestId: randomUUID(),
     expectedVersion: (await jukeboxFeed(actor)).vote!.version,

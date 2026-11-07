@@ -14,7 +14,6 @@ import { ToastProvider } from '../components/ui/Toast';
 const mock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), change: vi.fn(), busy: vi.fn() }));
 vi.mock('../lib/api', async (original) => ({ ...(await original<typeof import('../lib/api')>()), api: mock }));
 vi.mock('../lib/socket', () => ({ useSocketEvent: vi.fn() }));
-vi.mock('../features/insights/CompanionSuggestions', () => ({ CompanionSuggestions: () => null }));
 const sourceId = '507f1f77bcf86cd799439010', orderId = '507f1f77bcf86cd799439020';
 const variants = ['SOFT', 'BOLD', 'DOTS'].map((style, index) => ({ id: `507f1f77bcf86cd79943901${index + 1}`, kind: 'LATTE_ART', latteStyle: style, width: 1024, height: 1024, expiresAt: new Date(Date.now() + 86400000).toISOString() }));
 const response = (data: unknown) => ({ data: { success: true, data } });

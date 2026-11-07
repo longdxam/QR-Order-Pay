@@ -7,13 +7,14 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useSocketEvent } from '../../lib/socket';
 export function AdminMembers(): JSX.Element {
   useDocumentTitle('Thành viên');
   const authApi = api;
   const qc = useQueryClient();
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<MemberDto | null>(null);
+  const [selectedSnapshot, setSelected] = useState<MemberDto | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [error, setError] = useState('');
   const query = useQuery({
@@ -22,7 +23,18 @@ export function AdminMembers(): JSX.Element {
       unwrap<{ items: MemberDto[]; total: number }>(
         await authApi.get('/admin/members', { params: { q, page } }),
       ),
+    refetchInterval: 10000,
   });
+  const selected =
+    query.data?.items.find((member) => member.id === selectedSnapshot?.id) ?? selectedSnapshot;
+  const refreshPoints = () => {
+    void qc.invalidateQueries({ queryKey: ['admin-members'] });
+    void qc.invalidateQueries({ queryKey: ['admin-member-points'] });
+  };
+  useSocketEvent('order.created', refreshPoints);
+  useSocketEvent('order.statusChanged', refreshPoints);
+  useSocketEvent('payment.confirmed', refreshPoints);
+  useSocketEvent('connect', refreshPoints);
   const history = useQuery({
     queryKey: ['admin-member-points', selected?.id, historyPage],
     enabled: !!selected,
@@ -32,6 +44,7 @@ export function AdminMembers(): JSX.Element {
           params: { page: historyPage },
         }),
       ),
+    refetchInterval: 10000,
   });
   const update = useMutation({
     mutationFn: async (body: unknown) => authApi.patch(`/admin/members/${selected!.id}`, body),

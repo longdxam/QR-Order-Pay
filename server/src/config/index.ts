@@ -137,6 +137,7 @@ export const config = {
     guestMutationPerMinute: positiveInt('RATE_LIMIT_GUEST_MUTATION_MAX', 60),
     guestJoinPerMinute: positiveInt('RATE_LIMIT_GUEST_JOIN_MAX', 20),
     guestOrderPerMinute: positiveInt('RATE_LIMIT_GUEST_ORDER_MAX', 12),
+    guestQuotePerMinute: positiveInt('RATE_LIMIT_GUEST_QUOTE_MAX', 60),
     guestServicePerMinute: positiveInt('RATE_LIMIT_GUEST_SERVICE_MAX', 6),
     menuSearchPerMinute: positiveInt('RATE_LIMIT_MENU_SEARCH_MAX', 120),
     aiPerMinute: positiveInt('RATE_LIMIT_AI_MAX', 20),

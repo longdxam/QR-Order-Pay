@@ -1,4 +1,4 @@
-# Kịch bản test kho — Fantastic cafe
+# Kịch bản test kho — Fantastic Cafe
 
 Dữ liệu đã nạp ngày **19/10/2026**: **32 nguyên liệu**, **32 phiếu nhập tồn đầu**, **22 công thức món và 6 công thức topping**. Bộ mẫu theo menu đang có, không đổi tên/giá/ảnh hoặc khôi phục món đã xóa. Công thức là định lượng minh họa cho BTL, có thể sửa theo công thức thực tế của quán.
 
@@ -14,6 +14,15 @@ Dữ liệu đã nạp ngày **19/10/2026**: **32 nguyên liệu**, **32 phiếu
 - Thu/hoàn tiền và pha chế khi bạn test sẽ để lại lịch sử nghiệp vụ demo. Bộ nạp không tự xóa các giao dịch này.
 
 ## 1. Kiểm tra dữ liệu ban đầu
+
+### Kiểm tra giao diện và thêm nguyên liệu
+
+- Nhập `CA PHE` vào **Tìm theo tên nguyên liệu**: tìm được **Cà phê hạt rang**; nhập tên không tồn tại: có thông báo không tìm thấy; xóa tìm kiếm: hiện lại danh sách. Tổng thống kê kho không đổi khi lọc.
+- Thẻ nguyên liệu và danh sách chọn trong công thức hiển thị tên/đơn vị, không có mã như `COFFEE_BEANS`.
+- Bấm **Thêm nguyên liệu**: không còn ô mã. Nhập tên nguyên liệu thử rồi lưu, không cần điền thêm: tạo thành công với đơn vị **g**, tồn/giữ/ngưỡng bằng **0**, giá vốn chưa nhập. Nếu nguyên liệu đo bằng **ml** hoặc **cái**, chọn đơn vị tương ứng trước khi lưu.
+- Để trống tên: không lưu được. Tạo hai nguyên liệu mới: hệ thống cấp mã nội bộ riêng, không thay mã hoặc tồn của nguyên liệu cũ. Chỉ thực hiện thao tác tạo trên dữ liệu thử do người kiểm tra quản lý.
+
+### Đối chiếu dữ liệu mẫu
 
 1. Mở kho, kiểm tra 32 nguyên liệu và 28 công thức bật.
 2. Kiểm tra ví dụ: cà phê hạt **1000 g**, sữa tươi **5000 ml**, sả **200 g**, trân châu trắng **1000 g**, croissant **30 cái**. Ban đầu đang giữ bằng 0.

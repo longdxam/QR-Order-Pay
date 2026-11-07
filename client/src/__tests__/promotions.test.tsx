@@ -133,7 +133,7 @@ describe('members and promotions UI', () => {
     mount(<CartPage />);
     await screen.findByLabelText('Điểm muốn đổi');
     fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'save10' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Voucher SAVE10');
     expect(mock.post.mock.calls.map((c) => c[0])).toEqual(['/orders/quote']);
     fireEvent.click(screen.getByRole('button', { name: 'Đặt món' }));
@@ -147,6 +147,105 @@ describe('members and promotions UI', () => {
     const body = mock.post.mock.calls.find((c) => c[0] === '/orders')![1];
     expect(body).not.toHaveProperty('voucherDiscount');
     expect(body).not.toHaveProperty('memberId');
+  });
+  it('does not offer a preview when no voucher or points have been selected', async () => {
+    cart();
+    mock.get.mockImplementation(async (url: string) =>
+      response(url === '/members/me' ? { member: null } : { active: true, status: 'OPEN' }),
+    );
+    mount(<CartPage />);
+    await screen.findByText('Đăng nhập thành viên để tích và đổi điểm');
+    expect(screen.queryByRole('button', { name: 'Áp dụng ưu đãi' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Kiểm tra ưu đãi' })).toBeNull();
+    expect(mock.post).not.toHaveBeenCalled();
+  });
+  it('locks a pending preview and reuses an unexpired result until the basket changes', async () => {
+    cart();
+    let finish!: (value: unknown) => void;
+    mock.post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mount(<CartPage />);
+    await screen.findByLabelText('Điểm muốn đổi');
+    fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'SAVE10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(
+      (screen.getByRole('button', { name: 'Đang áp dụng...' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Đang áp dụng...' }));
+    expect(mock.post).toHaveBeenCalledTimes(1);
+    finish(
+      response({
+        total: 50000,
+        subtotal: 60000,
+        voucherCode: 'SAVE10',
+        voucherDiscount: 10000,
+        quoteToken: 'signed',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      }),
+    );
+    await screen.findByText('Voucher SAVE10');
+    const apply = await screen.findByRole('button', { name: 'Áp dụng ưu đãi' });
+    fireEvent.click(apply);
+    await waitFor(() => expect((apply as HTMLButtonElement).disabled).toBe(false));
+    expect(mock.post).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Tăng số lượng' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
+    await waitFor(() => expect(mock.post).toHaveBeenCalledTimes(2));
+    expect(mock.post.mock.calls[1]![1].items[0].quantity).toBe(2);
+    finish(
+      response({
+        total: 110000,
+        subtotal: 120000,
+        voucherCode: 'SAVE10',
+        voucherDiscount: 10000,
+        quoteToken: 'new-signed',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      }),
+    );
+    await screen.findByText('Voucher SAVE10');
+  });
+  it('shows a friendly 429 cooldown, keeps selections and permits a manual retry after Retry-After', async () => {
+    cart();
+    mock.post.mockRejectedValue({
+      isAxiosError: true,
+      message: 'Request failed with status code 429',
+      response: { status: 429, data: 'Too many requests', headers: { 'retry-after': '2' } },
+    });
+    mount(<CartPage />);
+    await screen.findByLabelText('Điểm muốn đổi');
+    fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'SAVE10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
+    await screen.findByText('Bạn thao tác quá nhanh. Vui lòng thử lại sau 2 giây.');
+    const apply = screen.getByRole('button', { name: 'Áp dụng ưu đãi' });
+    expect((apply as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Đặt món' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(apply);
+    expect(mock.post).toHaveBeenCalledTimes(1);
+    expect((screen.getByLabelText('Mã voucher') as HTMLInputElement).value).toBe('SAVE10');
+    expect(useCart.getState().items).toHaveLength(1);
+    await waitFor(() => expect((apply as HTMLButtonElement).disabled).toBe(false), {
+      timeout: 4000,
+    });
+    expect(mock.post).toHaveBeenCalledTimes(1);
+    mock.post.mockResolvedValue(
+      response({
+        total: 50000,
+        subtotal: 60000,
+        voucherCode: 'SAVE10',
+        voucherDiscount: 10000,
+        quoteToken: 'signed',
+      }),
+    );
+    fireEvent.click(apply);
+    await screen.findByText('Voucher SAVE10');
+    expect(mock.post.mock.calls.some(([path]) => path === '/orders')).toBe(false);
   });
   it('keeps both selections and stops when server rejects the balance', async () => {
     cart();
@@ -168,7 +267,7 @@ describe('members and promotions UI', () => {
     const points = await screen.findByLabelText('Điểm muốn đổi');
     fireEvent.change(points, { target: { value: '10' } });
     expect((screen.getByLabelText('Mã voucher') as HTMLInputElement).value).toBe('SAVE10');
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Không đủ điểm để đổi.');
     expect(mock.post).toHaveBeenCalledWith(
       '/orders/quote',
@@ -200,7 +299,7 @@ describe('members and promotions UI', () => {
     fireEvent.change(points, { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'SAVE10' } });
     expect((points as HTMLInputElement).value).toBe('10');
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Đổi 10 điểm');
     await screen.findByText('Voucher SAVE10');
     await waitFor(() =>
@@ -245,11 +344,11 @@ describe('members and promotions UI', () => {
     mount(<CartPage />);
     const points = await screen.findByLabelText('Điểm muốn đổi');
     fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'SAVE10' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Có thể đổi tối đa 25 điểm với lựa chọn hiện tại.');
     fireEvent.change(points, { target: { value: '26' } });
     expect((points as HTMLInputElement).max).toBe('25');
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Chỉ được đổi tối đa 25 điểm.');
     expect(mock.post.mock.calls.some((c) => c[0] === '/orders')).toBe(false);
   });
@@ -271,7 +370,7 @@ describe('members and promotions UI', () => {
     const points = await screen.findByLabelText('Điểm muốn đổi');
     fireEvent.change(points, { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText('Mã voucher'), { target: { value: 'SAVE10' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra ưu đãi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Áp dụng ưu đãi' }));
     await screen.findByText('Voucher này không cho phép dùng kèm điểm.');
     expect((points as HTMLInputElement).value).toBe('10');
     expect((points as HTMLInputElement).max).toBe('0');

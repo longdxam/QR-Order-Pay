@@ -1,10 +1,10 @@
-# Bối cảnh thiết kế Fantastic cafe
+# Bối cảnh thiết kế Fantastic Cafe
 
 Nguồn: README, contracts, model/service và giao diện hiện có. Áp dụng cho cả Khách, Nhân viên và Quản trị theo yêu cầu ngày 13/10/2026.
 
 ## Mục đích và ưu tiên
 
-Tên sản phẩm trong [README](../README.md): **Fantastic cafe — QR Ordering & AI Barista**. Đây là hệ thống MERN đặt đồ uống qua QR tại bàn cho một quán cà phê, có AI Barista tư vấn từ menu thật; mục tiêu là bài tập lớn Lập trình Web với dữ liệu thật, kiến trúc phân tầng, kiểm thử và tài liệu.
+Tên sản phẩm trong [README](../README.md): **Fantastic Cafe — QR Ordering & AI Barista**. Đây là hệ thống MERN đặt đồ uống qua QR tại bàn cho một quán cà phê, có AI Barista tư vấn từ menu thật; mục tiêu là bài tập lớn Lập trình Web với dữ liệu thật, kiến trúc phân tầng, kiểm thử và tài liệu.
 
 README mở đầu danh sách tính năng bằng **QR tự đổi mỗi 60 giây**, sau đó là thực đơn và tùy chỉnh món. Vì vậy lối vào bằng QR và thao tác chọn món là trọng tâm của cổng khách. Các số liệu doanh thu thuộc cổng quản trị và đứng sau thao tác phục vụ/quản lý trong thứ bậc giao diện.
 
@@ -60,7 +60,7 @@ AI Barista dùng nội dung/preset sẵn có, nhãn mô tả khẩu vị rõ rà
 
 Các giá trị lấy từ CSS đang triển khai. Theme khách chỉ áp trên portal/path khách, bao gồm cửa sổ Radix. Nút bo tròn với chiều cao 36/40/48 px; card bo `rounded-2xl`, bóng `soft`; modal dùng Radix. Guest có dấu mây SVG, thanh điều hướng dưới trên điện thoại, dòng món có ảnh và phiếu hóa đơn mép răng cưa. Giữ những đặc điểm này khi cải thiện bố cục.
 
-Theo yêu cầu đổi tên và kiểu chữ ngày 13/10/2026, tên hiển thị là **Fantastic cafe** và cả ba portal dùng **Be Vietnam Pro**, weight 400/500/600/700/800. Font WOFF2 và giấy phép OFL nằm trong `client/public/fonts/`, được phục vụ/cached cùng ứng dụng. Tiêu đề khách dùng weight 700, tiêu đề phụ 600; không dùng font hẹp hoặc serif cũ.
+Theo yêu cầu đổi tên và kiểu chữ ngày 13/10/2026, tên hiển thị là **Fantastic Cafe** và cả ba portal dùng **Be Vietnam Pro**, weight 400/500/600/700/800. Font WOFF2 và giấy phép OFL nằm trong `client/public/fonts/`, được phục vụ/cached cùng ứng dụng. Tiêu đề khách dùng weight 700, tiêu đề phụ 600; không dùng font hẹp hoặc serif cũ.
 
 ## Nội dung thật
 

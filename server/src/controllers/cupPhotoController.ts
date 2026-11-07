@@ -5,10 +5,9 @@ import express, {
   type RequestHandler,
 } from 'express';
 import { AppError } from '../errors/AppError.js';
-import { MEMBER_COOKIE, requireMember } from '../services/memberService.js';
 import * as photos from '../services/cupPhotoService.js';
 import { generateLatteArt } from '../services/latteArtService.js';
-type Kind = 'guest' | 'member' | 'staff';
+type Kind = 'guest' | 'staff';
 export const authorize =
   (kind: Kind): RequestHandler =>
   async (req, res, next) => {
@@ -19,9 +18,7 @@ export const authorize =
               owner: photos.photoOwner(req.guest!.tableSessionId, req.guest!.participantId),
               tableSessionId: req.guest!.tableSessionId,
             }
-          : kind === 'staff'
-            ? { owner: `counter:${req.user!.id}`, userId: req.user!.id }
-            : { owner: `member:${(await requireMember(req.cookies?.[MEMBER_COOKIE])).id}` };
+          : { owner: `counter:${req.user!.id}`, userId: req.user!.id };
       res.locals.photoActor = actor;
       next();
     } catch (error) {

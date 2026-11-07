@@ -1,10 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { FreestyleView } from '@may-cafe/contracts';
 
 export interface CartItem {
-  freestyleToken?: string;
-  freestyle?: FreestyleView;
   cupPhotoId?: string;
   clientId: string;
   productId: string;
@@ -71,6 +68,16 @@ export const useCart = create<CartState>()(
     }),
     {
       name: 'mc-cart',
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as Pick<CartState, 'items' | 'tableSessionId' | 'participantId'>;
+        return {
+          ...state,
+          items: (state.items ?? []).filter(
+            (item) => !('freestyleToken' in item || 'freestyle' in item),
+          ),
+        };
+      },
       partialize: (state) => ({
         items: state.items,
         tableSessionId: state.tableSessionId,

@@ -104,8 +104,7 @@ describe('staff notifications', () => {
       expect(screen.getByText(path)).toBeTruthy();
     };
     emit('order.created', { orderId: 'pickup-new', status: 'AWAITING_PAYMENT' });
-    await waitFor(() => expect(mock.toast).toHaveBeenCalled());
-    openLast('/staff/pickups');
+    expect(mock.toast).not.toHaveBeenCalled();
     emit('order.created', {
       orderId: 'table-new',
       tableSessionId: 'table',
@@ -114,8 +113,12 @@ describe('staff notifications', () => {
     openLast('/staff/tables');
     emit('cancelRequest.created', { requestId: 'r-new', orderCode: 'REQ01' });
     openLast('/staff/kds');
-    emit('order.statusChanged', { orderId: 'cancel-new', status: 'CANCELLED' });
-    openLast('/staff/tables');
+    emit('order.statusChanged', {
+      orderId: 'cancel-new',
+      tableSessionId: 'table',
+      status: 'CANCELLED',
+    });
+    openLast('/staff/kds');
     services = [{ _id: 'service-new', status: 'OPEN', type: 'CALL_STAFF', tableName: 'Bàn 1' }];
     emit('serviceRequest.created', {});
     await waitFor(() =>
@@ -137,7 +140,7 @@ describe('staff notifications', () => {
     openLast('/staff/payments');
     expect(
       mock.browser.mock.calls.filter((call) => typeof call[2] === 'function').length,
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(5);
   });
   it('announces cancellations once across realtime and polling, refreshes the cashier list and keeps initial history quiet', async () => {
     let rows = [{ _id: 'old', code: 'OLD01' }];
@@ -167,8 +170,18 @@ describe('staff notifications', () => {
     rows = [{ _id: 'new', code: 'NEW01' }, ...rows];
     act(() => {
       for (const listener of mock.listeners.get('order.statusChanged')!) {
-        listener({ orderId: 'new', orderCode: 'NEW01', status: 'CANCELLED' });
-        listener({ orderId: 'new', orderCode: 'NEW01', status: 'CANCELLED' });
+        listener({
+          orderId: 'new',
+          orderCode: 'NEW01',
+          tableSessionId: 'table',
+          status: 'CANCELLED',
+        });
+        listener({
+          orderId: 'new',
+          orderCode: 'NEW01',
+          tableSessionId: 'table',
+          status: 'CANCELLED',
+        });
       }
     });
     await waitFor(() =>
@@ -190,6 +203,26 @@ describe('staff notifications', () => {
     expect(mock.toast).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Đơn MISSED01 đã hủy' }),
     );
+  });
+
+  it('ignores cancellation events for retired standalone orders', async () => {
+    mock.get.mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } });
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <StaffLayout />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(qc.getQueryData(['staff-cancelled-orders'])).toBeTruthy());
+    act(() => {
+      for (const fn of mock.listeners.get('order.statusChanged') ?? [])
+        fn({ orderId: 'legacy-pickup', orderCode: 'MDOLD', status: 'CANCELLED' });
+    });
+    expect(mock.toast).not.toHaveBeenCalled();
+    expect(mock.browser).not.toHaveBeenCalled();
+    expect(mock.sound).not.toHaveBeenCalled();
   });
 
   it('shows new cancellation requests in the KDS badge immediately and refreshes on resolution', async () => {
@@ -268,17 +301,8 @@ describe('staff notifications', () => {
     expect(mock.get).toHaveBeenLastCalledWith('/staff/orders', { params: { status: 'CANCELLED' } });
   });
 
-  it('uses the full pickup total for its badge and triggers toast, sound and refetch on an unpaid order', async () => {
-    let total = 40;
-    mock.get.mockImplementation(async (url: string) => ({
-      data: {
-        success: true,
-        data:
-          url === '/staff/pickups'
-            ? { items: Array.from({ length: 30 }, (_, i) => ({ _id: `old-${i}` })), total }
-            : { items: [] },
-      },
-    }));
+  it('has no retired navigation or polling and keeps table-order notifications', async () => {
+    mock.get.mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } });
     qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
@@ -287,18 +311,16 @@ describe('staff notifications', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    await screen.findByText('Mang đi & đặt trước: 40');
-    expect(mock.toast).not.toHaveBeenCalled();
-    total = 41;
+    await waitFor(() => expect(qc.getQueryData(['staff-awaiting-payments'])).toBeTruthy());
+    expect(screen.queryByText(/Mang đi/)).toBeNull();
+    expect(mock.get.mock.calls.some(([path]) => String(path).includes('pickup'))).toBe(false);
     act(() => {
-      for (const fn of mock.listeners.get('order.created')!)
-        fn({ orderId: 'new', status: 'AWAITING_PAYMENT' });
+      for (const fn of mock.listeners.get('order.created') ?? [])
+        fn({ orderId: 'table-new', tableSessionId: 'session', status: 'AWAITING_PAYMENT' });
     });
-    await screen.findByText('Mang đi & đặt trước: 41');
-    await waitFor(() => expect(mock.sound).toHaveBeenCalledExactlyOnceWith('order'));
+    expect(mock.sound).toHaveBeenCalledExactlyOnceWith('order');
     expect(mock.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Đơn mang đi mới (1)' }),
+      expect.objectContaining({ title: 'Đơn tại bàn mới (1)' }),
     );
-    expect(mock.browser).toHaveBeenCalledOnce();
   });
 });

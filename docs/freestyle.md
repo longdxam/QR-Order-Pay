@@ -1,3 +1,5 @@
+> **Đã gỡ ngày 07/11/2026.** Tài liệu này chỉ lưu lịch sử, không mô tả chức năng đang cung cấp. Xem [phạm vi gỡ](retired-features.md).
+
 # AI Barista Freestyle (#8)
 
 Khách mở **AI Barista → Freestyle** tại bàn QR hoặc trang mang đi sau khi đăng nhập thành viên. Chọn ngân sách, yêu cầu không caffeine/không sữa và mô tả khẩu vị. Gợi ý là món riêng ngoài thực đơn, phối một nền với một hoặc hai vị đã được quán duyệt. Mỗi cốc có cùng giá và size do Admin cấu hình; không thêm topping hay đổi đường/đá ngoài công thức.

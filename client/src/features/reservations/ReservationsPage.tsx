@@ -157,7 +157,7 @@ function ReservationWorkspace({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-primary">
-            Fantastic cafe
+            Fantastic Cafe
           </p>
           <h1 className="g-display text-3xl sm:text-4xl">
             {staff ? 'Lịch đặt bàn' : mine ? 'Lịch của tôi' : 'Một giờ thảnh thơi.'}

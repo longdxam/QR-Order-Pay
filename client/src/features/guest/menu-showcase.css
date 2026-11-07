@@ -13,11 +13,12 @@
   background: rgb(var(--c-accent));
 }
 .guest-showcase .guest-header {
-  position: relative;
+  position: sticky;
+  top: 0;
   color: #fff;
   border: 0;
-  background: transparent;
-  backdrop-filter: none;
+  background: rgb(20 37 31 / 0.97);
+  backdrop-filter: blur(12px);
 }
 .guest-showcase .guest-header > div {
   max-width: none;

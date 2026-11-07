@@ -83,6 +83,7 @@ describe('staff printing after payment', () => {
         { name: 'Kiểm tra & thu tiền' },
         { timeout: 5000 },
       );
+      expect(screen.queryByRole('region', { name: 'Đơn đã hủy gần đây' })).toBeNull();
       await waitFor(() => expect((checkout as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(checkout);
       fireEvent.click(await screen.findByRole('button', { name: 'Đã nhận đủ tiền — đóng phiên' }));

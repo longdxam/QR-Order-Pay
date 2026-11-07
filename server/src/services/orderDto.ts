@@ -5,7 +5,23 @@ import {
   type StaffOrder,
 } from '@may-cafe/contracts';
 import type { OrderDoc } from '../models/Order.js';
-import { freestyleView } from './freestyleService.js';
+import { displayUnits } from './inventoryAvailabilityService.js';
+import type { FreestyleView } from '@may-cafe/contracts';
+
+// Read-only compatibility for recipes already stored on orders before feature removal.
+function freestyleView(recipe: NonNullable<OrderDoc['items'][number]['freestyle']>): FreestyleView {
+  return {
+    name: recipe.name,
+    instructions: recipe.instructions,
+    caffeine: recipe.caffeine ?? null,
+    dairy: recipe.dairy ?? null,
+    components: recipe.components.map((c) => ({
+      name: c.name,
+      unit: c.unit,
+      quantity: displayUnits(c.quantity),
+    })),
+  };
+}
 
 type OrderSource = Pick<
   OrderDoc,

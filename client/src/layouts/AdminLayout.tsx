@@ -21,12 +21,9 @@ import { PersistentJukebox } from '../features/jukebox/PersistentJukebox';
 import { connectStaffSocket, disconnectSocket } from '../lib/socket';
 
 const NAV = [
-  { to: '/admin/insights', label: 'Smart Insights', icon: <Activity className="h-4 w-4" /> },
-  { to: '/admin/freestyle', label: 'AI Freestyle', icon: <Sparkles className="h-4 w-4" /> },
   { to: '/admin/cup-prints', label: 'Ảnh cốc & latte art', icon: <Printer className="h-4 w-4" /> },
   { to: '/admin/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
   { to: '/admin/reservations', label: 'Đặt bàn', icon: <CalendarDays className="h-4 w-4" /> },
-  { to: '/admin/pickups', label: 'Mang đi & đặt trước', icon: <Package className="h-4 w-4" /> },
   {
     to: '/admin/workforce',
     label: 'Lịch ca & hiệu suất',
@@ -61,12 +58,9 @@ export function AdminLayout(): JSX.Element {
     return () => clearInterval(timer);
   }, []);
   const orderedNav = [
-    '/admin/insights',
-    '/admin/freestyle',
     '/admin/cup-prints',
     '/admin/jukebox',
     '/admin/reservations',
-    '/admin/pickups',
     '/admin/tables',
     '/admin/products',
     '/admin/categories',

@@ -80,11 +80,12 @@ export const orderRepository = {
     ]);
     return { items, total };
   },
-  /** Lưu dấu hủy để đối chiếu, kể cả chưa thu tiền hoặc phiên đã đóng. */
+  /** Dine-in cancellations, including legacy orders and closed table sessions. */
   async listRecentCancellations(): Promise<OrderDoc[]> {
     const since = new Date(Date.now() - 24 * 60 * 60_000);
     return OrderModel.find({
       status: 'CANCELLED',
+      fulfillmentType: { $nin: ['TAKEAWAY', 'PICKUP'] },
       updatedAt: { $gte: since },
       statusHistory: { $elemMatch: { to: 'CANCELLED', at: { $gte: since } } },
     })

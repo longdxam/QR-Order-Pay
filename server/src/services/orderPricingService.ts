@@ -10,15 +10,9 @@ import { guestCanOrder } from './tableSessionService.js';
 import { assertInventoryAvailable } from './inventoryAvailabilityService.js';
 import { priceBenefits, type BenefitSelection, type Benefits } from './promotionService.js';
 import { assertCupPhotos, photoOwner } from './cupPhotoService.js';
-import {
-  assertFreestyleScope,
-  priceFreestyleItems,
-  type FreestyleSnapshot,
-} from './freestyleService.js';
 
 export interface PricedCart {
   items: Array<{
-    freestyle?: FreestyleSnapshot;
     cupPhotoId?: mongoose.Types.ObjectId;
     productId: mongoose.Types.ObjectId;
     variantId: mongoose.Types.ObjectId | null;
@@ -88,10 +82,9 @@ export async function priceOrderItems(
   items: PlaceOrderItemInput[],
   session?: ClientSession | null,
 ): Promise<PricedCart> {
-  const freestyle = await priceFreestyleItems(items, session);
-  const productIds = [
-    ...new Set(items.filter((item) => !item.freestyleToken).map((item) => item.productId)),
-  ];
+  if (items.some((item) => 'freestyleToken' in item || 'freestyle' in item))
+    throw new ValidationError('Món ngoài thực đơn đã ngừng hỗ trợ. Vui lòng chọn lại từ thực đơn.');
+  const productIds = [...new Set(items.map((item) => item.productId))];
   const toppingIds = [...new Set(items.flatMap((item) => item.toppingIds))];
   const [products, toppings, categories] = await Promise.all([
     productRepository.findManyByIds(productIds, session),
@@ -107,7 +100,6 @@ export async function priceOrderItems(
   const invalidOptions: Array<{ index: number; field: string; value?: string }> = [];
 
   const priced = items.map((item, index) => {
-    if (freestyle.has(index)) return freestyle.get(index)!;
     const product = productMap.get(item.productId);
     if (
       !product ||
@@ -178,19 +170,15 @@ export async function priceOrderItems(
   return { items: normalized, total, catalogFingerprint: digest(normalized.map(serializableItem)) };
 }
 
-export async function createOrderQuote(
-  input: {
-    tableSessionId: string;
-    participantId: string;
-    items: PlaceOrderItemInput[];
-    voucherCode?: string;
-    redeemPoints?: number;
-    memberId?: string | null;
-  },
-  pickup = false,
-): Promise<OrderQuote> {
-  if (!pickup) await guestCanOrder(input.tableSessionId);
-  await assertFreestyleScope(input.items, photoOwner(input.tableSessionId, input.participantId));
+export async function createOrderQuote(input: {
+  tableSessionId: string;
+  participantId: string;
+  items: PlaceOrderItemInput[];
+  voucherCode?: string;
+  redeemPoints?: number;
+  memberId?: string | null;
+}): Promise<OrderQuote> {
+  await guestCanOrder(input.tableSessionId);
   await assertCupPhotos(input.items, photoOwner(input.tableSessionId, input.participantId));
   const priced = await priceOrderWithBenefits(input.items, input);
   const expiresAt = Date.now() + config.orderQuoteTtlMs;

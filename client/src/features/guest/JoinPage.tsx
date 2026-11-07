@@ -78,7 +78,7 @@ export function JoinPage(): JSX.Element {
       <section className="guest-join-intro flex flex-col px-5 pb-6 pt-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
         <div className="flex items-center gap-3">
           <CloudMark className="h-7 w-10 text-primary md:text-primary-foreground" />
-          <span className="g-title text-2xl">Fantastic cafe</span>
+          <span className="g-title text-2xl">Fantastic Cafe</span>
         </div>
         <div className="hidden flex-1 flex-col justify-center py-14 md:flex">
           <CloudMark className="mb-10 h-24 w-36 text-primary-foreground/70" />
@@ -125,12 +125,6 @@ export function JoinPage(): JSX.Element {
               {loading ? 'Đang vào...' : 'Vào bàn'}
             </Button>
           </form>
-          <Link
-            to="/pickup"
-            className="mt-4 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted"
-          >
-            Đặt mang đi / đặt trước
-          </Link>
           <Link
             to="/reservations"
             className="mt-3 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted"

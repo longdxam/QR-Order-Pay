@@ -25,10 +25,8 @@ import { reserveOrderInventory } from './orderInventoryService.js';
 import { finalizePickupBill } from './pickupBillService.js';
 import { claimGiftForOrder } from './giftGuards.js';
 import { assertCupPhotos, photoOwner } from './cupPhotoService.js';
-import { assertFreestyleScope } from './freestyleService.js';
 
 export interface PlaceOrderItemInput {
-  freestyleToken?: string;
   cupPhotoId?: string;
   productId: string;
   variantId: string | null;
@@ -150,11 +148,6 @@ async function createOrder(
       throw new ForbiddenError(
         'Bạn có 3 đơn đang chờ thanh toán. Vui lòng thanh toán hoặc hủy đơn trước khi gọi thêm.',
       );
-    await assertFreestyleScope(
-      input.items,
-      photoOwner(input.tableSessionId, input.participantId),
-      mongoSession,
-    );
     const priced = await priceOrderWithBenefits(input.items, input, mongoSession);
     await assertCupPhotos(
       input.items,

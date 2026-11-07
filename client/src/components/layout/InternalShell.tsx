@@ -112,7 +112,7 @@ export function InternalShell({
           </span>
           <span className="min-w-0">
             <span className="block font-display text-lg font-semibold leading-snug">
-              Fantastic cafe
+              Fantastic Cafe
             </span>
             <span className="mt-1 block text-xs text-primary-foreground/65">{title}</span>
           </span>
@@ -148,7 +148,7 @@ export function InternalShell({
             </Link>
             <div className="min-w-0">
               <Link to={home} className="block truncate font-display text-lg font-semibold">
-                Fantastic cafe
+                Fantastic Cafe
               </Link>
               <Link
                 to={accountPath}

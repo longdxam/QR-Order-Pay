@@ -1,3 +1,5 @@
+> **Đã gỡ ngày 07/11/2026.** Tài liệu này chỉ lưu lịch sử, không mô tả chức năng đang cung cấp. Xem [phạm vi gỡ](retired-features.md).
+
 # Smart Insights và gợi ý bán kèm (#12)
 
 Admin mở **Smart Insights** (`/admin/insights`); khách thấy **Khách thường gọi kèm** trong giỏ tại bàn hoặc giỏ mang đi khi đủ dữ liệu. Bản đầu dùng thống kê và quy tắc có ngưỡng, không gọi LLM hay tự thay đổi đơn, giá, nhân sự hoặc tồn kho.

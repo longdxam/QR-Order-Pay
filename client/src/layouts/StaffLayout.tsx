@@ -9,7 +9,6 @@ import {
   PackageCheck,
   WalletCards,
   CalendarDays,
-  ShoppingBag,
   Music2,
   Printer,
 } from 'lucide-react';
@@ -57,12 +56,6 @@ const NAV = [
     label: 'Đặt bàn',
     icon: <CalendarDays className="h-4 w-4" />,
     badgeKey: 'reservations' as const,
-  },
-  {
-    to: '/staff/pickups',
-    label: 'Mang đi & đặt trước',
-    icon: <ShoppingBag className="h-4 w-4" />,
-    badgeKey: 'pickups' as const,
   },
   { to: '/staff/workforce', label: 'Lịch & chấm công', icon: <CalendarDays className="h-4 w-4" /> },
   {
@@ -123,16 +116,6 @@ export function StaffLayout(): JSX.Element {
       unwrap(await api.get<{ items: Array<{ _id: string }> }>('/staff/awaiting-payments')),
     refetchInterval: 5_000,
   });
-  const pickupsQuery = useQuery({
-    queryKey: ['staff-pickup-alerts', user?.id],
-    queryFn: async () =>
-      unwrap(
-        await api.get<{ items: Array<{ _id: string }>; total: number }>('/staff/pickups', {
-          params: { history: false, page: 1 },
-        }),
-      ),
-    refetchInterval: 5_000,
-  });
   const reservationsQuery = useQuery({
     queryKey: ['reservation-alerts', user?.id],
     queryFn: async () =>
@@ -165,8 +148,6 @@ export function StaffLayout(): JSX.Element {
       'staff-cancelled-orders',
       'reservation-alerts',
       'reservations',
-      'staff-pickup-alerts',
-      'pickups',
       'staff-awaiting-payments',
       'staff-cancel-requests',
       'staff-table-sessions',
@@ -178,23 +159,12 @@ export function StaffLayout(): JSX.Element {
   }, [qc]);
 
   const notifyNewOrder = useCallback(
-    (pickup: boolean, delta: number) => {
+    (delta: number) => {
       playAlert('order');
-      const description = pickup
-        ? 'Vào Mang đi & đặt trước để kiểm tra và thu tiền.'
-        : 'Vào Bàn & phiên để kiểm tra và thu tiền.';
-      const onClick = () => navigate(pickup ? '/staff/pickups' : '/staff/tables');
-      notifyBrowser(
-        pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới',
-        `${delta} đơn mới. ${description}`,
-        onClick,
-      );
-      toast({
-        title: `${pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới'} (${delta})`,
-        description,
-        tone: 'info',
-        onClick,
-      });
+      const description = 'Vào Bàn & phiên để kiểm tra và thu tiền.';
+      const onClick = () => navigate('/staff/tables');
+      notifyBrowser('Đơn tại bàn mới', `${delta} đơn mới. ${description}`, onClick);
+      toast({ title: `Đơn tại bàn mới (${delta})`, description, tone: 'info', onClick });
     },
     [toast, navigate],
   );
@@ -213,7 +183,7 @@ export function StaffLayout(): JSX.Element {
     [toast, navigate],
   );
 
-  useNewOrderAlerts(user?.id, awaitingQuery.data?.items, pickupsQuery.data?.items, notifyNewOrder);
+  useNewOrderAlerts(user?.id, awaitingQuery.data?.items, notifyNewOrder);
   const notifyCancellation = useCallback(
     (kind: 'cancelled' | 'requested', code?: string) => {
       const title =
@@ -226,10 +196,10 @@ export function StaffLayout(): JSX.Element {
             : 'Khách yêu cầu hủy đơn';
       const description =
         kind === 'cancelled'
-          ? 'Xem Đơn đã hủy gần đây tại Bàn & phiên hoặc KDS.'
+          ? 'Xem Đơn đã hủy gần đây tại KDS.'
           : 'Vào KDS để duyệt hoặc từ chối yêu cầu hủy trước khi pha chế.';
       playAlert('request');
-      const onClick = () => navigate(kind === 'cancelled' ? '/staff/tables' : '/staff/kds');
+      const onClick = () => navigate('/staff/kds');
       notifyBrowser(title, description, onClick);
       toast({ title, description, tone: 'info', onClick });
     },
@@ -292,11 +262,8 @@ export function StaffLayout(): JSX.Element {
     if (next) playAlert('order');
   }
 
-  function badgeFor(
-    key: 'pending' | 'requests' | 'awaiting' | 'pickups' | 'reservations',
-  ): number | null {
+  function badgeFor(key: 'pending' | 'requests' | 'awaiting' | 'reservations'): number | null {
     if (key === 'reservations') return reservationsQuery.data?.total || null;
-    if (key === 'pickups') return pickupsQuery.data?.total || null;
     if (key === 'awaiting') return awaitingQuery.data?.items.length || null;
     if (key === 'pending')
       return pendingCount + (cancelRequestsQuery.data?.items.length ?? 0) || null;

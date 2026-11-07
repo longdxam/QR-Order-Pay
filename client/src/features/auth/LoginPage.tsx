@@ -61,7 +61,7 @@ export function LoginPage(): JSX.Element {
       <section className="flex flex-col px-5 py-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
         <div className="flex items-center gap-3">
           <CloudMark className="h-7 w-10 text-primary md:text-primary-foreground" />
-          <span className="font-display text-2xl font-semibold">Fantastic cafe</span>
+          <span className="font-display text-2xl font-semibold">Fantastic Cafe</span>
         </div>
         <div className="hidden flex-1 flex-col justify-center py-16 md:flex">
           <p className="font-display text-5xl font-semibold leading-tight lg:text-6xl">

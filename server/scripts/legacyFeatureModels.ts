@@ -1,4 +1,6 @@
-import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mongoose';
+// Migration-only schemas for retired features. Never imported by the application.
+// Keep existing collection/index definitions and migration checksums without deleting data.
+import { Schema, model } from 'mongoose';
 
 const playerSchema = new Schema(
   {
@@ -40,8 +42,7 @@ roundSchema.index(
   },
 );
 roundSchema.index({ tableSessionId: 1, createdAt: -1, _id: -1 });
-export type MiniGameDoc = HydratedDocument<InferSchemaType<typeof roundSchema>>;
-export const MiniGameRoundModel = model('MiniGameRound', roundSchema);
+model('MiniGameRound', roundSchema);
 
 const actionSchema = new Schema(
   {
@@ -53,4 +54,25 @@ const actionSchema = new Schema(
   { timestamps: true },
 );
 actionSchema.index({ roundId: 1, actorParticipantId: 1, requestId: 1 }, { unique: true });
-export const MiniGameActionModel = model('MiniGameAction', actionSchema);
+model('MiniGameAction', actionSchema);
+
+const settings = new Schema(
+  {
+    _id: { type: String, default: 'main' },
+    version: { type: Number, default: 0 },
+    lockVersion: { type: Number, default: 0 },
+    value: { type: Schema.Types.Mixed, required: true },
+  },
+  { timestamps: true },
+);
+model('FreestyleSettings', settings);
+const save = new Schema(
+  {
+    userId: { type: String, required: true },
+    requestId: { type: String, required: true },
+    hash: { type: String, required: true },
+  },
+  { timestamps: true },
+);
+save.index({ userId: 1, requestId: 1 }, { unique: true });
+model('FreestyleSave', save);

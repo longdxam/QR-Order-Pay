@@ -10,7 +10,7 @@ export function RecentCancellations(): JSX.Element {
       <div>
         <h2 className="font-display text-xl font-semibold">Đơn đã hủy gần đây</h2>
         <p className="text-sm text-muted-foreground">
-          Tối đa 50 đơn trong 24 giờ, gồm cả đơn khách hủy trước khi thanh toán.
+          Tối đa 50 đơn tại bàn trong 24 giờ, gồm cả đơn khách hủy trước khi thanh toán.
         </p>
       </div>
       {query.isError ? (

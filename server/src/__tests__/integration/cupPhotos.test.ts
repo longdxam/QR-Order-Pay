@@ -31,7 +31,6 @@ import {
 import { generateLatteArt, renderLatteArtVariants } from '../../services/latteArtService.js';
 import { createOrderQuote } from '../../services/orderPricingService.js';
 import { placeOrder, type PlaceOrderItemInput } from '../../services/orderService.js';
-import { quotePickup, createPickup } from '../../services/pickupService.js';
 import { createGift, decideGift } from '../../services/giftService.js';
 import { toGuestOrder } from '../../services/orderDto.js';
 import { auditRepository } from '../../repositories/auditRepository.js';
@@ -334,18 +333,10 @@ describe('private cup photo upload, binding and printable labels', () => {
       ).status,
     ).toBe(422);
   });
-  it('requires QR/member/staff, protects CSRF and portal/role separation before upload parsing', async () => {
+  it('requires QR/staff, protects CSRF and portal/role separation before upload parsing', async () => {
     expect(
       (await request(app).post('/api/v1/cup-photos').set('Content-Type', 'image/png').send(png))
         .status,
-    ).toBe(401);
-    expect(
-      (
-        await request(app)
-          .post('/api/v1/pickup/cup-photos')
-          .set('Content-Type', 'image/png')
-          .send(png)
-      ).status,
     ).toBe(401);
     expect(
       (
@@ -554,38 +545,17 @@ describe('private cup photo upload, binding and printable labels', () => {
     ).rejects.toMatchObject({ status: 422 });
     expect(await OrderModel.countDocuments()).toBe(0);
   });
-  it('uses member/counter owner scopes in pickup quote and placement', async () => {
+  it('isolates staff-owned images from table guests and rejects attaching them to table orders', async () => {
     const owner = { owner: `counter:${staff}`, userId: staff };
     const photo = await uploadCupPhoto(owner, randomUUID(), png, 'image/png');
-    const body = {
-      requestId: randomUUID(),
-      pickup: {
-        fulfillmentType: 'TAKEAWAY',
-        name: 'Khách',
-        phone: '0901234567',
-        scheduledAt: null,
-      },
-      items: [item({ cupPhotoId: photo.id })],
-    };
-    const quote = await quotePickup({ staff: true, id: staff }, body);
-    const order = await createPickup(
-      { staff: true, id: staff },
-      { ...body, quoteToken: quote.quoteToken },
-    );
-    expect(String(order.order.items[0]!.cupPhotoId)).toBe(photo.id);
+    expect(await ownCupPhoto(owner, photo.id)).toBeTruthy();
     await expect(ownCupPhoto(actor, photo.id)).rejects.toMatchObject({ status: 404 });
-    const memberPhoto = await uploadCupPhoto(
-      { owner: 'member:fixture' },
-      randomUUID(),
-      png,
-      'image/png',
-    );
-    expect(await ownCupPhoto({ owner: 'member:fixture' }, memberPhoto.id)).toBeTruthy();
     await expect(
-      quotePickup(
-        { staff: true, id: staff },
-        { ...body, items: [item({ cupPhotoId: memberPhoto.id })] },
-      ),
+      createOrderQuote({
+        tableSessionId: sid,
+        participantId: 'guest-a',
+        items: [item({ cupPhotoId: photo.id })],
+      }),
     ).rejects.toMatchObject({ status: 422 });
   });
   it('keeps gift images immutable, hides private IDs from receiver and binds sender order', async () => {

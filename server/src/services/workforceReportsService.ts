@@ -113,7 +113,7 @@ const vnTime = (value: string | null) =>
     : '';
 export function workforceToCsv(data: WorkforceWeek): string {
   const rows: Array<Array<string | number | null>> = [
-    ['Bảng công Fantastic cafe', data.from, 'Giờ Việt Nam UTC+7'],
+    ['Bảng công Fantastic Cafe', data.from, 'Giờ Việt Nam UTC+7'],
     [
       'Giờ thực tế chỉ cộng ca đã chốt, cắt theo tuần; không tính lương. Số KDS là công đoạn, sao thuộc đơn đã giao.',
     ],

@@ -123,10 +123,12 @@ export async function inventoryOverview() {
 }
 
 export async function createIngredient(input: IngredientCreateInput, actorId: string) {
+  const id = new Types.ObjectId();
+  const code = input.code ?? `NL_${id.toHexString().toUpperCase()}`;
   try {
     return await unitOfWork.withTransaction(async (session) => {
       const [ingredient] = await IngredientModel.create(
-        [{ ...input, lowStockThreshold: stockUnits(input.lowStockThreshold) }],
+        [{ ...input, _id: id, code, lowStockThreshold: stockUnits(input.lowStockThreshold) }],
         { session },
       );
       if (!ingredient) throw new Error('Failed to create ingredient');
@@ -134,7 +136,7 @@ export async function createIngredient(input: IngredientCreateInput, actorId: st
         actorId,
         'inventory.ingredientCreated',
         ingredient.id,
-        { code: input.code, unit: input.unit },
+        { code, unit: input.unit },
         session,
       );
       return ingredientDto(ingredient);

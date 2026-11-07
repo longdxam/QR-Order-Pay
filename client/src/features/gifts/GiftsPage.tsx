@@ -56,7 +56,6 @@ const toItems = (items: Array<GiftView['items'][number] | Omit<CartItem, 'client
     note: i.note,
     quantity: i.quantity,
     ...(i.cupPhotoId ? { cupPhotoId: i.cupPhotoId } : {}),
-    ...(i.freestyleToken ? { freestyleToken: i.freestyleToken } : {}),
   }));
 function uuid() {
   const h = generateIdempotencyKey();
@@ -507,7 +506,6 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
       <AISheet
         open={aiOpen}
         onOpenChange={setAiOpen}
-        freestyleContext="TABLE"
         products={menu.data?.products ?? []}
         toppings={menu.data?.toppings ?? []}
         onAdd={(i) => {

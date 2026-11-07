@@ -1,4 +1,5 @@
 import type { FreestyleView } from '@may-cafe/contracts';
+// Read-only recipe snapshots on existing orders; no off-menu ordering UI.
 export function FreestyleRecipe({ value }: { value?: FreestyleView }): JSX.Element | null {
   if (!value) return null;
   return (

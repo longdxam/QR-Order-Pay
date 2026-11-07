@@ -73,7 +73,7 @@ export function PaidBillModal({
       ) : bill ? (
         <div className="space-y-4">
           <header className="text-center">
-            <h2 className="font-display text-2xl font-semibold">Fantastic cafe</h2>
+            <h2 className="font-display text-2xl font-semibold">Fantastic Cafe</h2>
             <p>
               {bill.tableCode} · {tableName}
             </p>
@@ -102,7 +102,7 @@ export function PaidBillModal({
             <span>Tổng đã thanh toán</span>
             <span>{vnd(bill.paidAmount)}</span>
           </p>
-          <p className="text-center text-sm">Cảm ơn quý khách đã ghé Fantastic cafe!</p>
+          <p className="text-center text-sm">Cảm ơn quý khách đã ghé Fantastic Cafe!</p>
           <Button className="w-full print:hidden" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> In hóa đơn
           </Button>
