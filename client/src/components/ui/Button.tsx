@@ -3,13 +3,13 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/cn';
 
 const variants = cva(
-  'inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed',
+  'inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed',
   {
     variants: {
       variant: {
         primary: 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft',
-        accent: 'bg-accent text-accent-foreground hover:bg-accent/90',
-        outline: 'border border-foreground/15 text-foreground hover:bg-muted',
+        accent: 'border border-primary bg-accent text-accent-foreground hover:bg-accent/90',
+        outline: 'border border-control text-foreground hover:bg-muted',
         ghost: 'text-foreground hover:bg-muted',
         danger: 'bg-danger text-white hover:opacity-90',
       },

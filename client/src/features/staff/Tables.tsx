@@ -83,10 +83,7 @@ export function StaffTables(): JSX.Element {
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold">Bàn & phiên phục vụ</h1>
-        <p className="text-sm text-muted-foreground">
-          Khách quét QR tĩnh tại bàn. Xác nhận tiền từng đơn trước khi pha chế; đóng phiên khi khách
-          rời bàn.
-        </p>
+
         {paidSession ? (
           <Button className="mt-3" variant="outline" onClick={() => setPrintOpen(true)}>
             In hóa đơn vừa thanh toán · {paidSession.tableName}
@@ -141,7 +138,7 @@ export function StaffTables(): JSX.Element {
                   </p>
                 </div>
               </div>
-              <p className="border-t border-foreground/10 pt-4 text-sm text-muted-foreground">
+              <p className="border-t border-border pt-4 text-sm text-muted-foreground">
                 Chờ khách quét QR
               </p>
               <div className="[&>button]:w-full">

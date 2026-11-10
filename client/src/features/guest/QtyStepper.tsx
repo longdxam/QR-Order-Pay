@@ -9,9 +9,9 @@ interface Props {
 
 export function QtyStepper({ value, onChange, min = 1, max = 50 }: Props): JSX.Element {
   const step =
-    'grid h-10 w-10 place-items-center rounded-full text-foreground transition hover:bg-foreground/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 disabled:hover:bg-transparent';
+    'grid h-10 w-10 place-items-center rounded-full text-foreground transition hover:bg-foreground/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:hover:bg-transparent';
   return (
-    <div className="inline-flex items-center rounded-full bg-muted p-0.5">
+    <div className="inline-flex items-center rounded-full border border-control bg-muted p-0.5">
       <button
         type="button"
         className={step}

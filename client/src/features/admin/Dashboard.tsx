@@ -74,9 +74,6 @@ export function AdminDashboard(): JSX.Element {
       <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
         <div>
           <h1 className="font-display text-2xl font-semibold">Tổng quan kinh doanh</h1>
-          <p className="text-sm text-muted-foreground">
-            Tiền thu, hoàn và điều chỉnh tính theo thời điểm giao dịch, múi giờ Việt Nam.
-          </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs font-medium">
@@ -161,7 +158,11 @@ export function AdminDashboard(): JSX.Element {
           <div className="h-72 mt-3">
             <ResponsiveContainer>
               <LineChart data={data.revenueByDay}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#EFEAE2" />
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke="rgb(var(--c-muted))"
+                />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <YAxis
                   tick={{ fontSize: 10 }}
@@ -173,7 +174,7 @@ export function AdminDashboard(): JSX.Element {
                 <Line
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#285943"
+                  stroke="rgb(var(--c-primary))"
                   strokeWidth={2.5}
                   isAnimationActive={false}
                 />
@@ -187,7 +188,11 @@ export function AdminDashboard(): JSX.Element {
           <div className="h-72 mt-3">
             <ResponsiveContainer>
               <BarChart data={data.revenueByHour}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#EFEAE2" />
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke="rgb(var(--c-muted))"
+                />
                 <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <YAxis
                   tick={{ fontSize: 10 }}
@@ -198,7 +203,7 @@ export function AdminDashboard(): JSX.Element {
                 <Tooltip formatter={(v: number) => vnd(v)} />
                 <Bar
                   dataKey="revenue"
-                  fill="#C88A4D"
+                  fill="rgb(var(--c-accent-ink))"
                   radius={[8, 8, 0, 0]}
                   isAnimationActive={false}
                 />
@@ -223,7 +228,7 @@ export function AdminDashboard(): JSX.Element {
           </thead>
           <tbody>
             {totalTop.map((p) => (
-              <tr key={p.productId} className="border-t border-foreground/5">
+              <tr key={p.productId} className="border-t border-border">
                 <td className="py-2 font-medium">{p.name}</td>
                 <td className="py-2">{p.quantity}</td>
                 <td className="py-2">{vnd(p.revenue)}</td>
@@ -244,7 +249,7 @@ function AdminQuickLinks(): JSX.Element {
     >
       <Link
         to="/admin/tables"
-        className="group flex items-start gap-4 rounded-2xl bg-primary p-5 text-primary-foreground transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:col-span-2 xl:col-span-1"
+        className="group flex items-start gap-4 rounded-2xl bg-primary p-5 text-primary-foreground transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:col-span-2 xl:col-span-1"
       >
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-foreground/10">
           <QrCode className="h-6 w-6" />
@@ -259,7 +264,7 @@ function AdminQuickLinks(): JSX.Element {
       </Link>
       <Link
         to="/admin/products"
-        className="flex items-start gap-3 rounded-2xl border border-foreground/10 bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="flex items-start gap-3 rounded-2xl border border-border bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
           <UtensilsCrossed className="h-5 w-5" />
@@ -272,7 +277,7 @@ function AdminQuickLinks(): JSX.Element {
       </Link>
       <Link
         to="/admin/bills"
-        className="flex items-start gap-3 rounded-2xl border border-foreground/10 bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="flex items-start gap-3 rounded-2xl border border-border bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
           <ReceiptText className="h-5 w-5" />

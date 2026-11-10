@@ -31,9 +31,6 @@ export function AdminTables(): JSX.Element {
         </span>
         <div>
           <h1 className="font-display text-2xl font-semibold">Bàn & QR tĩnh</h1>
-          <p className="text-sm text-muted-foreground">
-            Xem và tải QR cố định để in tại bàn. Khách quét cùng một mã để vào phiên phục vụ hiện tại.
-          </p>
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -54,7 +51,7 @@ export function AdminTables(): JSX.Element {
               </Badge>
             </div>
             {table.isActive ? (
-              <div className="border-t border-foreground/10 pt-4 [&>button]:w-full">
+              <div className="border-t border-border pt-4 [&>button]:w-full">
                 <TableDisplaySetup admin tableId={table._id} tableName={table.name} />
               </div>
             ) : null}

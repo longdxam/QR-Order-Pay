@@ -234,11 +234,6 @@ function Player({ admin, compact }: { admin: boolean; compact: boolean }): JSX.E
     >
       <header hidden={compact}>
         <h1 className="text-3xl font-semibold">Jukebox</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Máy tính này có thể phát nhạc qua loa của máy hoặc loa ngoài. Bấm Bật phát trên máy này,
-          rồi Bài tiếp theo khi có bình chọn. Nhạc tiếp tục khi chuyển chức năng hoặc đổi tab; mỗi
-          lần chỉ một máy phát.
-        </p>
       </header>
       <div hidden={!compact}>
         <Link

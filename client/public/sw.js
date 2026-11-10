@@ -1,8 +1,9 @@
-const CACHE_VERSION = 'fantastic-cafe-shell-v44';
+const CACHE_VERSION = 'fantastic-cafe-shell-v66';
 const SHELL_URLS = [
   '/',
   '/index.html',
   '/t',
+  '/menu',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/fonts/be-vietnam-pro.css',

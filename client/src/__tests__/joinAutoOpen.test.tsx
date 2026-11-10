@@ -66,7 +66,7 @@ function joined(created: boolean) {
   };
 }
 
-// Route `/menu` thật được thay bằng dấu mốc để khẳng định JoinPage đã điều hướng.
+// Route `/menu` được thay bằng dấu mốc để khẳng định vào bàn đến thẳng thực đơn.
 function mount(entry: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -94,7 +94,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('JoinPage tự mở phiên khi quét QR bàn chưa có phiên', () => {
-  it('auto-joins once and lands on the menu when the server opens a new session', async () => {
+  it('auto-joins once and opens the menu directly', async () => {
     mocks.post.mockResolvedValue(ok(joined(true)));
     mount(`/t/${token}`);
     await screen.findByText('TRANG-THU-DON');

@@ -109,7 +109,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/public-web.ps1
 
 Script tái sử dụng tunnel đang chạy, hoặc khởi động/cấp URL mới; lưu URL vào `.cache/public-url.txt`, cập nhật duy nhất PUBLIC_APP_URL trong `.env`, giữ secret và dữ liệu. Nó áp `compose.public.yaml` để cookie Guest có Secure qua HTTPS; cookie Staff/Admin local giữ cấu hình HTTP hiện có. Tất cả API/worker nhận cùng PUBLIC_APP_URL, nên liên kết màn hình và vé QR mới dùng địa chỉ công khai. Web nhận diện cổng từ meta do Nginx cấp ở mỗi server, kể cả SPA deep link/index.html; không cần rebuild frontend mỗi khi hostname tunnel thay đổi.
 
-Chọn bàn ở Nhân viên/Admin, bấm **Cấu hình màn hình QR** → **Mở màn hình QR**, rồi dùng điện thoại quét mã đang hiển thị. Nếu đã có màn hình mở bằng localhost, tải lại trang để lấy QR mới. Không chia sẻ link `/display#...` cho khách.
+Tải lại trang Nhân viên **Bàn & phiên** hoặc Admin **Bàn & QR tĩnh**, chọn bàn và bấm **Xem QR tĩnh**, rồi dùng điện thoại quét mã mới đang hiển thị. Nếu đã in/lưu QR chứa localhost hoặc hostname tunnel cũ, tải lại PNG và thay mã đó; đổi tên miền không tự sửa ảnh QR đã lưu. QR vẫn giữ nguyên token qua các phiên, không cần thu hồi/tạo lại bàn. Không chia sẻ link cấu hình `/display#...` cho khách.
 
 Giữ máy tính, Docker và container tunnel hoạt động. Quick Tunnel dùng cho demo, hostname thay đổi khi tạo lại; chạy lại script để đồng bộ URL sau khi khởi động tunnel. Đây không phải dịch vụ hosting luôn bật. Nguồn: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 

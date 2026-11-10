@@ -50,6 +50,17 @@ afterEach(() => {
 });
 
 describe('removed features in the client', () => {
+  it('opens the menu from the retired home URL without a landing page', async () => {
+    mock.get.mockImplementation(async (url: string) =>
+      response(
+        url === '/categories' ? { categories: [], products: [], toppings: [] } : { active: false },
+      ),
+    );
+    mount(<App />, '/home');
+    await screen.findByRole('heading', { name: 'Thực đơn' }, { timeout: 5000 });
+    expect(document.querySelector('.home-hero')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Trang chủ' })).toBeNull();
+  });
   it.each([
     '/game',
     '/pickup',

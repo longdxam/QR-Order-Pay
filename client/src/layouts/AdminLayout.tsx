@@ -58,23 +58,23 @@ export function AdminLayout(): JSX.Element {
     return () => clearInterval(timer);
   }, []);
   const orderedNav = [
-    '/admin/cup-prints',
-    '/admin/jukebox',
-    '/admin/reservations',
-    '/admin/tables',
-    '/admin/products',
-    '/admin/categories',
-    '/admin/toppings',
-    '/admin/inventory',
-    '/admin/vouchers',
-    '/admin/members',
-    '/admin/bills',
-    '/admin/payments',
-    '/admin/reviews',
-    '/admin/users',
-    '/admin/workforce',
     '/admin/dashboard',
     '/admin/operations',
+    '/admin/tables',
+    '/admin/reservations',
+    '/admin/bills',
+    '/admin/payments',
+    '/admin/products',
+    '/admin/inventory',
+    '/admin/categories',
+    '/admin/toppings',
+    '/admin/users',
+    '/admin/workforce',
+    '/admin/members',
+    '/admin/vouchers',
+    '/admin/reviews',
+    '/admin/cup-prints',
+    '/admin/jukebox',
   ].map((path) => NAV.find((item) => item.to === path)!);
   return (
     <InternalShell

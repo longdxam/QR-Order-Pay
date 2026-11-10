@@ -4,48 +4,48 @@
 
 /*
  * Màu là bộ số RGB để Tailwind ghép được độ trong suốt (bg-primary/90).
- * :root giữ giao diện Staff/Admin; :root.theme-guest chỉ bật ở cổng khách (xem useGuestTheme).
+ * Cả ba cổng dùng nền trắng ngà, chữ nâu cà phê và điểm nhấn vàng be.
+ * Lớp theme-guest vẫn dùng để giới hạn các kiểu riêng của cổng khách.
  */
 :root {
   color-scheme: light;
-  --c-background: 250 247 242;
-  --c-foreground: 43 33 24;
-  --c-primary: 40 89 67;
-  --c-primary-fg: 250 247 242;
-  --c-accent: 200 138 77;
-  --c-accent-fg: 43 33 24;
-  --c-muted: 239 234 226;
-  --c-muted-fg: 107 94 82;
+  --c-background: 248 247 245;
+  --c-foreground: 37 30 25;
+  --c-primary: 105 67 44;
+  --c-primary-fg: 255 255 255;
+  --c-accent: 206 171 132;
+  --c-accent-fg: 37 30 25;
+  --c-accent-ink: 135 81 39;
+  --c-muted: 235 227 218;
+  --c-muted-fg: 87 74 64;
+  --c-border: 176 154 135;
+  --c-control: 126 105 88;
   --c-card: 255 255 255;
-  --c-card-fg: 43 33 24;
-  --c-danger: 192 57 43;
-  --c-success: 45 143 78;
-  --c-shadow: 43 33 24;
-  --shimmer-hi: #f7f2ea;
+  --c-card-fg: 37 30 25;
+  --c-danger: 167 43 32;
+  --c-success: 34 101 58;
+  --c-shadow: 71 51 36;
+  --shimmer-hi: #faf8f5;
   --font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
   --font-display: 'Be Vietnam Pro', system-ui, sans-serif;
 }
 
-:root.theme-guest {
-  color-scheme: dark;
-  --c-background: 16 29 24;
-  --c-foreground: 246 243 235;
-  --c-primary: 244 162 29;
-  --c-primary-fg: 19 39 31;
-  --c-accent: 244 162 29;
-  --c-accent-fg: 19 39 31;
-  --c-muted: 35 56 46;
-  --c-muted-fg: 179 194 184;
-  --c-card: 27 43 35;
-  --c-card-fg: 246 243 235;
-  --c-danger: 244 143 131;
-  --c-success: 145 211 165;
-  --c-shadow: 0 0 0;
-  --shimmer-hi: #304a3d;
-}
-
 body {
   font-family: var(--font-sans);
+}
+
+@layer base {
+  input,
+  textarea,
+  select {
+    border-color: rgb(var(--c-control));
+    accent-color: rgb(var(--c-primary));
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--c-muted-fg));
+    opacity: 1;
+  }
 }
 
 html {
@@ -92,7 +92,7 @@ html {
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft;
@@ -101,13 +101,13 @@ html {
     @apply btn bg-transparent text-foreground hover:bg-muted;
   }
   .btn-outline {
-    @apply btn border border-foreground/15 bg-transparent text-foreground hover:bg-muted;
+    @apply btn border border-control bg-transparent text-foreground hover:bg-muted;
   }
   .btn-accent {
-    @apply btn bg-accent text-accent-foreground hover:bg-accent/90;
+    @apply btn border border-primary bg-accent text-accent-foreground hover:bg-accent/90;
   }
   .card {
-    @apply rounded-2xl bg-card shadow-soft border border-foreground/5;
+    @apply rounded-2xl bg-card shadow-soft border border-border;
   }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground;

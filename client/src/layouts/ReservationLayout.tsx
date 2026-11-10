@@ -6,7 +6,7 @@ import { cn } from '../lib/cn';
 export function ReservationLayout(): JSX.Element {
   return (
     <div className="guest-shell min-h-dvh bg-background">
-      <header className="sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 lg:px-6">
           <Link to="/reservations" className="flex items-center gap-3">
             <CloudMark className="h-6 w-8 text-primary" />

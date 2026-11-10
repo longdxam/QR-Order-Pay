@@ -165,7 +165,7 @@ export function LatteArtPicker({
                   type="button"
                   disabled={disabled || busy || !candidate.loaded}
                   aria-label={`Chọn ${style.name}`}
-                  className="latte-choice rounded-2xl border border-foreground/20 p-3 text-left transition hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+                  className="latte-choice rounded-2xl border border-control p-3 text-left transition hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
                   onClick={() => {
                     callbacks.current.onChange(candidate.photo.id);
                     clearCandidates();

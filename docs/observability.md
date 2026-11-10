@@ -11,6 +11,8 @@ Cập nhật: 23/09/2026. Phạm vi hiện tại là hai API Guest, hai API Inte
 
 ## Định nghĩa metric
 
+Giao diện Vận hành ngày09/11/2026 ưu tiên số bàn/đơn/yêu cầu, tiến độ đơn và việc cần xử lý; các chỉ số tiến trình/hàng đợi được giữ trong **Chi tiết kỹ thuật** đóng mặc định. Trạng thái kết nối kiểm MongoDB/Redis và heartbeat đủ role scheduler/realtime/report (hoặc all). Idle không bị coi là worker mất tín hiệu chỉ vì lastProgressAt cũ. Danh sách tác vụ lỗi có loading/error/retry riêng; không suy diễn API lỗi thành danh sách rỗng. Nút Làm mới tải lại cả summary, failures và cảnh báo bất thường. API, chu kỳ cập nhật và phạm vi metric không đổi.
+
 | Metric / số liệu | Định nghĩa | Phạm vi và cách tổng hợp |
 | --- | --- | --- |
 | `maycafe_http_requests_total` | Tăng khi response kết thúc; nhãn `method`, route mẫu, `status_class`, `outcome`. `outcome=rate_limited` tách riêng HTTP 429. RPS dùng `rate(...[5m])`. | Counter theo instance; cộng giữa instance. |

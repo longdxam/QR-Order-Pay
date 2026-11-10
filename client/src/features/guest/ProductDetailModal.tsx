@@ -241,10 +241,10 @@ export function ProductDetailModal({
                   aria-checked={selected}
                   disabled={disabled}
                   className={cn(
-                    'max-w-[10rem] flex-1 basis-24 rounded-2xl border px-2 py-2.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    'max-w-[10rem] flex-1 basis-24 rounded-2xl border px-2 py-2.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                     selected
                       ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-foreground/15 bg-card hover:bg-muted',
+                      : 'border-control bg-card hover:bg-muted',
                     disabled && 'cursor-not-allowed opacity-50 hover:bg-card',
                   )}
                   onClick={() => setVariantId(v._id)}
@@ -275,7 +275,7 @@ export function ProductDetailModal({
 
       {visibleToppings.length > 0 ? (
         <Section title="Topping" hint="Chọn được nhiều loại">
-          <ul className="divide-y divide-foreground/10 overflow-hidden rounded-2xl border border-foreground/10 bg-card">
+          <ul className="divide-y divide-foreground/10 overflow-hidden rounded-2xl border border-border bg-card">
             {visibleToppings.map((t) => (
               <li key={t._id}>
                 <label className="flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2 focus-within:bg-muted">
@@ -304,11 +304,11 @@ export function ProductDetailModal({
           rows={2}
           aria-label="Ghi chú"
           placeholder="Ví dụ: ít ngọt hơn, đổi sang sữa hạnh nhân..."
-          className="w-full rounded-2xl border border-foreground/15 bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="w-full rounded-2xl border border-control bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </Section>
 
-      <div className="product-sheet-footer sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-foreground/10 bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+      <div className="product-sheet-footer sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-border bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
         <QtyStepper value={quantity} onChange={setQuantity} />
         <Button
           size="lg"
@@ -378,9 +378,9 @@ function Segmented({
             role="radio"
             aria-checked={selected}
             className={cn(
-              'h-10 flex-1 rounded-xl px-1 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              'h-10 flex-1 rounded-xl px-1 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
               selected
-                ? 'bg-primary/15 font-semibold text-primary shadow-soft'
+                ? 'bg-primary font-semibold text-primary-foreground shadow-soft'
                 : 'text-muted-foreground hover:text-foreground',
             )}
             onClick={() => onChange(option.value)}

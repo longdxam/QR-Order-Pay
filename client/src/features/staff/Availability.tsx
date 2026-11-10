@@ -68,9 +68,6 @@ export function StaffAvailability(): JSX.Element {
     <div className="space-y-4">
       <div>
         <h1 className="font-display text-2xl font-semibold">Tình trạng món</h1>
-        <p className="text-sm text-muted-foreground">
-          Nhân viên chỉ có thể bật/tắt bán; giá và nội dung menu vẫn do quản trị viên quản lý.
-        </p>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
         <Card className="p-4">

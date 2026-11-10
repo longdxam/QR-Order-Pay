@@ -162,9 +162,11 @@ function ReservationWorkspace({
           <h1 className="g-display text-3xl sm:text-4xl">
             {staff ? 'Lịch đặt bàn' : mine ? 'Lịch của tôi' : 'Một giờ thảnh thơi.'}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            60 phút mỗi lượt · Giữ chỗ đến 15 phút sau giờ hẹn
-          </p>
+          {!staff ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              60 phút mỗi lượt · Giữ chỗ đến 15 phút sau giờ hẹn
+            </p>
+          ) : null}
         </div>
         {staff ? (
           <Button disabled={creating} onClick={() => setCreating(true)}>
@@ -520,7 +522,7 @@ function ReservationForm({
                           setTableId(t.id);
                           setError('');
                         }}
-                        className={`relative flex min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border p-4 transition hover:border-primary ${tableId === t.id ? 'border-primary bg-primary/10' : 'border-foreground/15 bg-muted/20'}`}
+                        className={`relative flex min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border p-4 transition hover:border-primary ${tableId === t.id ? 'border-primary bg-primary/10' : 'border-control bg-muted/20'}`}
                       >
                         <Armchair className="h-7 w-7 text-primary" />
                         <strong>{t.name}</strong>
@@ -541,7 +543,7 @@ function ReservationForm({
           </section>
         ) : null}
         {tableId ? (
-          <div className="space-y-4 border-t border-foreground/10 pt-5">
+          <div className="space-y-4 border-t border-border pt-5">
             <h3 className="font-semibold">Thông tin nhận bàn</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm">
@@ -588,7 +590,7 @@ function ReservationForm({
         </p>
       ) : null}
       {tableId ? (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/10 pt-5">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
           <p className="text-xs text-muted-foreground">60 phút/lượt · Trễ 15 phút sẽ nhả chỗ</p>
           <Button size="lg" disabled={submit.isPending} onClick={() => submit.mutate()}>
             {submit.isPending

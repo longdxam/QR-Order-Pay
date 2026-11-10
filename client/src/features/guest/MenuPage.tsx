@@ -13,7 +13,7 @@ import { ProductDetailModal } from './ProductDetailModal';
 import { ToggleCheck } from './ToggleCheck';
 import { AISheet } from '../ai/AISheet';
 import { MenuShowcase } from './MenuShowcase';
-import './menu-showcase.css';
+import { MenuCatalog } from './MenuCatalog';
 
 interface Product {
   _id: string;
@@ -152,9 +152,20 @@ export function MenuPage(): JSX.Element {
         status={status}
       >
         <div className="menu-toolbar">
-          <div className="menu-toolbar-heading">
-            <span className="menu-toolbar-label">Thực đơn</span>
-            <h1>Hôm nay uống gì?</h1>
+          <h1 className="sr-only">Thực đơn</h1>
+          <div className="menu-categories no-scrollbar" aria-label="Danh mục món">
+            <Chip active={activeCat === 'all'} onClick={() => setActiveCat('all')}>
+              Tất cả
+            </Chip>
+            {menuQuery.data?.categories.map((category) => (
+              <Chip
+                key={category._id}
+                active={activeCat === category._id}
+                onClick={() => setActiveCat(category._id)}
+              >
+                {category.name}
+              </Chip>
+            ))}
           </div>
           <div className="menu-toolbar-actions">
             <div className="menu-search">
@@ -217,20 +228,6 @@ export function MenuPage(): JSX.Element {
             <p className="text-xs text-muted-foreground">Giá theo size rẻ nhất còn bán.</p>
           </div>
         ) : null}
-        <div className="menu-categories no-scrollbar" aria-label="Danh mục món">
-          <Chip active={activeCat === 'all'} onClick={() => setActiveCat('all')}>
-            Tất cả
-          </Chip>
-          {menuQuery.data?.categories.map((category) => (
-            <Chip
-              key={category._id}
-              active={activeCat === category._id}
-              onClick={() => setActiveCat(category._id)}
-            >
-              {category.name}
-            </Chip>
-          ))}
-        </div>
         {searchActive ? (
           <div className="menu-search-summary" aria-live="polite">
             <p>
@@ -242,6 +239,28 @@ export function MenuPage(): JSX.Element {
           </div>
         ) : null}
       </MenuShowcase>
+      <MenuCatalog
+        products={menuQuery.data?.products ?? []}
+        categories={menuQuery.data?.categories ?? []}
+        onChoose={setSelected}
+        status={
+          menuQuery.isLoading ? (
+            <div
+              className="grid grid-cols-2 gap-4 md:grid-cols-4"
+              aria-label="Đang tải danh sách món"
+            >
+              {Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} className="h-64 rounded-2xl" />
+              ))}
+            </div>
+          ) : menuQuery.isError ? (
+            <ErrorState
+              message={getErrorMessage(menuQuery.error)}
+              onRetry={() => menuQuery.refetch()}
+            />
+          ) : undefined
+        }
+      />
       <ProductDetailModal
         product={selected}
         toppings={menuQuery.data?.toppings ?? []}

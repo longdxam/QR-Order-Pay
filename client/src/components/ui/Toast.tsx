@@ -26,7 +26,7 @@ export function ToastProvider({ children }: { children: ReactNode }): JSX.Elemen
                 ? 'border-danger/30'
                 : t.tone === 'success'
                   ? 'border-success/30'
-                  : 'border-foreground/10'
+                  : 'border-border'
             }`}
             onOpenChange={(open) => {
               if (!open) setItems((prev) => prev.filter((i) => i.id !== t.id));
@@ -67,7 +67,7 @@ export function ToastProvider({ children }: { children: ReactNode }): JSX.Elemen
               </div>
             )}
             <ToastPrimitive.Close
-              className="text-foreground/60 hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
               aria-label="Đóng"
             >
               <X className="h-4 w-4" />

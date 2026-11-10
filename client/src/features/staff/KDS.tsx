@@ -223,13 +223,10 @@ export function StaffKDS(): JSX.Element {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-semibold">Kitchen Display</h1>
-          <p className="text-sm text-muted-foreground">
-            Đơn mới tự cập nhật. Kiểm tra số bàn và tùy chọn trước khi pha chế.
-          </p>
         </div>
         <Link
           to="/staff/tables"
-          className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <WalletCards className="h-5 w-5 text-primary" />
           Chờ thanh toán
@@ -297,9 +294,9 @@ export function StaffKDS(): JSX.Element {
             <section
               key={c.status}
               aria-label={c.label}
-              className="min-w-0 rounded-2xl border border-foreground/10 bg-muted/35 p-3"
+              className="min-w-0 rounded-2xl border border-border bg-muted/35 p-3"
             >
-              <div className="mb-4 flex items-center justify-between border-b border-foreground/10 pb-3">
+              <div className="mb-4 flex items-center justify-between border-b border-border pb-3">
                 <h2 className="flex items-center gap-2 text-sm font-semibold">
                   <span
                     aria-hidden="true"
@@ -312,7 +309,7 @@ export function StaffKDS(): JSX.Element {
                 </Badge>
               </div>
               {items.length === 0 ? (
-                <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-foreground/15 p-6 text-sm text-muted-foreground lg:min-h-64">
+                <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-control p-6 text-sm text-muted-foreground lg:min-h-64">
                   Trống
                 </div>
               ) : (
@@ -410,7 +407,7 @@ function OrderCard({
               Đường {it.sugarLevel} · {labelIce(it.iceLevel)} · {vnd(it.lineTotal)}
             </span>
             {it.note ? (
-              <span className="text-xs italic text-accent">Ghi chú: {it.note}</span>
+              <span className="text-xs italic text-primary">Ghi chú: {it.note}</span>
             ) : null}
             {it.toppingNamesSnapshot?.length ? (
               <span className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</span>

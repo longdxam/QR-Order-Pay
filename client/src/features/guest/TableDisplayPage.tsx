@@ -110,7 +110,7 @@ export function TableDisplayPage(): JSX.Element {
                   href={qr.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   Mở link vào bàn
                 </a>
@@ -131,7 +131,7 @@ export function TableDisplayPage(): JSX.Element {
                 readOnly
                 value={qr.url}
                 onFocus={(event) => event.target.select()}
-                className="w-full rounded-xl border border-foreground/15 bg-card px-3 py-2 text-sm"
+                className="w-full rounded-xl border border-control bg-card px-3 py-2 text-sm"
               />
               <p className="text-sm text-muted-foreground">
                 Mở link để vào bàn trên máy này. QR cố định giữ nguyên qua các phiên.

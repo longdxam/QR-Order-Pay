@@ -1,20 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, Plus } from 'lucide-react';
+import { ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { vnd } from '../../lib/api';
-import { cn } from '../../lib/cn';
 import type { Product } from './ProductDetailModal';
 import { menuImageSource } from './menuImages';
 import { MenuPhoto } from './MenuPhoto';
-
-function menuStartingPrice(product: Product): number {
-  const prices = product.variants
-    .filter(
-      (variant) =>
-        variant.isAvailable !== false && product.allowedOptions.sizes.includes(variant.name),
-    )
-    .map((variant) => variant.price);
-  return prices.length ? Math.min(...prices) : product.basePrice;
-}
+import { menuStartingPrice } from './menuStartingPrice';
 
 export function MenuShowcase<T extends Product & { categoryId: string }>({
   products,
@@ -35,29 +25,32 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
     products.findIndex((product) => product._id === activeId),
   );
   const active = products[index];
-  const track = useRef<HTMLDivElement>(null);
-  const cards = useRef(new Map<string, HTMLButtonElement>());
+  const dotStart = Math.min(Math.max(index - 1, 1), products.length - 5);
+  const indicators =
+    products.length <= 6
+      ? products.map((_, position) => position)
+      : [0, ...Array.from({ length: 4 }, (_, offset) => dotStart + offset), products.length - 1];
   const activeCategory = categories.find((category) => category._id === active?.categoryId)?.name;
+  const gesture = useRef<{ pointerId: number; x: number; y: number; productId: string } | null>(
+    null,
+  );
+  const suppressClickUntil = useRef(0);
+  function move(direction: number): void {
+    if (products.length < 2) return;
+    setActiveId(products[(index + direction + products.length) % products.length]!._id);
+  }
   useEffect(() => {
     if (!active) return;
-    const card = cards.current.get(active._id);
-    const container = track.current;
-    if (card && container)
-      container.scrollTo({
-        left: card.offsetLeft - (container.clientWidth - card.clientWidth) / 2,
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-      });
-    for (const next of [products[index - 1], products[index + 1]]) {
-      if (next?.image) {
+    for (const next of [
+      products[(index - 1 + products.length) % products.length],
+      products[(index + 1) % products.length],
+    ]) {
+      if (next?.image && next._id !== active._id) {
         const image = new Image();
         image.src = menuImageSource(next.image);
       }
     }
   }, [active, index, products]);
-  const select = (next: number) => {
-    const product = products[(next + products.length) % products.length];
-    if (product) setActiveId(product._id);
-  };
   return (
     <section className="menu-experience" aria-label="Thực đơn">
       <div className="menu-backdrop" aria-hidden="true" data-product-id={active?._id ?? ''}>
@@ -71,6 +64,59 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
         ) : null}
       </div>
       <div className="menu-backdrop-shade" aria-hidden="true" />
+      {active && !status ? (
+        <button
+          type="button"
+          className="menu-picture-action"
+          aria-label={`Chọn món đang xem: ${active.name}`}
+          aria-disabled={!active.isAvailable}
+          onClick={(event) => {
+            if (performance.now() < suppressClickUntil.current) {
+              event.preventDefault();
+              suppressClickUntil.current = 0;
+              return;
+            }
+            if (active.isAvailable) onChoose(active);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') suppressClickUntil.current = 0;
+          }}
+          onPointerDown={(event) => {
+            if (event.isPrimary === false || event.button !== 0) {
+              gesture.current = null;
+              suppressClickUntil.current = performance.now() + 600;
+              return;
+            }
+            suppressClickUntil.current = 0;
+            gesture.current = {
+              pointerId: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              productId: active._id,
+            };
+          }}
+          onPointerMove={(event) => {
+            const start = gesture.current;
+            if (!start || start.pointerId !== event.pointerId) return;
+            if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10)
+              suppressClickUntil.current = performance.now() + 600;
+          }}
+          onPointerUp={(event) => {
+            const start = gesture.current;
+            if (!start || start.pointerId !== event.pointerId) return;
+            gesture.current = null;
+            const dx = event.clientX - start.x;
+            const dy = event.clientY - start.y;
+            if (Math.hypot(dx, dy) > 10) suppressClickUntil.current = performance.now() + 600;
+            if (start.productId !== active._id) return;
+            if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.25) move(dx < 0 ? 1 : -1);
+          }}
+          onPointerCancel={() => {
+            gesture.current = null;
+            suppressClickUntil.current = performance.now() + 600;
+          }}
+        />
+      ) : null}
       <div className="menu-experience-inner">
         <div className="menu-tools">{children}</div>
         {status ? (
@@ -79,112 +125,74 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
           </div>
         ) : active ? (
           <div className="menu-showcase-body">
-            <div className="menu-story" aria-live="polite" aria-atomic="true">
-              <div key={active._id} className="menu-story-content">
-                <span className="menu-story-rule" aria-hidden="true" />
-                {activeCategory ? <p className="menu-eyebrow">{activeCategory}</p> : null}
-                <h2 id="menu-product-title" className="menu-product-title">
-                  {active.name}
-                </h2>
+            <div className="menu-hero-caption">
+              <div id="menu-preview-info" aria-live="polite" aria-atomic="true">
+                {activeCategory ? <p className="menu-preview-category">{activeCategory}</p> : null}
+                <h2 className="menu-preview-name">{active.name}</h2>
                 {active.description ? (
-                  <p className="menu-product-description">{active.description}</p>
+                  <p className="menu-preview-description">{active.description}</p>
                 ) : null}
-                <div className="menu-story-price">
-                  <span>Từ</span> {vnd(menuStartingPrice(active))}
-                </div>
-                <div className="menu-story-actions">
-                  <button
-                    type="button"
-                    className="menu-choose"
-                    disabled={!active.isAvailable}
-                    onClick={() => onChoose(active)}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    {active.isAvailable ? 'Chọn món' : 'Tạm hết'}
-                  </button>
-                  <button
-                    type="button"
-                    className="menu-browse"
-                    onClick={() => {
-                      track.current?.focus();
-                      track.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }}
-                  >
-                    <ArrowDown className="h-4 w-4" aria-hidden="true" />
-                    <span>Thực đơn</span>
-                  </button>
+                <div className="menu-preview-meta">
+                  <p className="menu-preview-price">
+                    <span>Từ</span> {vnd(menuStartingPrice(active))}
+                  </p>
+                  {!active.isAvailable ? (
+                    <span className="menu-preview-unavailable">Tạm hết</span>
+                  ) : null}
                 </div>
               </div>
+              <a href="#menu-catalog" className="menu-browse">
+                <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                <span>Thực đơn</span>
+              </a>
             </div>
-            <div className="menu-gallery" aria-label="Danh sách món">
-              <div
-                ref={track}
-                className="menu-card-track no-scrollbar"
-                tabIndex={0}
-                aria-label="Chọn món để xem ảnh và mô tả"
+            <div
+              className="menu-switcher"
+              role="group"
+              aria-label="Chuyển món"
+              onKeyDown={(event) => {
+                if (event.altKey || event.ctrlKey || event.metaKey) return;
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  move(event.key === 'ArrowLeft' ? -1 : 1);
+                }
+              }}
+            >
+              <button
+                type="button"
+                className="menu-switch-button menu-switch-previous"
+                aria-label="Món trước"
+                aria-controls="menu-preview-info"
+                disabled={products.length < 2}
+                onClick={() => move(-1)}
               >
-                {products.map((product, cardIndex) => (
-                  <button
-                    key={product._id}
-                    ref={(element) => {
-                      if (element) cards.current.set(product._id, element);
-                      else cards.current.delete(product._id);
-                    }}
-                    type="button"
-                    className={cn(
-                      'menu-product-card',
-                      product._id === active._id && 'is-selected',
-                      !product.isAvailable && 'is-unavailable',
-                    )}
-                    aria-label={`Xem món ${product.name}`}
-                    aria-pressed={product._id === active._id}
-                    onClick={() => setActiveId(product._id)}
-                  >
-                    <MenuPhoto source={product.image} className="menu-photo" />
-                    <span className="menu-card-shade" aria-hidden="true" />
-                    <span className="menu-card-index">
-                      {String(cardIndex + 1).padStart(2, '0')}
-                    </span>
-                    {!product.isAvailable ? (
-                      <span className="menu-card-availability">Tạm hết</span>
-                    ) : null}
-                    <span className="menu-card-copy">
-                      <span className="menu-card-category">
-                        {categories.find((category) => category._id === product.categoryId)?.name}
-                      </span>
-                      <span className="menu-card-name">{product.name}</span>
-                      <span className="menu-card-price">Từ {vnd(menuStartingPrice(product))}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="menu-gallery-controls">
-                <div className="menu-arrows">
-                  <button
-                    type="button"
-                    aria-label="Món trước"
-                    disabled={products.length < 2}
-                    onClick={() => select(index - 1)}
-                  >
-                    <ArrowLeft className="h-5 w-5" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Món tiếp theo"
-                    disabled={products.length < 2}
-                    onClick={() => select(index + 1)}
-                  >
-                    <ArrowRight className="h-5 w-5" />
-                  </button>
-                </div>
-                <div className="menu-gallery-progress" aria-hidden="true">
-                  <span style={{ width: `${((index + 1) / products.length) * 100}%` }} />
-                </div>
-                <p className="menu-gallery-count">
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <span>/ {String(products.length).padStart(2, '0')}</span>
-                </p>
-              </div>
+                <ChevronLeft className="h-6 w-6" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="menu-switch-button menu-switch-next"
+                aria-label="Món tiếp theo"
+                aria-controls="menu-preview-info"
+                disabled={products.length < 2}
+                onClick={() => move(1)}
+              >
+                <ChevronRight className="h-6 w-6" strokeWidth={1.75} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="menu-indicators" role="group" aria-label="Vị trí món">
+              {indicators.map((position) => (
+                <button
+                  key={position}
+                  type="button"
+                  className="menu-indicator"
+                  aria-label={`Món ${position + 1} trên ${products.length}: ${products[position]!.name}`}
+                  aria-current={position === index ? 'true' : undefined}
+                  aria-controls="menu-preview-info"
+                  onClick={() => setActiveId(products[position]!._id)}
+                >
+                  <span aria-hidden="true" />
+                </button>
+              ))}
             </div>
           </div>
         ) : null}

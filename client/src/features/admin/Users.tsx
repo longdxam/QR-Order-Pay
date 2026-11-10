@@ -241,7 +241,7 @@ export function AdminUsers(): JSX.Element {
             <label className="block text-sm">
               Vai trò
               <select
-                className="mt-1 w-full rounded-md border border-foreground/15 bg-background px-3 py-2"
+                className="mt-1 w-full rounded-md border border-control bg-background px-3 py-2"
                 disabled={editing.id === currentUser?.id}
                 value={editing.role}
                 onChange={(event) =>
@@ -353,7 +353,7 @@ export function AdminUsers(): JSX.Element {
           <label className="block text-sm">
             Vai trò
             <select
-              className="mt-1 w-full rounded-md border border-foreground/15 bg-background px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-control bg-background px-3 py-2 text-sm"
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value as 'STAFF' | 'ADMIN' })}
             >

@@ -138,6 +138,7 @@ export function App(): JSX.Element {
               <Route path="/t" element={<JoinPage />} />
               <Route path="/t/:token" element={<JoinPage />} />
               <Route element={<GuestLayout />}>
+                <Route path="/home" element={<Navigate to="/menu" replace />} />
                 <Route path="/menu" element={<MenuPage />} />
                 <Route path="/member" element={<MemberPage />} />
                 <Route path="/cart" element={<CartPage />} />

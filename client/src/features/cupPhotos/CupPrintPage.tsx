@@ -35,10 +35,6 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
     <div className="space-y-5">
       <header>
         <h1 className="text-3xl font-semibold">Ảnh cốc & latte art</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Đơn đã thanh toán · xuất thiết kế latte art cho máy in đồ uống hoặc in tem ảnh. Kiểm tra
-          mã đơn, dòng món và số cốc.
-        </p>
       </header>
       {feed.isLoading && <p role="status">Đang tải đơn có ảnh…</p>}
       {feed.isError && <p role="alert">{getErrorMessage(feed.error)}</p>}

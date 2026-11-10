@@ -92,7 +92,7 @@ export function JoinPage(): JSX.Element {
         </p>
       </section>
       <section className="flex items-center justify-center px-5 pb-10 md:px-10 md:py-16">
-        <div className="w-full max-w-md rounded-3xl border border-foreground/10 bg-card p-6 shadow-soft sm:p-9">
+        <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-9">
           <span className="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <QrCode className="h-6 w-6" />
           </span>
@@ -127,12 +127,12 @@ export function JoinPage(): JSX.Element {
           </form>
           <Link
             to="/reservations"
-            className="mt-3 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted"
+            className="mt-3 block rounded-xl border border-control px-4 py-3 text-center text-sm font-semibold hover:bg-muted"
           >
             Đặt bàn
           </Link>
-          <details className="mt-6 border-t border-foreground/10 pt-5 text-sm text-muted-foreground">
-            <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+          <details className="mt-6 border-t border-border pt-5 text-sm text-muted-foreground">
+            <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
               Mở link vào bàn
             </summary>
             <p className="mt-3 leading-relaxed">

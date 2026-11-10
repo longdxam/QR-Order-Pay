@@ -25,16 +25,20 @@ import type { GuestContext } from '../features/guest/guestContext';
 import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
 import { useGifts } from '../features/gifts/useGifts';
 import { getSupportTelegramUrl } from '../lib/support';
+import '../features/guest/menu-showcase.css';
 
 const supportUrl = getSupportTelegramUrl();
 
 const dockItem =
-  'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50';
+  'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50';
 
 export function GuestLayout(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const showcase = location.pathname === '/menu';
+  useEffect(() => {
+    document.scrollingElement?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
   const qc = useQueryClient();
   const { toast } = useToast();
   const items = useCart((s) => s.items);
@@ -164,11 +168,17 @@ export function GuestLayout(): JSX.Element {
         showcase && 'guest-showcase',
       )}
     >
-      <header className="guest-header sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3 lg:px-6">
-          <CloudMark className="h-6 w-8 shrink-0 text-primary" />
-          <div className="min-w-[9rem] flex-1 leading-tight">
-            <p className="g-title text-lg lg:text-xl">Fantastic Cafe</p>
+      <header className="guest-header sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur print:hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 lg:flex-nowrap lg:px-6">
+          <NavLink
+            to="/menu"
+            aria-label="Thực đơn Fantastic Cafe"
+            className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <CloudMark className="h-6 w-8 text-primary" />
+          </NavLink>
+          <div className="min-w-[9rem] flex-1 leading-tight lg:w-[9.5rem] lg:flex-none">
+            <p className="g-title text-lg">Fantastic Cafe</p>
             <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
               {activeSession ? (
                 <>
@@ -198,7 +208,7 @@ export function GuestLayout(): JSX.Element {
           </div>
           <nav
             aria-label="Điều hướng chính"
-            className="guest-header-nav order-last hidden w-full min-w-0 basis-full items-center gap-1 overflow-x-auto border-t border-foreground/10 pt-2 lg:flex [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+            className="guest-header-nav hidden min-w-0 flex-1 items-center gap-0 overflow-x-auto lg:flex [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
             {[
               { to: '/menu', label: 'Thực đơn' },
@@ -217,7 +227,7 @@ export function GuestLayout(): JSX.Element {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    'shrink-0 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    'shrink-0 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-card hover:text-foreground',
@@ -241,7 +251,7 @@ export function GuestLayout(): JSX.Element {
                 href={supportHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold text-muted-foreground transition hover:bg-card hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold text-muted-foreground transition hover:bg-card hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <MessageCircle className="h-4 w-4" /> Hỗ trợ CSKH
               </a>
@@ -301,7 +311,7 @@ export function GuestLayout(): JSX.Element {
               type="button"
               onClick={() => navigate('/cart')}
               disabled={activeSession?.status !== 'OPEN'}
-              className="pill-in pointer-events-auto flex h-14 w-full items-center gap-3 rounded-full bg-primary pl-2 pr-5 text-primary-foreground shadow-soft transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:opacity-60"
+              className="pill-in pointer-events-auto flex h-14 w-full items-center gap-3 rounded-full bg-primary pl-2 pr-5 text-primary-foreground shadow-soft transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-60"
             >
               <span className="relative grid h-10 w-10 place-items-center rounded-full bg-primary-foreground/15">
                 <ShoppingBag className="h-5 w-5" />
@@ -322,7 +332,7 @@ export function GuestLayout(): JSX.Element {
           ) : null}
           <nav
             aria-label="Điều hướng chính"
-            className="guest-dock pointer-events-auto flex overflow-x-auto rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden [&>*]:min-w-[4rem] [&>*]:shrink-0"
+            className="guest-dock pointer-events-auto flex overflow-x-auto rounded-3xl border border-border bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden [&>*]:min-w-[4rem] [&>*]:shrink-0"
           >
             <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
             <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />
@@ -409,7 +419,7 @@ function DockLink({
           {isActive ? (
             <span
               aria-hidden="true"
-              className="absolute left-1/2 top-0 h-1 w-8 -translate-x-1/2 rounded-b-full bg-accent"
+              className="absolute left-1/2 top-0 h-1 w-8 -translate-x-1/2 rounded-b-full bg-primary"
             />
           ) : null}
           {icon}

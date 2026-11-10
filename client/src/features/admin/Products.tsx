@@ -270,7 +270,7 @@ export function AdminProducts(): JSX.Element {
       </div>
 
       {archived.length > 0 && (
-        <details className="rounded-lg border border-foreground/10 p-3">
+        <details className="rounded-lg border border-border p-3">
           <summary className="cursor-pointer text-sm font-semibold">
             Món đã xóa ({archived.length})
           </summary>
@@ -490,7 +490,7 @@ export function AdminProducts(): JSX.Element {
 }
 
 const inputCls =
-  'w-full rounded-md border border-foreground/15 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
+  'w-full rounded-md border border-control bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (

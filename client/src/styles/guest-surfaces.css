@@ -1,27 +1,27 @@
-/* Customer surfaces share the menu's forest background and warm gold actions.
+/* Customer surfaces share the menu's ivory background and coffee/tan accents.
    Scope at the document root so Radix portals inherit the same visual identity. */
 .theme-guest body {
   background: rgb(var(--c-background));
   color: rgb(var(--c-foreground));
 }
 .theme-guest .guest-shell {
-  background-image: radial-gradient(ellipse at 85% 0%, rgb(67 100 74 / 0.18), transparent 55%);
+  background-image: radial-gradient(ellipse at 85% 0%, rgb(var(--c-accent) / 0.1), transparent 55%);
 }
 .theme-guest .modal-overlay {
-  background: rgb(4 12 8 / 0.65);
+  background: rgb(var(--c-shadow) / 0.32);
   backdrop-filter: blur(10px);
 }
 .theme-guest .modal-panel {
   --guest-modal-padding: 20px;
   padding: var(--guest-modal-padding);
-  border: 1px solid rgb(var(--c-foreground) / 0.16);
-  background: linear-gradient(145deg, #22372b, #17271f 65%);
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-card));
   color: rgb(var(--c-foreground));
   box-shadow:
-    0 32px 100px rgb(0 0 0 / 0.5),
-    inset 0 1px rgb(255 255 255 / 0.04);
+    0 32px 100px rgb(var(--c-shadow) / 0.18),
+    inset 0 1px rgb(255 255 255 / 0.8);
   scrollbar-width: thin;
-  scrollbar-color: #516650 transparent;
+  scrollbar-color: rgb(var(--c-accent)) transparent;
   overscroll-behavior: contain;
   scroll-padding-top: 120px;
 }
@@ -32,8 +32,8 @@
   padding: var(--guest-modal-padding);
   align-items: center;
   padding-bottom: 18px;
-  border-bottom: 1px solid rgb(var(--c-foreground) / 0.1);
-  background: rgb(29 48 37 / 0.98);
+  border-bottom: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-card) / 0.98);
   backdrop-filter: blur(12px);
 }
 .theme-guest :is(.ai-sheet, .product-sheet) .modal-header {
@@ -58,7 +58,7 @@
   border: 1px solid rgb(var(--c-accent) / 0.28);
   border-radius: 16px;
   background: rgb(var(--c-accent) / 0.1);
-  color: rgb(var(--c-accent));
+  color: rgb(var(--c-primary));
 }
 .theme-guest .modal-close {
   display: grid;
@@ -67,42 +67,42 @@
   flex-shrink: 0;
   align-self: start;
   place-items: center;
-  border: 1px solid rgb(var(--c-foreground) / 0.15);
+  border: 1px solid rgb(var(--c-control));
   background: rgb(var(--c-foreground) / 0.04);
 }
 .theme-guest .modal-close:focus-visible {
-  outline: 2px solid rgb(var(--c-accent));
+  outline: 2px solid rgb(var(--c-primary));
   outline-offset: 3px;
 }
 .theme-guest :is(input:not([type='checkbox']):not([type='radio']), textarea, select) {
   color: rgb(var(--c-foreground));
 }
 .theme-guest :is(input, textarea)::placeholder {
-  color: rgb(var(--c-muted-fg) / 0.8);
+  color: rgb(var(--c-muted-fg));
 }
 .theme-guest textarea {
   line-height: 1.75;
 }
 .theme-guest [data-tone='warning'] {
-  color: rgb(var(--c-accent));
+  color: rgb(var(--c-primary));
 }
 .theme-guest button[data-variant='danger'] {
   background: #b33930;
   color: #fff;
 }
 .theme-guest .guest-dock {
-  background: rgb(22 39 30 / 0.96);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
+  background: rgb(var(--c-card) / 0.97);
+  box-shadow: 0 12px 40px rgb(var(--c-shadow) / 0.12);
 }
 .theme-guest .guest-dock a[aria-current='page'] {
-  background: rgb(var(--c-accent) / 0.08);
+  background: rgb(var(--c-accent) / 0.2);
 }
 .theme-guest .slip {
-  background: linear-gradient(145deg, #22362b, #1b2b23);
+  background: rgb(var(--c-card));
 }
 .theme-guest .product-sheet-footer {
-  background: #17271f;
-  box-shadow: 0 -12px 24px rgb(10 22 17 / 0.2);
+  background: rgb(var(--c-card));
+  box-shadow: 0 -12px 24px rgb(var(--c-shadow) / 0.06);
 }
 .theme-guest .ai-sheet.g-sheet {
   max-width: 38rem;
@@ -124,7 +124,7 @@
   font-size: 12px;
 }
 .ai-prompt {
-  background: rgb(9 23 16 / 0.35);
+  background: rgb(var(--c-background));
   resize: vertical;
   min-height: 104px;
 }
@@ -136,7 +136,7 @@
 .ai-preset {
   min-height: 42px;
   padding: 9px 12px;
-  border: 1px solid rgb(var(--c-foreground) / 0.13);
+  border: 1px solid rgb(var(--c-control));
   border-radius: 12px;
   background: rgb(var(--c-foreground) / 0.025);
   text-align: left;
@@ -150,12 +150,12 @@
   background: rgb(var(--c-muted));
 }
 .ai-preset[aria-pressed='true'] {
-  border-color: rgb(var(--c-accent) / 0.55);
-  background: rgb(var(--c-accent) / 0.08);
-  color: rgb(var(--c-accent));
+  border-color: rgb(var(--c-primary));
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-primary-fg));
 }
 .ai-preset:focus-visible {
-  outline: 2px solid rgb(var(--c-accent));
+  outline: 2px solid rgb(var(--c-primary));
   outline-offset: 2px;
 }
 .ai-result-heading {
@@ -175,7 +175,7 @@
   align-items: start;
   gap: 12px;
   padding: 12px;
-  border: 1px solid rgb(var(--c-foreground) / 0.12);
+  border: 1px solid rgb(var(--c-border));
   border-radius: 16px;
   background: rgb(var(--c-foreground) / 0.025);
   text-align: left;
@@ -184,11 +184,11 @@
     border-color 180ms;
 }
 .ai-recommendation:hover {
-  border-color: rgb(var(--c-accent) / 0.5);
+  border-color: rgb(var(--c-primary));
   background: rgb(var(--c-muted));
 }
 .ai-recommendation:focus-visible {
-  outline: 2px solid rgb(var(--c-accent));
+  outline: 2px solid rgb(var(--c-primary));
   outline-offset: 3px;
 }
 @media (min-width: 640px) {
@@ -198,14 +198,14 @@
 }
 @media (min-width: 768px) {
   .theme-guest .guest-join-intro {
-    background: linear-gradient(145deg, #294333, #14251f);
+    background: linear-gradient(145deg, #f1e7da, #f8f7f5);
     color: rgb(var(--c-foreground));
   }
   .theme-guest .guest-join-intro .text-primary-foreground {
-    color: rgb(var(--c-accent));
+    color: rgb(var(--c-primary));
   }
   .theme-guest .guest-join-intro svg {
-    color: rgb(var(--c-accent));
+    color: rgb(var(--c-primary));
   }
   .theme-guest .guest-join-intro p {
     color: rgb(var(--c-muted-fg));
@@ -241,23 +241,23 @@
     transition: none;
   }
 }
-/* Keep printed customer receipts readable without a dark page of ink. */
+/* Keep printed customer receipts on white paper. */
 @media print {
   :root.theme-guest.theme-guest {
     color-scheme: light;
     --c-background: 255 255 255;
-    --c-foreground: 19 39 31;
-    --c-primary: 34 85 63;
+    --c-foreground: 37 30 25;
+    --c-primary: 105 67 44;
     --c-primary-fg: 255 255 255;
-    --c-muted: 238 242 239;
-    --c-muted-fg: 78 97 88;
+    --c-muted: 235 227 218;
+    --c-muted-fg: 87 74 64;
     --c-card: 255 255 255;
-    --c-card-fg: 19 39 31;
+    --c-card-fg: 37 30 25;
     --c-success: 42 127 73;
     --c-danger: 179 49 42;
   }
   .theme-guest :is(.guest-shell, .slip) {
     background: #fff;
-    color: #13271f;
+    color: rgb(var(--c-foreground));
   }
 }

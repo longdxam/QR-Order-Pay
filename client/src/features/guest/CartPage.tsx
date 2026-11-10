@@ -242,7 +242,7 @@ export function CartPage(): JSX.Element {
                       <button
                         type="button"
                         onClick={() => remove(it.clientId)}
-                        className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition hover:bg-danger/10 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition hover:bg-danger/10 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                         aria-label="Xoá món"
                       >
                         <Trash2 className="h-4 w-4" />

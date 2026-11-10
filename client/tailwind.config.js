@@ -15,6 +15,7 @@ export default {
         accent: {
           DEFAULT: token('accent'),
           foreground: token('accent-fg'),
+          ink: token('accent-ink'),
         },
         muted: {
           DEFAULT: token('muted'),
@@ -24,6 +25,8 @@ export default {
           DEFAULT: token('card'),
           foreground: token('card-fg'),
         },
+        border: token('border'),
+        control: token('control'),
         danger: token('danger'),
         success: token('success'),
         warning: { DEFAULT: token('accent'), foreground: token('accent-fg') },

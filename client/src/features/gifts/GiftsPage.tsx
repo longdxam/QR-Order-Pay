@@ -244,7 +244,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                   disabled={!t.available}
                   aria-pressed={selected?.tableId === t.tableId && targetValid}
                   onClick={() => setSelected(t)}
-                  className={`min-h-20 rounded-2xl border p-3 text-left disabled:opacity-40 ${selected?.tableId === t.tableId && targetValid ? 'border-primary bg-primary/15' : 'border-foreground/20'}`}
+                  className={`min-h-20 rounded-2xl border p-3 text-left disabled:opacity-40 ${selected?.tableId === t.tableId && targetValid ? 'border-primary bg-primary/15' : 'border-control'}`}
                 >
                   <strong className="block">{t.name}</strong>
                   <span className="text-xs">
@@ -276,7 +276,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                   key={p._id}
                   type="button"
                   onClick={() => setProduct(p)}
-                  className="overflow-hidden rounded-2xl border border-foreground/15 text-left"
+                  className="overflow-hidden rounded-2xl border border-control text-left"
                 >
                   <MenuPhoto source={p.image} className="aspect-[4/3] !h-auto w-full" />
                   <span className="block p-3">

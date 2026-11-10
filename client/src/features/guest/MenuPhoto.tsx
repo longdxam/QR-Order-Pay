@@ -7,10 +7,12 @@ export function MenuPhoto({
   source,
   className,
   eager = false,
+  alt = '',
 }: {
   source: string;
   className?: string;
   eager?: boolean;
+  alt?: string;
 }): JSX.Element {
   const [failed, setFailed] = useState('');
   const src = menuImageSource(source);
@@ -19,7 +21,7 @@ export function MenuPhoto({
       {src && failed !== src ? (
         <img
           src={src}
-          alt=""
+          alt={alt}
           className="h-full w-full object-cover"
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"

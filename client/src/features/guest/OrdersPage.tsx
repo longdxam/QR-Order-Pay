@@ -300,7 +300,7 @@ export function OrdersPage(): JSX.Element {
               maxLength={280}
               rows={3}
               placeholder="Ví dụ: mình gọi nhầm món"
-              className="mt-2 w-full rounded-2xl border border-foreground/15 bg-card p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-2 w-full rounded-2xl border border-control bg-card p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <span className="mt-1 block text-xs font-normal text-muted-foreground">
               Nhập ít nhất {MIN_REASON_LENGTH} ký tự.

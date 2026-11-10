@@ -58,29 +58,29 @@ export function LoginPage(): JSX.Element {
 
   return (
     <main className="grid min-h-dvh bg-background md:grid-cols-2">
-      <section className="flex flex-col px-5 py-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
+      <section className="flex flex-col px-5 py-8 md:bg-accent/20 md:px-10 md:py-10 lg:px-16">
         <div className="flex items-center gap-3">
-          <CloudMark className="h-7 w-10 text-primary md:text-primary-foreground" />
+          <CloudMark className="h-7 w-10 text-primary" />
           <span className="font-display text-2xl font-semibold">Fantastic Cafe</span>
         </div>
         <div className="hidden flex-1 flex-col justify-center py-16 md:flex">
           <p className="font-display text-5xl font-semibold leading-tight lg:text-6xl">
             {portal === 'admin' ? 'Quản trị' : 'Vận hành'}
           </p>
-          <p className="mt-5 max-w-sm leading-relaxed text-primary-foreground/70">
+          <p className="mt-5 max-w-sm leading-relaxed text-muted-foreground">
             Dành cho nhân viên và quản trị viên.
           </p>
-          <div className="mt-10 space-y-4 border-t border-primary-foreground/20 pt-8 text-sm">
+          <div className="mt-10 space-y-4 border-t border-primary/20 pt-8 text-sm">
             <p className="flex items-center gap-3">
-              <QrCode className="h-5 w-5 text-primary-foreground/60" />
+              <QrCode className="h-5 w-5 text-primary" />
               {portal === 'admin' ? 'Bàn & QR' : 'Bàn & phiên'}
             </p>
             <p className="flex items-center gap-3">
-              <UtensilsCrossed className="h-5 w-5 text-primary-foreground/60" />
+              <UtensilsCrossed className="h-5 w-5 text-primary" />
               {portal === 'admin' ? 'Món' : 'KDS'}
             </p>
             <p className="flex items-center gap-3">
-              <ReceiptText className="h-5 w-5 text-primary-foreground/60" />
+              <ReceiptText className="h-5 w-5 text-primary" />
               {portal === 'admin' ? 'Hóa đơn' : 'Ca thu ngân'}
             </p>
           </div>
@@ -123,7 +123,7 @@ export function LoginPage(): JSX.Element {
               {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </Button>
           </form>
-          <p className="mt-6 border-t border-foreground/10 pt-5 text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
             Demo: admin@maycafe.vn / MayCafe@2025 (ADMIN) hoặc staff.a@maycafe.vn / MayCafe@2025
             (STAFF).
           </p>

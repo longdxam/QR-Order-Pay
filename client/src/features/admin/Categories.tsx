@@ -197,7 +197,7 @@ export function AdminCategories(): JSX.Element {
               onChange={(event) => setReassignTo(event.target.value)}
               required={(deleting?.productCount ?? 0) > 0}
               disabled={remove.isPending}
-              className="mt-2 h-11 w-full rounded-xl border border-foreground/15 bg-card px-3 font-normal"
+              className="mt-2 h-11 w-full rounded-xl border border-control bg-card px-3 font-normal"
             >
               <option value="">Chọn danh mục nhận</option>
               {listQuery.data?.categories

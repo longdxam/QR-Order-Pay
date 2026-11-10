@@ -54,7 +54,7 @@ export function Modal({
               ) : null}
             </div>
             <Dialog.Close
-              className="modal-close rounded-full p-1 text-foreground/60 hover:bg-muted"
+              className="modal-close rounded-full p-1 text-muted-foreground hover:bg-muted"
               aria-label="Đóng"
             >
               <X className="h-4 w-4" />

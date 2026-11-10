@@ -8,6 +8,8 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+- Quét QR vào bàn đến thẳng `/menu`; không có trang chủ trung gian. Địa chỉ `/home` cũ chuyển sang thực đơn. [Bối cảnh thiết kế](docs/design-context.md).
+
 Từ 07/11/2026 đã gỡ mini-game (#2), mang đi/đặt trước nhận tại quầy (#6), AI Freestyle ngoài menu (#8), Smart Insights và gợi ý bán kèm (#12). AI Barista gợi ý từ thực đơn và Dashboard doanh thu vẫn được giữ. Các API tương ứng trả 404; dữ liệu đơn, khoản thu, kho và hóa đơn lịch sử không bị xóa. Xem [phạm vi gỡ chức năng](docs/retired-features.md).
 
 - **Latte art từ ảnh**: khách tạo/chọn3 kiểu tông cà phê, lưu đúng bản theo dòng món; Staff xuấtPNG cho máy in đồ uống sau thanh toán. Hiện chưa kết nối máy in thực phẩm. [Hướng dẫn và14ca](docs/latte-art.md).
@@ -27,10 +29,10 @@ Từ 07/11/2026 đã gỡ mini-game (#2), mang đi/đặt trước nhận tại 
 - QR tĩnh có thể tải ảnh/in tại bàn, dùng lại qua các phiên; vào phiên mới/rời bàn tự đăng xuất thành viên đã lưu.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - Quản trị xóa mềm/khôi phục món; xóa danh mục trống hoặc chuyển toàn bộ món sang danh mục khác rồi xóa. Ẩn danh mục áp dụng cả menu, tìm kiếm, AI và kiểm tra giỏ cũ. Xem [quản lý vòng đời catalog](docs/catalog-lifecycle.md).
-- Thực đơn khách dạng ảnh nền toàn màn hình và thẻ món ngang: chọn thẻ đổi ảnh, tên, mô tả và giá; bấm **Chọn món** để tùy chỉnh và thêm giỏ.
+- Thực đơn khách dạng ảnh nền toàn màn hình: chuyển món bằng dấu ‹ › ở hai mép, tối đa6chấm chỉ vị trí hoặc vuốt ngang; chạm ảnh để tùy chỉnh món đang xem. Thông tin tên/mô tả/giá nằm gần đáy ảnh với nền loang nhẹ. Nút **↓ Thực đơn** dẫn tới danh sách đầy đủ theo danh mục bên dưới; bấm món trong danh sách cũng mở tùy chỉnh.
 - Tìm kiếm menu bằng câu tiếng Việt có/không dấu, typo nhẹ, ngân sách và ràng buộc caffeine/sữa; kết quả rỗng minh bạch và có bộ lọc sửa tay.
 - AI Barista gợi ý tối đa ba món từ menu thật theo sở thích/ngân sách; mặc định dùng fallback, còn live là opt-in qua backend config với key/model tường minh.
-- Giao diện khách đồng bộ nền xanh đậm/chữ sáng/nút vàng từ thực đơn đến AI, tùy chỉnh món, giỏ, đơn và đánh giá; hóa đơn in dùng nền trắng.
+- Ba giao diện dùng nền trắng ngà, chữ nâu cà phê và điểm nhấn vàng be; thực đơn, AI, tùy chỉnh món, giỏ, đơn, sidebar và đăng nhập được đồng bộ tông sáng. Hóa đơn in dùng nền trắng.
 - Giỏ hàng theo thiết bị, quote ký trước khi đặt và idempotency khi gửi đơn.
 - KDS có tuổi công đoạn/SLA, duyệt yêu cầu hủy; staff có màn hình báo hết món, chuyển bàn và đối soát ca.
 - Realtime qua Socket.IO cho cả guest và staff.

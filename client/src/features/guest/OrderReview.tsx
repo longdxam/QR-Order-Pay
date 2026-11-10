@@ -72,18 +72,18 @@ export function OrderReview({
   const saved = order.review ?? submitted;
   if (saved)
     return (
-      <div className="rounded-2xl border border-foreground/10 bg-card p-4">
+      <div className="rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-semibold">Đơn {order.code}</p>
         <p className="mt-1 flex items-center gap-2 text-sm">
           <span
-            className="flex gap-0.5 text-accent"
+            className="flex gap-0.5 text-accent-ink"
             role="img"
             aria-label={`${saved.rating} trên 5 sao`}
           >
             {[1, 2, 3, 4, 5].map((n) => (
               <Star
                 key={n}
-                className={n <= saved.rating ? 'h-4 w-4 fill-current' : 'h-4 w-4 opacity-30'}
+                className={n <= saved.rating ? 'h-4 w-4 fill-current' : 'h-4 w-4 text-muted-foreground'}
               />
             ))}
           </span>
@@ -96,7 +96,7 @@ export function OrderReview({
     );
   return (
     <form
-      className="space-y-3 rounded-2xl border border-foreground/10 bg-card p-4"
+      className="space-y-3 rounded-2xl border border-border bg-card p-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (!review.isPending && !review.isSuccess)
@@ -112,7 +112,7 @@ export function OrderReview({
               aria-label={`Số sao cho đơn ${order.code}`}
               value={rating}
               onChange={(event) => setRating(Number(event.target.value))}
-              className="h-10 rounded-xl border border-foreground/15 bg-card px-3 text-sm font-semibold focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="h-10 rounded-xl border border-control bg-card px-3 text-sm font-semibold focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
             >
               {[5, 4, 3, 2, 1].map((n) => (
                 <option key={n} value={n}>
@@ -129,7 +129,7 @@ export function OrderReview({
             onChange={(event) => setComment(event.target.value)}
             maxLength={500}
             rows={2}
-            className="mt-1.5 w-full rounded-2xl border border-foreground/15 bg-card p-3 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="mt-1.5 w-full rounded-2xl border border-control bg-card p-3 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </label>
         <Button type="submit" disabled={review.isPending || review.isSuccess}>

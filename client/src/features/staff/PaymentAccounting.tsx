@@ -136,13 +136,13 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold">Khoản thu</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Điều chỉnh cần quản lý khác duyệt.</p>
+
         <details className="mt-2 text-sm text-muted-foreground">
           <summary className="cursor-pointer">Quy định điều chỉnh</summary>
           <p className="mt-2">
-            Hủy ghi nhận khi thu nhầm; hoàn tiền thực tế tại đơn. Hủy thu hoặc chuyển đơn chỉ trước
-            pha chế. Sửa phương thức sau đóng phiên được lưu vào lịch sử, giữ nguyên hóa đơn đã
-            chốt.
+            Điều chỉnh cần quản lý khác duyệt. Hủy ghi nhận khi thu nhầm; hoàn tiền thực tế tại đơn.
+            Hủy thu hoặc chuyển đơn chỉ trước pha chế. Sửa phương thức sau đóng phiên được lưu vào
+            lịch sử, giữ nguyên hóa đơn đã chốt.
           </p>
         </details>
       </div>

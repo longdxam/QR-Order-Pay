@@ -49,21 +49,6 @@ interface ServiceReqRow {
 }
 
 const NAV = [
-  { to: '/staff/cup-prints', label: 'Ảnh cốc & latte art', icon: <Printer className="h-4 w-4" /> },
-  { to: '/staff/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
-  {
-    to: '/staff/reservations',
-    label: 'Đặt bàn',
-    icon: <CalendarDays className="h-4 w-4" />,
-    badgeKey: 'reservations' as const,
-  },
-  { to: '/staff/workforce', label: 'Lịch & chấm công', icon: <CalendarDays className="h-4 w-4" /> },
-  {
-    to: '/staff/kds',
-    label: 'KDS',
-    icon: <UtensilsCrossed className="h-4 w-4" />,
-    badgeKey: 'pending' as const,
-  },
   {
     to: '/staff/tables',
     label: 'Bàn & phiên',
@@ -71,14 +56,29 @@ const NAV = [
     badgeKey: 'awaiting' as const,
   },
   {
+    to: '/staff/kds',
+    label: 'KDS',
+    icon: <UtensilsCrossed className="h-4 w-4" />,
+    badgeKey: 'pending' as const,
+  },
+  {
     to: '/staff/service-requests',
     label: 'Yêu cầu',
     icon: <BellRing className="h-4 w-4" />,
     badgeKey: 'requests' as const,
   },
-  { to: '/staff/availability', label: 'Hết món', icon: <PackageCheck className="h-4 w-4" /> },
   { to: '/staff/cash-shift', label: 'Ca thu ngân', icon: <WalletCards className="h-4 w-4" /> },
   { to: '/staff/payments', label: 'Khoản thu', icon: <WalletCards className="h-4 w-4" /> },
+  { to: '/staff/availability', label: 'Hết món', icon: <PackageCheck className="h-4 w-4" /> },
+  {
+    to: '/staff/reservations',
+    label: 'Đặt bàn',
+    icon: <CalendarDays className="h-4 w-4" />,
+    badgeKey: 'reservations' as const,
+  },
+  { to: '/staff/workforce', label: 'Lịch & chấm công', icon: <CalendarDays className="h-4 w-4" /> },
+  { to: '/staff/cup-prints', label: 'Ảnh cốc & latte art', icon: <Printer className="h-4 w-4" /> },
+  { to: '/staff/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
 ];
 
 export function StaffLayout(): JSX.Element {

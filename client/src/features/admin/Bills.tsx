@@ -45,16 +45,10 @@ export function AdminBills(): JSX.Element {
     <div className="space-y-4">
       <div>
         <h1 className="font-display text-2xl font-semibold">Lịch sử hóa đơn</h1>
-        <p className="text-sm text-muted-foreground">
-          Tra cứu theo snapshot đã chốt; đổi menu sau này không làm thay đổi hóa đơn.
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Điều chỉnh sau khi đóng phiên được lưu tại{' '}
-          <Link className="underline" to="/admin/payments">
-            Khoản thu & điều chỉnh
-          </Link>
-          .
-        </p>
+
+        <Link className="text-sm text-primary underline" to="/admin/payments">
+          Khoản thu & điều chỉnh
+        </Link>
       </div>
       <Card className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">
         {(['q', 'table', 'cashier', 'from', 'to'] as const).map((key) => (
@@ -92,7 +86,7 @@ export function AdminBills(): JSX.Element {
           </thead>
           <tbody>
             {query.data!.items.map((bill) => (
-              <tr key={bill.id} className="border-b border-foreground/5">
+              <tr key={bill.id} className="border-b border-border">
                 <td className="p-3 font-medium">{bill.invoiceCode}</td>
                 <td className="p-3">
                   {bill.tableCode} · {bill.tableName}

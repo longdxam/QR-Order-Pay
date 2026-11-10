@@ -111,7 +111,7 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
 
       <div>
         <h3 className="font-semibold mb-1 text-sm">Món ({order.items.length})</h3>
-        <ul className="divide-y divide-foreground/10 rounded-md border border-foreground/10">
+        <ul className="divide-y divide-foreground/10 rounded-md border border-border">
           {order.items.map((it, idx) => (
             <li key={idx} className="p-2 text-sm">
               <div className="flex justify-between">
@@ -128,7 +128,7 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
                 <div className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</div>
               ) : null}
               {it.note ? (
-                <div className="text-xs italic text-accent">Ghi chú: {it.note}</div>
+                <div className="text-xs italic text-primary">Ghi chú: {it.note}</div>
               ) : null}
               <FreestyleRecipe value={it.freestyle} />
             </li>

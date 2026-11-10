@@ -80,10 +80,6 @@ export function StaffCashShift(): JSX.Element {
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
         <h1 className="font-display text-2xl font-semibold">Đối soát ca thu ngân</h1>
-        <p className="text-sm text-muted-foreground">
-          Tiền dự kiến = đầu ca + khoản vào − hoàn tiền − đảo ghi nhận. Khoản thay thế được tính vào
-          ca điều chỉnh; chênh lệch phải có lý do.
-        </p>
       </div>
       <Card className="space-y-4 p-4">
         {shift ? (

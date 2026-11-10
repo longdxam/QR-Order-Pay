@@ -180,7 +180,7 @@ export function AISheet({
               rows={3}
               maxLength={500}
               aria-label="Mô tả khẩu vị"
-              className="ai-prompt mt-2 w-full rounded-2xl border border-foreground/15 p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="ai-prompt mt-2 w-full rounded-2xl border border-control p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Bạn thích vị gì?"
             />
           </label>
@@ -217,7 +217,7 @@ export function AISheet({
           {response ? (
             <div
               ref={resultsRef}
-              className="space-y-3 border-t border-foreground/10 pt-4"
+              className="space-y-3 border-t border-border pt-4"
               aria-live="polite"
             >
               <div className="ai-result-heading">
