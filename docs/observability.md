@@ -1,6 +1,6 @@
 # Observability và dashboard vận hành
 
-Cập nhật: 23/09/2026. Phạm vi hiện tại là hai API Guest, hai API Internal, ba worker theo vai trò, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
+Cập nhật: 12/11/2026. Phạm vi hiện tại là hai API Guest, hai API Internal, ba worker theo vai trò, Redis và MongoDB của production-local; chưa triển khai Prometheus/Grafana hoặc hệ thống log tập trung trên cloud.
 
 ## Điểm truy cập và phân quyền
 
@@ -22,7 +22,7 @@ Giao diện Vận hành ngày09/11/2026 ưu tiên số bàn/đơn/yêu cầu, ti
 | `maycafe_socket_connections` | Số socket đã xác thực hiện tại, tách `guest` và `staff`. | Gauge theo instance; cộng để lấy tổng cluster. |
 | `maycafe_dependency_ready` | Kết quả readiness gần nhất cho MongoDB và Redis: 1 sẵn sàng, 0 gián đoạn. | Gauge theo dependency/instance; dùng `min` để phát hiện instance lỗi. |
 | `maycafe_process_*` | Metric mặc định của Node.js: CPU, RSS/heap, event loop, GC và thông tin runtime. | Theo instance; không cộng các gauge bộ nhớ nếu muốn xem từng instance. |
-| Active sessions/orders/service requests | Query trực tiếp MongoDB tại thời điểm mở dashboard Admin. `oldestQueueAgeSeconds` tính từ đơn active cũ nhất. | Scope `database`; khi có nhiều instance phải dùng một giá trị hoặc `max`, tuyệt đối không `sum` các bản sao dashboard. |
+| Active sessions/orders/service requests | Query trực tiếp MongoDB. Bàn phục vụ là phiên OPEN/CHECKOUT. Số đơn, bốn trạng thái và thời gian chờ dùng chung điều kiện với KDS: đơn PAID chưa hoàn tất thuộc phiên OPEN/CHECKOUT hoặc đơn mang đi/nhận tại quầy ACTIVE đến lượt xử lý (hẹn trong15phút). Loại đơn của phiên đã đóng/không còn tồn tại, đơn chưa thu, đơn hẹn xa, NO_SHOW/COLLECTED. `oldestQueueAgeSeconds` tính từ đơn trong phạm vi này; không có đơn thì0 và `oldestQueuedAt=null`. | Scope `database`; khi có nhiều instance phải dùng một giá trị hoặc `max`, tuyệt đối không `sum` các bản sao dashboard. |
 
 Counter trong dashboard là số từ lúc instance khởi động và có `instanceId`, `startedAt`; chúng không được trình bày như tổng lịch sử trong database. Các số hàng đợi có `scope=database` để phân biệt rõ.
 

@@ -6,23 +6,27 @@ import { getInstanceMetricsSnapshot, setDependencyReadiness } from '../infrastru
 import { isRedisReady } from '../infrastructure/redis.js';
 import { queueSnapshot } from '../infrastructure/backgroundQueue.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
+import { staffOrderFeedQuery } from '../repositories/orderRepository.js';
 
 const ACTIVE_ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] as const;
 
 export async function operationsSummary() {
-  const [mongoReady, activeSessions, openServiceRequests, groupedOrders, queues, outbox] =
-    await Promise.all([
-      checkMongoReadiness(),
-      TableSessionModel.countDocuments({ status: { $in: ['OPEN', 'CHECKOUT'] } }),
-      ServiceRequestModel.countDocuments({ status: 'OPEN' }),
-      OrderModel.aggregate<{ _id: string; count: number; oldestCreatedAt: Date }>([
-        { $match: { status: { $in: ACTIVE_ORDER_STATUSES }, 'pickup.outcome': { $ne: 'NO_SHOW' },
-          $or: [{ 'pickup.scheduledAt': null }, { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } }] } },
-        { $group: { _id: '$status', count: { $sum: 1 }, oldestCreatedAt: { $min: '$createdAt' } } },
-      ]),
-      queueSnapshot(),
-      outboxRepository.statusCounts(),
-    ]);
+  const activeSessions = await TableSessionModel.find({ status: { $in: ['OPEN', 'CHECKOUT'] } })
+    .select('_id')
+    .lean();
+  const orderScope = staffOrderFeedQuery({
+    tableSessionIds: activeSessions.map((session) => String(session._id)),
+  });
+  const [mongoReady, openServiceRequests, groupedOrders, queues, outbox] = await Promise.all([
+    checkMongoReadiness(),
+    ServiceRequestModel.countDocuments({ status: 'OPEN' }),
+    OrderModel.aggregate<{ _id: string; count: number; oldestCreatedAt: Date }>([
+      { $match: orderScope },
+      { $group: { _id: '$status', count: { $sum: 1 }, oldestCreatedAt: { $min: '$createdAt' } } },
+    ]),
+    queueSnapshot(),
+    outboxRepository.statusCounts(),
+  ]);
 
   setDependencyReadiness('mongodb', mongoReady);
   const redisReady = isRedisReady();
@@ -48,7 +52,7 @@ export async function operationsSummary() {
       scope: 'database' as const,
       mongodbReady: mongoReady,
       redisReady,
-      activeSessions,
+      activeSessions: activeSessions.length,
       openServiceRequests,
       activeOrders: Object.values(ordersByStatus).reduce((sum, count) => sum + count, 0),
       ordersByStatus,

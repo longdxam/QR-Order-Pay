@@ -22,6 +22,8 @@ Thông tin món là chữ nổi không hộp/viền, tên22px desktop/20px mobil
 
 Ô tìm món dùng chữ16px ở mọi kích thước, bỏ override11px trên điện thoại để tránh Safari tự zoom khi focus. Giữ nguyên viewport và khả năng pinch zoom của người dùng. Kết quả tìm kiếm chỉ hiển thị từ khóa và “Tìm thấy N món phù hợp.” theo số thẻ thực tế; bỏ giải thích giá/cấu hình, nhóm “Đã hiểu”, “từ khóa tự do” và hướng dẫn sửa câu. Bộ lọc và thuật toán tìm kiếm vẫn hoạt động như trước. Cần kiểm tra tự zoom/thoát bàn phím trên iPhone thật; Lightpanda không xác minh được hành vi Safari này.
 
+Quản lý món Admin có ô tìm theo tên, không phân biệt dấu tiếng Việt/hoa thường và chuẩn hóa khoảng trắng. Lọc trực tiếp danh sách đã tải, giữ nút Sửa/Xóa/Khôi phục trên đúng món; có số kết quả và nút xóa tìm kiếm. Món đã xóa vẫn nằm riêng trong nhóm tương ứng; nhóm tự mở khi khớp từ khóa. Không có kết quả hiển thị rõ thay vì bảng trống. Thống kê đơn ở Vận hành dùng chung phạm vi KDS để tránh lẫn đơn lịch sử của phiên đã đóng hoặc không còn tồn tại.
+
 Vuốt ảnh bằng Pointer Events: vuốt trái→món tiếp, phải→món trước khi ngang>=48px và ngang>1.25×dọc; chuyển ảnh không mở modal. Touch-action pan-y pinch-zoom giữ cuộn dọc và phóng to. Chặn click sau drag/cancel trong600ms, lần chạm mới reset; đa điểm hủy gesture. Không gắn xử lý vào danh mục/tìm kiếm để giữ thao tác cuộn ngang danh mục và nhập liệu.
 
 Danh mục nằm bên trái và cùng hàng với tìm kiếm/lọc/AI trong `.menu-toolbar` trên màn hình từ700px; danh mục co lại và cuộn ngang khi thiếu chỗ, cụm tìm kiếm giữ chiều rộng. Dưới700px, tìm kiếm ở hàng trên và danh mục cuộn ngang ở hàng dưới. Panel lọc vẫn nằm dưới toolbar.

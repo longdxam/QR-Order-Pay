@@ -1676,7 +1676,7 @@ paths:
   /ai/recommendations:
     post:
       summary: AI gợi ý món
-      description: "Cho khách có phiên QR còn hoạt động hoặc thành viên đăng nhập qua mc_member không cần bàn. Giữ rate limit và CSRF; Cache-Control no-store. Không cấp quyền đặt đơn tại bàn cho thành viên chưa quét QR."
+      description: "Cho khách có phiên QR còn hoạt động hoặc thành viên đăng nhập qua mc_member không cần bàn. Giữ rate limit và CSRF; Cache-Control no-store. Không cấp quyền đặt đơn tại bàn cho thành viên chưa quét QR. Câu mà luật và từ vựng menu hiểu được trả route=rules, không gọi model; câu tự do gọi model chỉ để trích điều kiện (không gửi menu), backend xếp hạng món thật (route=llm); model lỗi thì route=llm_fallback."
       requestBody:
         required: true
         content:
@@ -1703,6 +1703,7 @@ paths:
                 type: object
                 properties:
                   mode: { type: string, enum: [llm, fallback] }
+                  route: { type: string, enum: [rules, llm, llm_fallback] }
                   message: { type: string }
                   recommendations:
                     type: array
@@ -1845,6 +1846,41 @@ paths:
             schema: { type: object }
       responses:
         '201': { description: OK }
+  /admin/products/ai-tag-suggestions:
+    post:
+      summary: Gợi ý tag cho món (ADMIN, chỉ đọc)
+      description: >-
+        Trả tối đa 5 tag trong bộ từ vựng cố định (mát lạnh, tỉnh táo…), bỏ tag đã có. AI_MODE=live gọi model
+        một lần cho món này; không live hoặc model lỗi dùng luật theo mô tả (mode=fallback). Không ghi dữ liệu;
+        Admin chọn tag rồi lưu qua PATCH /admin/products/{id} có audit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 1000 }
+                categoryId: { type: string }
+                tags: { type: array, items: { type: string } }
+                flavorProfile: { type: array, items: { type: string } }
+                caffeine: { type: boolean, nullable: true }
+                dairy: { type: boolean, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [llm, fallback] }
+                  tags: { type: array, items: { type: string } }
+        '403': { description: Không phải ADMIN }
+        '422': { description: Dữ liệu không hợp lệ }
+        '429': { description: Rate limit }
   /admin/products/{id}:
     patch: { summary: Cập nhật món, responses: { '200': { description: OK } } }
     delete:

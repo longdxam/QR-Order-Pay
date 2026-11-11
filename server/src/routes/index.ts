@@ -668,6 +668,13 @@ apiRouter.patch(
 );
 apiRouter.get('/admin/products', requireAuth, requireRole('ADMIN'), admin.listProducts);
 apiRouter.post('/admin/products', requireAuth, requireRole('ADMIN'), admin.createProduct);
+apiRouter.post(
+  '/admin/products/ai-tag-suggestions',
+  requireAuth,
+  requireRole('ADMIN'),
+  rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'admin-ai-tags'),
+  ai.suggestProductTags,
+);
 apiRouter.patch('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin.updateProduct);
 apiRouter.delete('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin.deleteProduct);
 

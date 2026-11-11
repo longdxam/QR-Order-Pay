@@ -1,6 +1,6 @@
 # Đánh giá tìm kiếm thông minh và AI Barista
 
-Cập nhật ngày 06/10/2026; giữ riêng bằng chứng lịch sử của từng lượt kiểm tra. Hai luồng `menu/search` và `ai/recommendations` được đánh giá riêng để không nhập nhằng fallback với kết quả LLM thật.
+Cập nhật ngày 11/11/2026; giữ riêng bằng chứng lịch sử của từng lượt kiểm tra. Hai luồng `menu/search` và `ai/recommendations` được đánh giá riêng để không nhập nhằng fallback với kết quả LLM thật.
 
 ## P4A — tìm kiếm menu xác định
 
@@ -25,7 +25,15 @@ Giá dùng để lọc là giá thấp nhất của size còn bán cho **một m
 | Không có kết quả      | Từ khóa không khớp                        | Trả danh sách rỗng và thông báo trung thực; không chèn món rẻ nhất     |
 | Bộ lọc sửa tay        | Budget/caffeine/dairy trên UI             | Giá trị người dùng sửa ghi đè phần tương ứng đã suy ra                 |
 
-### Kết quả tự động
+### Hồi quy từ khóa sữa — 11/11/2026
+
+Lỗi cũ đưa `sua` vào stop words nên tìm “sữa” trở thành truy vấn không có từ khóa và trả gợi ý chung. Đã giữ `sua` làm từ khóa: khớp tên/mô tả/tag/hồ sơ vị sau chuẩn hóa có dấu/không dấu. Cụm “không sữa” hoặc “không có sữa” được tách khỏi phần từ khóa để dùng điều kiện `dairy=false` hiện hữu; câu mô tả món “không sữa” cũng không được tính là một lần khớp dương với từ “sữa”. Sữa thực vật có tên khớp vẫn có thể xuất hiện khi tìm “sữa”, không ép mọi kết quả phải có `dairy=true`.
+
+- Unit tìm kiếm **34/34 PASS**, gồm9ca mới về sữa/sua/có sữa/tìm sữa, kết hợp nhóm cà phê/trà, phủ định trong mô tả và giữ lọc không sữa. Toàn bộ server unit **119/119 PASS**.
+- Hai ca integration endpoint trên MongoDB tạm PASS: điều kiện ngân sách/không sữa cũ và truy vấn sữa/sua chỉ trả Bạc Xỉu, loại Espresso; truy vấn không sữa vẫn trả Espresso, loại Bạc Xỉu.
+- Lightpanda public HTTPS375/1280 đối chiếu API và danh sách kết quả cho sữa/sua, cà phê sữa, trà sữa, không sữa PASS. Menu lúc kiểm tra có9món khớp từ khóa sữa, không có Espresso/Americano/Trà Đào Cam Sả. Chỉ kiểm tra DOM/network, không kết luận về bố cục trực quan hoặc điện thoại thật.
+
+### Kết quả tự động trước sửa — 06/10/2026
 
 - Unit search: **25/25 PASS**.
 - Top-1 trên 13 truy vấn định trước: **13/13 đúng**.

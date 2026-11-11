@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2, ArchiveRestore } from 'lucide-react';
+import { Pencil, Plus, Trash2, ArchiveRestore, Sparkles, Search, X } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -86,6 +87,8 @@ export function AdminProducts(): JSX.Element {
   const [editing, setEditing] = useState<AdminProduct | 'new' | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [deleting, setDeleting] = useState<AdminProduct | null>(null);
+  const [tagSuggestions, setTagSuggestions] = useState<TagSuggestions | null>(null);
+  const [search, setSearch] = useState('');
 
   const productsQuery = useQuery({
     queryKey: ['admin-products'],
@@ -97,6 +100,7 @@ export function AdminProducts(): JSX.Element {
   });
 
   useEffect(() => {
+    setTagSuggestions(null);
     if (editing === 'new') {
       setForm({ ...EMPTY_FORM, categoryId: categoriesQuery.data?.categories[0]?._id ?? '' });
     } else if (editing) {
@@ -120,10 +124,7 @@ export function AdminProducts(): JSX.Element {
 
   const save = useMutation({
     mutationFn: async () => {
-      const tags = form.tagInput
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
+      const tags = parseTags(form.tagInput);
       const payload = {
         name: form.name,
         description: form.description,
@@ -180,6 +181,35 @@ export function AdminProducts(): JSX.Element {
     onError: (err) => toast({ title: 'Lỗi', description: getErrorMessage(err), tone: 'danger' }),
   });
 
+  const suggestTags = useMutation({
+    mutationFn: async () => {
+      const metadata = editing && editing !== 'new' ? editing.ingredientMetadata : undefined;
+      return unwrap(
+        await api.post<TagSuggestions>('/admin/products/ai-tag-suggestions', {
+          name: form.name,
+          description: form.description,
+          ...(form.categoryId ? { categoryId: form.categoryId } : {}),
+          tags: parseTags(form.tagInput),
+          flavorProfile: metadata?.flavorProfile ?? [],
+          caffeine: metadata?.caffeine ?? null,
+          dairy: metadata?.dairy ?? null,
+        }),
+      );
+    },
+    onSuccess: (data) => setTagSuggestions(data),
+    onError: (err) =>
+      toast({ title: 'Chưa gợi ý được tag', description: getErrorMessage(err), tone: 'danger' }),
+  });
+
+  const addSuggestedTags = (tags: string[]) => {
+    const current = parseTags(form.tagInput);
+    const next = [...current, ...tags.filter((tag) => !current.includes(tag))];
+    setForm({ ...form, tagInput: next.join(', ') });
+    setTagSuggestions((prev) =>
+      prev ? { ...prev, tags: prev.tags.filter((tag) => !tags.includes(tag)) } : prev,
+    );
+  };
+
   const archive = useMutation({
     mutationFn: async (id: string) => unwrap(await api.delete(`/admin/products/${id}`)),
     onSuccess: () => {
@@ -216,8 +246,10 @@ export function AdminProducts(): JSX.Element {
     );
 
   const items = productsQuery.data?.products ?? [];
-  const visible = items.filter((p) => !p.isArchived);
-  const archived = items.filter((p) => p.isArchived);
+  const term = normalizeProductName(search);
+  const matches = (product: AdminProduct) => normalizeProductName(product.name).includes(term);
+  const visible = items.filter((p) => !p.isArchived && matches(p));
+  const archived = items.filter((p) => p.isArchived && matches(p));
 
   return (
     <div className="space-y-6">
@@ -228,6 +260,41 @@ export function AdminProducts(): JSX.Element {
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-md">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            aria-label="Tìm món"
+            placeholder="Tìm theo tên món…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="pl-10 pr-11 text-base"
+          />
+          {search ? (
+            <button
+              type="button"
+              aria-label="Xóa tìm kiếm"
+              className="absolute right-1 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-md hover:bg-muted"
+              onClick={() => setSearch('')}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        <p role="status" className="text-sm text-muted-foreground">
+          {visible.length + archived.length} / {items.length} món
+        </p>
+      </div>
+
+      {visible.length + archived.length === 0 ? (
+        <Card className="p-5 text-sm text-muted-foreground">
+          {term ? 'Không tìm thấy món phù hợp.' : 'Chưa có món.'}
+        </Card>
+      ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {visible.map((p) => (
           <Card key={p._id} data-product-id={p._id} className="overflow-hidden">
@@ -270,13 +337,17 @@ export function AdminProducts(): JSX.Element {
       </div>
 
       {archived.length > 0 && (
-        <details className="rounded-lg border border-border p-3">
+        <details className="rounded-lg border border-border p-3" open={term ? true : undefined}>
           <summary className="cursor-pointer text-sm font-semibold">
             Món đã xóa ({archived.length})
           </summary>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {archived.map((p) => (
-              <Card key={p._id} data-product-id={p._id} className="p-3 flex flex-wrap items-center justify-between gap-3">
+              <Card
+                key={p._id}
+                data-product-id={p._id}
+                className="p-3 flex flex-wrap items-center justify-between gap-3"
+              >
                 <div>
                   <p className="font-semibold">{p.name}</p>
                   <p className="text-xs text-muted-foreground">{vnd(p.basePrice)}</p>
@@ -393,6 +464,52 @@ export function AdminProducts(): JSX.Element {
               onChange={(e) => setForm({ ...form, tagInput: e.target.value })}
             />
           </Field>
+          <div className="space-y-2 rounded-md border border-border p-3" data-testid="ai-tag-panel">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                Tag giúp AI và tìm kiếm hiểu món (mát lạnh, tỉnh táo…). Chọn rồi bấm Lưu.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                disabled={suggestTags.isPending || !form.name.trim()}
+                onClick={() => suggestTags.mutate()}
+              >
+                <Sparkles className="h-3 w-3" />
+                {suggestTags.isPending ? 'Đang gợi ý…' : 'AI gợi ý tag'}
+              </Button>
+            </div>
+            {tagSuggestions ? (
+              tagSuggestions.tags.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={tagSuggestions.mode === 'llm' ? 'success' : 'warning'}>
+                    {tagSuggestions.mode === 'llm' ? 'AI' : 'Theo mô tả'}
+                  </Badge>
+                  {tagSuggestions.tags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
+                      aria-label={`Thêm tag ${tag}`}
+                      onClick={() => addSuggestedTags([tag])}
+                    >
+                      + {tag}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary underline"
+                    onClick={() => addSuggestedTags(tagSuggestions.tags)}
+                  >
+                    Thêm tất cả
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Không có tag mới để gợi ý.</p>
+              )
+            ) : null}
+          </div>
           <div>
             <p className="text-sm font-medium mb-1">Size / giá</p>
             <div className="space-y-1">
@@ -487,6 +604,28 @@ export function AdminProducts(): JSX.Element {
       </Modal>
     </div>
   );
+}
+
+interface TagSuggestions {
+  mode: 'llm' | 'fallback';
+  tags: string[];
+}
+
+function parseTags(value: string): string[] {
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function normalizeProductName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
 const inputCls =

@@ -439,9 +439,9 @@ const PRODUCTS: Array<Record<string, unknown>> = [
   },
   {
     categorySlug: 'cafe',
-    name: 'Cà phê Sữa Đá (Hết)',
+    name: 'Cà phê Sữa Đá',
     slug: 'ca-phe-sua-da',
-    description: 'Tạm hết nguyên liệu cho ca sáng nay.',
+    description: 'Cà phê kết hợp sữa đặc, dùng với đá.',
     image: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=600&q=70&auto=format',
     basePrice: 29000,
     variants: [{ name: 'M', price: 29000, isAvailable: false }],

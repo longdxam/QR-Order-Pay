@@ -2,33 +2,41 @@
 
 ## Mục tiêu
 
-Khách nhập câu tiếng Việt tự nhiên ("mình thích vị chua nhẹ, không cà phê, dưới 50 nghìn"), AI có thể trả tối đa ba món đang bán có ảnh, giá và lý do. Khi LLM không khả dụng, hệ thống dùng fallback rule-based từ menu thật, ghi rõ `mode: "fallback"` để UI/audit biết.
+Khách nhập câu tiếng Việt tự nhiên ("mình thích vị chua nhẹ, không cà phê, dưới 50 nghìn", "buồn ngủ quá"), hệ thống trả tối đa ba món đang bán có ảnh, giá và lý do đã kiểm chứng. Chi phí token mỗi lần hỏi **không phụ thuộc số món trong menu**: model không bao giờ nhận menu, chỉ nhận câu của khách và một danh sách tag giới hạn.
 
 ## Kiến trúc
 
 ```
-Client  ─► POST /api/v1/ai/recommendations
-              │
-              ▼
-        aiController  (rate limit 30 / 5 phút / guest hoặc IP)
-              │
-              ▼
-        aiService.recommend(input)
-              │
-              ├── AI_MODE=off/fallback       → rule-based menu fallback
-              └── AI_MODE=live               → Chat Completions provider
-                                                   │
-                                                   ▼
-                                      structural output hook
-                                                   │
-                                                   ▼
-        Validate product/variant/availability/price/budget/caffeine/dairy
-              │
-              ▼
-        Trả response có cấu trúc, mode='llm' hoặc fallback
+Client ─► POST /api/v1/ai/recommendations
+             │
+             ▼
+       aiService.recommend(input)
+             │  chuẩn hóa ngân sách/caffeine/sữa/ít ngọt từ câu + checkbox
+             │  parseMenuSearchIntent (luật, bỏ dấu, sửa lỗi gõ ≥4 chữ)
+             ▼
+   (B) Bộ định tuyến: còn từ nào luật + từ vựng menu không giải thích được?
+             │
+     ┌───────┴──────────────────────────┐
+     │ không / AI_MODE≠live             │ có, AI_MODE=live
+     ▼                                  ▼
+ route=rules                    (A) model trích điều kiện (JSON):
+ (0 token)                          nhóm, khẩu vị, tag từ vựng, từ khóa,
+     │                              ngân sách, caffeine/sữa, câu chào
+     │                                  │  lỗi/timeout/sai schema → route=llm_fallback
+     │                                  ▼
+     │                          gộp: model chỉ được THÊM ràng buộc,
+     │                          không nới ràng buộc khách/checkbox
+     └───────────┬──────────────────────┘
+                 ▼
+   Lọc cứng từ MongoDB (đang bán, size, ngân sách, caffeine/sữa xác nhận)
+   → rankMenuProducts (từ khóa/tag mềm, nhóm "bất kỳ", khẩu vị, featured, giá)
+   → top 3 + lý do/evidence do backend viết từ dữ liệu thật
 ```
 
-`AI_MODE` chỉ điều khiển Barista. `ANOMALY_AI_MODE` điều khiển riêng phần giải thích anomaly và mặc định `fallback`; bật Barista live không bật inference anomaly.
+- `mode` giữ hợp đồng cũ cho UI: `llm` khi model đã trích ý thành công, `fallback` cho mọi trường hợp còn lại. `route` (mới, tùy chọn) cho biết `rules`, `llm` hay `llm_fallback`.
+- (C) Tag món được làm giàu **ngoài luồng khách hỏi**: Admin bấm "AI gợi ý tag" trong form sửa món → `POST /admin/products/ai-tag-suggestions` → chọn tag → bấm Lưu (PATCH có audit). Tag nằm trong `Product.tags`, nên tìm kiếm menu, bộ định tuyến và xếp hạng AI đều dùng được.
+
+`AI_MODE` chỉ điều khiển Barista và gợi ý tag. `ANOMALY_AI_MODE` điều khiển riêng phần giải thích anomaly và mặc định `fallback`; bật Barista live không bật inference anomaly.
 
 ## Provider
 
@@ -59,48 +67,37 @@ P4A menu search luôn chạy pipeline xác định, không gọi LLM và không 
 
 ## Skill và hooks
 
-`server/src/ai/baristaSkill.ts` là nguồn system instruction duy nhất cho Barista; đây là TypeScript runtime của backend, không phải coding-agent/OpenCode CLI skill. `server/src/ai/baristaHooks.ts` dựng system/user messages trước request và parse/validate cấu trúc JSON sau response. Prompt/menu được gửi như dữ liệu user; không nối vào system instruction.
+`server/src/ai/baristaSkill.ts` chứa hai system instruction:
 
-Skill có năm nhóm chuyên hoá, được đóng gói trong cùng system instruction và áp dụng theo thứ tự:
+1. `BARISTA_INTENT_PROMPT` — model chỉ phân tích nhu cầu. Input: `{prompt, preferences, budget, tagVocabulary}`. Output: `{groupsInclude, groupsExclude, flavors, tags, keywords, noCaffeine, noDairy, lowSugar, maxBudget, message, followUpQuestion?}`. Model không thấy menu nên không thể nêu tên/giá/ID món.
+2. `MENU_TAG_PROMPT` — gắn 2–5 tag cho **một** món, nguyên văn từ bộ từ vựng.
 
-1. **Đọc nhu cầu:** dùng preferences/budget đã chuẩn hóa; phân biệt tránh cà phê với không caffeine.
-2. **Lọc điều kiện bắt buộc:** giữ caffeine/sữa/budget; metadata thiếu không đủ để xác nhận, không nới điều kiện khi hết candidate.
-3. **Xếp hạng khẩu vị:** dùng flavorProfile/tags/mô tả thật; ít ngọt không đồng nghĩa không đường, không bịa thành phần hoặc lợi ích sức khỏe.
-4. **Chọn size theo ngân sách:** budget cho một món, ID variant từ snapshot; ưu tiên size tiết kiệm khi khách yêu cầu.
-5. **Giải thích/hỏi lại:** lý do cụ thể, tối đa một câu hỏi có ích; dị ứng cần xác nhận với nhân viên, không có cam kết y tế.
+`server/src/ai/menuTagVocabulary.ts` là bộ từ vựng cố định (mát lạnh, ấm nóng, tỉnh táo, thư giãn, ngày nóng, ngày mưa, đậm vị, chua nhẹ, hương trái cây…). Không có tag sức khỏe/dị ứng; caffeine/sữa vẫn nằm ở `ingredientMetadata`. `tagVocabulary` gửi cho model = bộ cố định + tag đang có trong menu, **giới hạn 60**.
 
-Không thêm loader, registry, tool calling hoặc hook coding-agent. Năm nhóm dùng chung contract response và hai hooks hiện hữu; backend vẫn dựng lý do/evidence đã kiểm chứng.
+`server/src/ai/baristaHooks.ts`:
 
-Đây là ba lớp có vai trò riêng:
+- `afterBaristaResponse` parse JSON (chấp nhận JSON lẫn trong prose), giá trị enum lạ bị bỏ thay vì làm hỏng cả intent, giới hạn độ dài danh sách, bỏ nhóm vừa include vừa exclude. Sai shape → `AI schema invalid` → rules.
+- `afterMenuTagResponse` chỉ giữ tag thuộc bộ từ vựng, chuẩn hóa/khử trùng lặp, tối đa 5. Service bỏ thêm `tỉnh táo` nếu metadata không xác nhận caffeine.
 
-1. **Instruction:** yêu cầu model trả JSON và chọn món từ menu snapshot.
-2. **Structural hook:** kiểm tra shape và giới hạn tối đa ba recommendations; output sai đưa vào fallback.
-3. **Business validation:** service đối chiếu ID/variant/availability/giá/ngân sách/caffeine/dairy với dữ liệu MongoDB, rồi tạo evidence và lý do đã xác minh.
+### Bộ định tuyến (B)
 
-Skill chỉ là hướng dẫn, không bảo đảm model tuân thủ hoặc chống mọi prompt injection. Model không quyết định ID hợp lệ, giá, evidence, đơn hàng hay thanh toán.
+`needsLanguageModel(keywords, products)`: lấy từ khóa còn lại sau khi luật đã hiểu ngân sách/caffeine/sữa/ít ngọt/khẩu vị/nhóm; bỏ từ chung chung (gì, nào, ngon, hôm nay…). Nếu mọi từ còn lại đều xuất hiện trong tên/mô tả/tag/khẩu vị của menu (cho phép sai 1 ký tự với từ ≥4 chữ) thì trả lời bằng luật, không gọi model. Ví dụ: "trà đào ít ngọt", "không caffeine dưới 40k", "món mát lạnh" (sau khi đã có tag) → rules; "buồn ngủ quá", "uống gì cho bạn gái" → model.
 
 ## Output và kiểm chứng nghiệp vụ
 
-Model chỉ trả `{message, recommendations: [{productId, variantId?, reason}], followUpQuestion?}`. Hook kiểm tra JSON/schema và tối đa ba gợi ý; output sai cấu trúc khiến service fallback.
+Model chỉ trả điều kiện. Backend:
 
-Sau đó backend:
-
-- Chỉ nhận ID có trong candidate menu từ MongoDB; loại ID trùng, variant không hợp lệ, size không được phép, món hết bán hoặc lưu trữ.
-- Tính giá từ DB, loại món vượt ngân sách và áp dụng caffeine/dairy theo metadata; metadata thiếu không đạt điều kiện yêu cầu.
-- Tạo evidence và lý do đã xác minh từ DB, không dùng giá/evidence hoặc khẳng định dinh dưỡng do LLM sinh.
-- Nếu không còn recommendation hợp lệ thì response dùng `mode: 'fallback'`; không tự nới ràng buộc.
+- Gộp điều kiện: `noCaffeine/noDairy/lowSugar` = checkbox/câu **hoặc** model; ngân sách của khách/checkbox thắng, model chỉ bổ sung khi khách chưa nêu; nhóm loại trừ = hợp của luật và model; nhóm ưu tiên là mềm (không còn món trong nhóm thì xét cả menu).
+- Lọc cứng từ MongoDB: món đang bán, chưa lưu trữ, danh mục bật, còn size hợp lệ, đủ kho, trong ngân sách; caffeine/sữa phải được metadata xác nhận `false`.
+- Xếp hạng bằng `rankMenuProducts` với từ khóa/tag mềm; lấy tối đa 3 món.
+- Lý do/evidence do backend viết từ dữ liệu thật (size, giá, ngân sách, metadata, tag khớp "hợp: mát lạnh"); không dùng lời model cho lý do.
+- Không còn món hợp lệ thì trả danh sách rỗng và nói rõ; không tự nới ràng buộc.
 
 ## Fallback
 
-Rule-based dựa trên:
+Khi `AI_MODE` khác `live`, provider lỗi/timeout, JSON sai schema hoặc bộ định tuyến thấy không cần model, cùng một pipeline luật ở trên được dùng với điều kiện chỉ lấy từ câu + checkbox. Khác biệt duy nhất là không có tag/từ khóa/nhóm do model bổ sung, và `message` là câu cố định.
 
-- `flavorProfile` chứa "chua", "đắng", "ngọt", "béo".
-- `tags` chứa "no-caffeine", "no-dairy", "low-sugar", "fruit".
-- Từ khoá trong prompt (chua/đắng/ngọt/trái cây) cộng điểm.
-- `isFeatured` cộng điểm.
-- Sort theo `score desc, basePrice asc`. Lấy 3 món đầu.
-
-Chọn tối đa ba món còn bán đáp ứng các điều kiện; nếu không có candidate phù hợp thì trả danh sách rỗng, không tự nới ràng buộc.
+Gợi ý tag (C) khi không live hoặc lỗi dùng luật `ruleTags` theo tên/mô tả/khẩu vị/caffeine (vd "chua" → chua nhẹ, cam/đào/chanh → hương trái cây, caffeine=true → tỉnh táo), trả `mode: "fallback"`.
 
 ## Bảo mật
 

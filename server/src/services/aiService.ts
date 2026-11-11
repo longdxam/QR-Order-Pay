@@ -1,10 +1,32 @@
+import type { MenuSearchIntent } from '@may-cafe/contracts';
 import { config } from '../config/index.js';
 import { HttpAIProvider, type AIProvider } from '../providers/aiProvider.js';
 import { productRepository } from '../repositories/productRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import { logger } from '../infrastructure/logger.js';
 import type { ProductDoc } from '../models/Product.js';
-import { beforeBaristaRequest, afterBaristaResponse } from '../ai/baristaHooks.js';
+import {
+  afterBaristaResponse,
+  afterMenuTagResponse,
+  beforeBaristaRequest,
+  beforeMenuTagRequest,
+  type BaristaIntent,
+} from '../ai/baristaHooks.js';
+import {
+  INTENT_TAG_LIMIT,
+  MENU_TAG_VOCABULARY,
+  TAG_HINTS,
+  isVocabularyTag,
+  normalizeTag,
+} from '../ai/menuTagVocabulary.js';
+import {
+  foldText,
+  isMenuTerm,
+  menuVocabulary,
+  parseMenuSearchIntent,
+  rankMenuProducts,
+  type SearchableProduct,
+} from './menuSearchService.js';
 
 export interface RecommendInput {
   prompt: string;
@@ -17,8 +39,16 @@ export interface RecommendInput {
   maxBudget?: number;
 }
 
+/**
+ * rules: backend understood the request without a model call.
+ * llm: the model extracted the intent and backend ranked the real menu.
+ * llm_fallback: a model call was needed but failed, so rules answered instead.
+ */
+export type RecommendRoute = 'rules' | 'llm' | 'llm_fallback';
+
 export interface RecommendResult {
   mode: 'llm' | 'fallback';
+  route: RecommendRoute;
   message: string;
   recommendations: Array<{
     productId: string;
@@ -39,194 +69,272 @@ export interface RecommendResult {
   latencyMs: number;
 }
 
+export interface TagSuggestionInput {
+  name: string;
+  description?: string;
+  categoryId?: string;
+  tags?: string[];
+  flavorProfile?: string[];
+  caffeine?: boolean | null;
+  dairy?: boolean | null;
+}
+
+export interface TagSuggestionResult {
+  mode: 'llm' | 'fallback';
+  tags: string[];
+}
+
+type Group = MenuSearchIntent['requirements']['includedGroups'][number];
+type Flavor = MenuSearchIntent['preferences']['flavors'][number];
+
+// Words that carry no menu meaning; a prompt made only of these does not need a model.
+// prettier-ignore
+const GENERIC_WORDS = new Set([
+  'gi', 'nao', 'ngon', 'hom', 'nay', 'nhe', 'di', 'oi', 'voi', 'la', 'nhat', 'hay', 'ban', 'quan',
+  'thu', 'duoc', 'nuoc', 'ly', 'coc', 'them', 'chut', 'hot', 'best', 'seller', 'de', 'xuat',
+  'recommend', 'nhung', 'va', 'hoac', 'hon', 'rat', 'lam', 'size', 'nhu', 'the', 'ai', 'em', 'anh',
+  'chi', 'ah', 'a', 'nha', 'gio', 'luc', 'kieu', 'loai', 'khac', 'moi',
+]);
+
 export class AIService {
   constructor(
     private readonly provider: AIProvider | null,
     private readonly mode: 'live' | 'fallback' | 'off',
   ) {}
 
-  async recommend(input: RecommendInput): Promise<RecommendResult> {
-    input = normalizePreferences(input);
+  async recommend(rawInput: RecommendInput): Promise<RecommendResult> {
     const started = Date.now();
-    if (this.mode === 'off') {
-      return fallbackResult(
-        input,
-        'Chế độ AI đang tắt. Đang hiển thị gợi ý theo menu.',
-        Date.now() - started,
-      );
-    }
-    if (!this.provider) {
-      return fallbackResult(
-        input,
-        'AI Barista đang dùng gợi ý theo menu (fallback).',
-        Date.now() - started,
-      );
-    }
+    const input = normalizePreferences(rawInput);
+    const products = await productRepository.listPublic({});
+    const parsed = parseMenuSearchIntent(input.prompt);
+    const rules = (message: string, route: RecommendRoute) =>
+      recommendFromIntent(products, input, rulesIntent(input, parsed), {
+        mode: 'fallback',
+        route,
+        message,
+        started,
+      });
+
+    if (this.mode === 'off')
+      return rules('Chế độ AI đang tắt. Đang hiển thị gợi ý theo menu.', 'rules');
+    if (!this.provider) return rules('AI Barista đang dùng gợi ý theo menu.', 'rules');
+    if (!needsLanguageModel(parsed.keywords, products))
+      return rules('Đã hiểu yêu cầu của bạn, đây là các món phù hợp trong menu.', 'rules');
+
+    let intent: BaristaIntent;
     try {
-      return await this.llmRecommend(input, started);
-    } catch (e) {
-      logger.warn({ err: (e as Error).message }, 'ai recommend failed; using fallback');
-      return fallbackResult(
-        input,
-        'AI tạm thời không khả dụng, đang dùng gợi ý theo menu.',
-        Date.now() - started,
+      const raw = await this.provider.chat(
+        beforeBaristaRequest({
+          prompt: input.prompt,
+          budget: input.maxBudget ?? null,
+          preferences: input.preferences ?? {},
+          tagVocabulary: intentTagVocabulary(products),
+        }),
+        { model: config.ai.model, jsonMode: true, temperature: 0.2 },
       );
+      intent = afterBaristaResponse(raw);
+    } catch (error) {
+      logger.warn({ err: (error as Error).message }, 'ai intent failed; using rules');
+      return rules('AI tạm thời không khả dụng, đang dùng gợi ý theo menu.', 'llm_fallback');
     }
+    const merged = mergeModelIntent(input, parsed, intent);
+    return recommendFromIntent(products, merged.input, merged.intent, {
+      mode: 'llm',
+      route: 'llm',
+      message: intent.message,
+      followUpQuestion: intent.followUpQuestion,
+      requestedTags: intent.tags,
+      started,
+    });
   }
 
-  private async llmRecommend(input: RecommendInput, started: number): Promise<RecommendResult> {
-    const candidates = await productRepository.listPublic({});
-    const filtered = candidates.filter((p) => matchesPreferences(p, input));
-    const candidateJson = filtered.map((p) => ({
-      id: p._id.toString(),
-      name: p.name,
-      description: p.description,
-      basePrice: p.basePrice,
-      variants: p.variants
-        .filter((v) => v.isAvailable !== false && p.allowedOptions.sizes.includes(v.name))
-        .map((v) => ({
-          id: v._id?.toString() ?? null,
-          name: v.name,
-          price: v.price,
-        })),
-      caffeine: p.ingredientMetadata?.caffeine ?? null,
-      dairy: p.ingredientMetadata?.dairy ?? null,
-      flavorProfile: p.ingredientMetadata?.flavorProfile ?? [],
-      tags: p.tags ?? [],
-    }));
-    const budget = input.maxBudget ?? null;
-    const preferences = input.preferences ?? {};
-    const messages = beforeBaristaRequest({
-      prompt: input.prompt,
-      budget,
-      preferences,
-      menu: candidateJson,
-    });
-    const raw = await this.provider!.chat(messages, {
-      model: config.ai.model,
-      jsonMode: true,
-      temperature: 0.3,
-    });
-    const validated = afterBaristaResponse(raw);
-    const candidateMap = new Map(filtered.map((p) => [p._id.toString(), p]));
-    const seen = new Set<string>();
-    const recommendations = [];
-    for (const rec of validated.recommendations) {
-      const product = candidateMap.get(rec.productId);
-      if (!product) continue;
-      if (seen.has(rec.productId)) continue;
-      seen.add(rec.productId);
-      const variantId = rec.variantId ?? null;
-      const variant = variantId
-        ? (product.variants.find(
-            (v) =>
-              v._id?.toString() === variantId &&
-              v.isAvailable !== false &&
-              product.allowedOptions.sizes.includes(v.name),
-          ) ?? null)
-        : availableVariant(product);
-      if ((variantId && !variant) || (product.variants.length > 0 && !variant)) continue;
-      const unitPrice = variant ? variant.price : product.basePrice;
-      if (budget && unitPrice > budget) continue;
-      recommendations.push({
-        productId: product._id.toString(),
-        variantId: variant?._id?.toString() ?? null,
-        reason: verifiedReason(product, variant?.name ?? null, unitPrice, preferences, budget),
-        unitPrice,
-        name: product.name,
-        image: product.image,
-        evidence: recommendationEvidence(product, variant?.name ?? null, unitPrice, budget),
-      });
-      if (recommendations.length >= 3) break;
-    }
-    if (recommendations.length === 0) {
-      return await fallbackResult(
-        input,
-        'AI chưa tìm được món phù hợp ràng buộc của bạn. Dưới đây là các món đang bán:',
-        Date.now() - started,
+  /** Suggestions only: nothing is saved until Admin reviews them and saves the product. */
+  async suggestTags(input: TagSuggestionInput): Promise<TagSuggestionResult> {
+    const current = new Set((input.tags ?? []).map(normalizeTag));
+    const fresh = (tags: string[]) => tags.filter((tag) => !current.has(tag)).slice(0, 5);
+    if (this.mode !== 'live' || !this.provider)
+      return { mode: 'fallback', tags: fresh(ruleTags(input)) };
+    try {
+      const category = input.categoryId
+        ? ((await categoryRepository.findById(input.categoryId))?.name ?? null)
+        : null;
+      const raw = await this.provider.chat(
+        beforeMenuTagRequest({
+          name: input.name,
+          description: input.description ?? '',
+          category,
+          flavorProfile: input.flavorProfile ?? [],
+          caffeine: input.caffeine ?? null,
+          dairy: input.dairy ?? null,
+          currentTags: [...current],
+          tagVocabulary: [...MENU_TAG_VOCABULARY],
+        }),
+        { model: config.ai.model, jsonMode: true, temperature: 0.2 },
       );
+      // "tỉnh táo" implies caffeine; never trust the model over stored metadata.
+      const tags = afterMenuTagResponse(raw).filter(
+        (tag) => tag !== 'tỉnh táo' || input.caffeine === true,
+      );
+      return { mode: 'llm', tags: fresh(tags) };
+    } catch (error) {
+      logger.warn({ err: (error as Error).message }, 'ai tag suggestion failed; using rules');
+      return { mode: 'fallback', tags: fresh(ruleTags(input)) };
     }
-    return {
-      mode: 'llm',
-      message: validated.message,
-      recommendations,
-      followUpQuestion: validated.followUpQuestion,
-      latencyMs: Date.now() - started,
-    };
   }
 }
 
-function fallbackResult(
+/** B — the model is only needed when the prompt has words the rules and the menu cannot explain. */
+export function needsLanguageModel(
+  keywords: string[],
+  products: readonly SearchableProduct[],
+): boolean {
+  const vocabulary = menuVocabulary(products);
+  return keywords.some(
+    (keyword) => !GENERIC_WORDS.has(keyword) && !isMenuTerm(keyword, vocabulary),
+  );
+}
+
+function intentTagVocabulary(products: readonly ProductDoc[]): string[] {
+  const tags = new Set<string>(MENU_TAG_VOCABULARY);
+  for (const product of products) {
+    for (const tag of product.tags ?? []) {
+      if (tags.size >= INTENT_TAG_LIMIT) break;
+      const normalized = normalizeTag(tag);
+      if (normalized.length > 0 && normalized.length <= 30) tags.add(normalized);
+    }
+  }
+  return [...tags].slice(0, INTENT_TAG_LIMIT);
+}
+
+function rulesIntent(input: RecommendInput, parsed: MenuSearchIntent): MenuSearchIntent {
+  const pref = input.preferences ?? {};
+  const flavorHint = pref.flavor ? parseMenuSearchIntent(pref.flavor) : null;
+  return {
+    normalizedQuery: parsed.normalizedQuery,
+    keywords: unique([...parsed.keywords, ...(flavorHint?.keywords ?? [])]),
+    requirements: {
+      noCaffeine: Boolean(pref.noCaffeine),
+      noDairy: Boolean(pref.noDairy),
+      includedGroups: parsed.requirements.includedGroups,
+      excludedGroups: parsed.requirements.excludedGroups,
+      budget: input.maxBudget ? { maxVnd: input.maxBudget, inclusive: true, scope: 'item' } : null,
+    },
+    preferences: {
+      lowSugar: Boolean(pref.lowSugar) || parsed.preferences.lowSugar,
+      flavors: unique([...parsed.preferences.flavors, ...(flavorHint?.preferences.flavors ?? [])]),
+    },
+  };
+}
+
+/** The model may only add constraints or hints; it can never loosen what the guest or UI set. */
+function mergeModelIntent(
   input: RecommendInput,
-  message: string,
-  latencyMs: number,
-): Promise<RecommendResult> {
-  return productRepository.listPublic({}).then((products) => {
-    const filtered = products.filter((p) => matchesPreferences(p, input));
-    const budget = input.maxBudget ?? Number.POSITIVE_INFINITY;
-    const pref = input.preferences ?? {};
-    const promptLow = input.prompt.toLowerCase();
-    const candidates: { p: ProductDoc; score: number }[] = [];
-    for (const p of filtered) {
-      const basePrice = availableVariant(p)?.price ?? p.basePrice;
-      if (basePrice > budget) continue;
-      if (pref.noCaffeine && p.ingredientMetadata?.caffeine) continue;
-      if (pref.noDairy && p.ingredientMetadata?.dairy) continue;
-      const flavor = (p.ingredientMetadata?.flavorProfile ?? []).map((x) => x.toLowerCase());
-      const tags = (p.tags ?? []).map((x) => x.toLowerCase());
-      const haystack =
-        `${p.name} ${p.description} ${flavor.join(' ')} ${tags.join(' ')}`.toLowerCase();
-      let score = 0;
-      if (pref.lowSugar && /ít ngọt|low sugar/.test(haystack)) score += 2;
-      if (pref.flavor && haystack.includes(pref.flavor.toLowerCase())) score += 2;
-      if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) score += 1;
-      if (pref.noDairy && !p.ingredientMetadata?.dairy) score += 1;
-      if (/chua/.test(promptLow) && flavor.some((f) => f.includes('chua'))) score += 2;
-      if (
-        /đắng|manly|đậm/.test(promptLow) &&
-        flavor.some((f) => f.includes('đắng') || f.includes('đậm'))
-      )
-        score += 2;
-      if (/ngọt/.test(promptLow) && flavor.some((f) => f.includes('ngọt'))) score += 1;
-      if (
-        /trái cây|fruit/.test(promptLow) &&
-        tags.some((t) => t.includes('fruit') || t.includes('trái cây'))
-      )
-        score += 2;
-      if (p.isFeatured) score += 1;
-      candidates.push({ p, score });
-    }
-    candidates.sort((a, b) => b.score - a.score || a.p.basePrice - b.p.basePrice);
-    const picks = candidates.slice(0, 3).map((c) => c.p);
-    if (picks.length === 0) {
-      return {
-        mode: 'fallback',
-        message:
-          'Hiện chưa có món phù hợp tất cả lựa chọn. Bạn có thể đổi ngân sách hoặc khẩu vị rồi thử lại.',
-        recommendations: [],
-        latencyMs,
-      };
-    }
-    return {
-      mode: 'fallback',
-      message,
-      recommendations: picks.map((p) => ({
-        productId: p._id.toString(),
-        variantId: availableVariant(p)?._id?.toString() ?? null,
-        reason: buildReason(p, pref, budget),
-        unitPrice: availableVariant(p)?.price ?? p.basePrice,
-        name: p.name,
-        image: p.image,
-        evidence: recommendationEvidence(
-          p,
-          availableVariant(p)?.name ?? null,
-          availableVariant(p)?.price ?? p.basePrice,
-          Number.isFinite(budget) ? budget : null,
-        ),
-      })),
-      latencyMs,
-    };
+  parsed: MenuSearchIntent,
+  model: BaristaIntent,
+): { input: RecommendInput; intent: MenuSearchIntent } {
+  const pref = input.preferences ?? {};
+  const merged: RecommendInput = {
+    ...input,
+    maxBudget: input.maxBudget ?? model.maxBudget ?? undefined,
+    preferences: {
+      ...pref,
+      noCaffeine: Boolean(pref.noCaffeine) || model.noCaffeine,
+      noDairy: Boolean(pref.noDairy) || model.noDairy,
+      lowSugar: Boolean(pref.lowSugar) || model.lowSugar,
+    },
+  };
+  const base = rulesIntent(merged, parsed);
+  const excluded = unique<Group>([...base.requirements.excludedGroups, ...model.groupsExclude]);
+  const modelTerms = [...model.keywords, ...model.tags]
+    .map(foldText)
+    .filter((term) => term.length >= 2 && term.length <= 40);
+  const hints = model.tags.map((tag) => TAG_HINTS[normalizeTag(tag) as keyof typeof TAG_HINTS]);
+  // A caffeine-seeking tag must not pull coffee/tea in when the guest asked for no caffeine.
+  const hintGroups = merged.preferences?.noCaffeine
+    ? []
+    : hints.flatMap((hint) => hint?.groups ?? []);
+  const hintFlavors = hints.flatMap((hint) => hint?.flavors ?? []);
+  return {
+    input: merged,
+    intent: {
+      ...base,
+      keywords: unique([...base.keywords, ...modelTerms]),
+      requirements: {
+        ...base.requirements,
+        excludedGroups: excluded,
+        includedGroups: unique<Group>([
+          ...base.requirements.includedGroups,
+          ...model.groupsInclude,
+          ...hintGroups,
+        ]).filter((group) => !excluded.includes(group)),
+      },
+      preferences: {
+        ...base.preferences,
+        flavors: unique<Flavor>([...base.preferences.flavors, ...model.flavors, ...hintFlavors]),
+      },
+    },
+  };
+}
+
+function recommendFromIntent(
+  products: readonly ProductDoc[],
+  input: RecommendInput,
+  intent: MenuSearchIntent,
+  meta: {
+    mode: RecommendResult['mode'];
+    route: RecommendRoute;
+    message: string;
+    followUpQuestion?: string;
+    requestedTags?: string[];
+    started: number;
+  },
+): RecommendResult {
+  const eligible = products.filter((p) => matchesPreferences(p, input));
+  const options = { keywordsRequired: false, includedGroupsMode: 'any' as const };
+  let ranked = rankMenuProducts(eligible, intent, options);
+  // Preferred groups are soft: if nothing in them qualifies, fall back to the whole eligible menu.
+  if (ranked.length === 0 && intent.requirements.includedGroups.length > 0)
+    ranked = rankMenuProducts(
+      eligible,
+      { ...intent, requirements: { ...intent.requirements, includedGroups: [] } },
+      options,
+    );
+  const byId = new Map(eligible.map((p) => [p._id.toString(), p]));
+  const budget = input.maxBudget ?? null;
+  const pref = input.preferences ?? {};
+  const requestedTags = new Set((meta.requestedTags ?? []).map(normalizeTag));
+  const recommendations = ranked.slice(0, 3).flatMap((item) => {
+    const product = byId.get(item.productId);
+    if (!product) return [];
+    const variant = item.variantId
+      ? (product.variants.find((v) => v._id?.toString() === item.variantId) ?? null)
+      : null;
+    const matchedTags = (product.tags ?? [])
+      .map(normalizeTag)
+      .filter((tag) => requestedTags.has(tag));
+    return [
+      {
+        productId: item.productId,
+        variantId: item.variantId,
+        reason: verifiedReason(variant?.name ?? null, item.unitPrice, pref, budget, matchedTags),
+        unitPrice: item.unitPrice,
+        name: product.name,
+        image: product.image,
+        evidence: recommendationEvidence(product, variant?.name ?? null, item.unitPrice, budget),
+      },
+    ];
   });
+  return {
+    mode: meta.mode,
+    route: meta.route,
+    message:
+      recommendations.length > 0
+        ? meta.message
+        : 'Hiện chưa có món phù hợp tất cả lựa chọn. Bạn có thể đổi ngân sách hoặc khẩu vị rồi thử lại.',
+    recommendations,
+    ...(meta.followUpQuestion ? { followUpQuestion: meta.followUpQuestion } : {}),
+    latencyMs: Date.now() - meta.started,
+  };
 }
 
 function availableVariant(p: ProductDoc) {
@@ -284,28 +392,12 @@ export function normalizePreferences(input: RecommendInput): RecommendInput {
   };
 }
 
-function buildReason(
-  p: ProductDoc,
-  pref: NonNullable<RecommendInput['preferences']>,
-  budget: number,
-): string {
-  const reasons: string[] = [];
-  if (pref.noCaffeine && !p.ingredientMetadata?.caffeine) reasons.push('không caffeine');
-  if (pref.noDairy && !p.ingredientMetadata?.dairy) reasons.push('không sữa');
-  if (pref.lowSugar) reasons.push('chọn mức đường thấp khi thêm món');
-  if (pref.flavor) reasons.push(`hương ${pref.flavor}`);
-  if (Number.isFinite(budget) && p.basePrice <= budget)
-    reasons.push(`trong tầm ${budget.toLocaleString('vi-VN')}đ`);
-  if (reasons.length === 0) reasons.push('đề xuất của quán');
-  return reasons.join(', ');
-}
-
 function verifiedReason(
-  p: ProductDoc,
   variant: string | null,
   price: number,
   pref: NonNullable<RecommendInput['preferences']>,
   budget: number | null,
+  matchedTags: string[],
 ): string {
   const reasons: string[] = [];
   if (variant) reasons.push(`size ${variant}`);
@@ -315,6 +407,7 @@ function verifiedReason(
   if (pref.noDairy) reasons.push('metadata xác nhận không sữa');
   if (pref.lowSugar) reasons.push('có thể chọn mức đường thấp');
   if (pref.flavor) reasons.push(`hương ${pref.flavor}`);
+  if (matchedTags.length > 0) reasons.push(`hợp: ${matchedTags.slice(0, 2).join(', ')}`);
   return reasons.join(' · ');
 }
 
@@ -331,6 +424,41 @@ function recommendationEvidence(
     caffeine: p.ingredientMetadata?.caffeine ?? null,
     dairy: p.ingredientMetadata?.dairy ?? null,
   };
+}
+
+/** C fallback — deterministic suggestions from stored text, used when AI is not live or fails. */
+export function ruleTags(input: TagSuggestionInput): string[] {
+  const text = foldText(
+    [
+      input.name,
+      input.description ?? '',
+      ...(input.flavorProfile ?? []),
+      ...(input.tags ?? []),
+    ].join(' '),
+  );
+  const tags: string[] = [];
+  const add = (tag: (typeof MENU_TAG_VOCABULARY)[number], when: boolean) => {
+    if (when && !tags.includes(tag)) tags.push(tag);
+  };
+  add('tỉnh táo', input.caffeine === true);
+  add('chua nhẹ', /\bchua\b/.test(text));
+  add('đậm vị', /\b(?:dang|dam|espresso|robusta)\b/.test(text));
+  add('béo ngậy', /\b(?:beo|kem|cream|cot\s+dua|latte)\b/.test(text));
+  add('thanh nhẹ', /\b(?:thanh|nhe)\b/.test(text));
+  add('ngọt dịu', /\bngot\b/.test(text));
+  add(
+    'hương trái cây',
+    /\b(?:trai\s+cay|dao|chanh|dau|cam|vai|xoai|buoi|oi|thom|chanh\s+day)\b/.test(text),
+  );
+  add('hương hoa', /\b(?:hoa|nhai|lai|sen|cuc|hibiscus)\b/.test(text));
+  add('mát lạnh', /\b(?:da\s+xay|soda|smoothie|lanh|mat)\b/.test(text));
+  add('ấm nóng', /\b(?:nong|am)\b/.test(text));
+  add('tráng miệng', /\b(?:cacao|chocolate|socola|banh|kem)\b/.test(text));
+  return tags.filter(isVocabularyTag);
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
 }
 
 export function buildAIService(): AIService {

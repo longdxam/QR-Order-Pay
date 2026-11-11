@@ -65,6 +65,37 @@ describe('Vietnamese menu search evaluation set', () => {
     expect(ids).not.toContain('unknown');
   });
 
+  it.each(['sữa', 'sua', 'có sữa', 'tìm sữa'])('preserves the milk keyword in "%s" instead of returning general suggestions', (query) => {
+    expect(parseMenuSearchIntent(query).keywords).toContain('sua');
+    const ids = search(query).map((item) => item.productId);
+    expect(ids.sort()).toEqual(['cacao-milk', 'latte']);
+  });
+
+  it('combines milk with coffee or tea rather than matching the whole group', () => {
+    expect(search('cà phê sữa').map((item) => item.productId)).toEqual(['latte']);
+    const milkTea = product('milk-tea', 'Hồng trà sữa', 42000, ['tea'], true, true, ['ngọt']);
+    expect(rankMenuProducts([...products, milkTea], parseMenuSearchIntent('trà sữa')).map((item) => item.productId)).toEqual(['milk-tea']);
+  });
+
+  it('does not match milk solely because a product explicitly says without milk', () => {
+    const plain = product('plain', 'Cà phê không sữa', 20000, [], true, false, []);
+    const juice = product('juice', 'Nước ép', 20000, [], false, false, []);
+    juice.description = 'Không có sữa';
+    const plantMilk = product('oat', 'Sữa yến mạch', 30000, [], false, false, []);
+    expect(rankMenuProducts([plain, juice, plantMilk], parseMenuSearchIntent('sữa')).map((item) => item.productId)).toEqual(['oat']);
+  });
+
+  it.each(['không sữa', 'không có sữa', 'cà phê không sữa'])('keeps "%s" as an exclusion without a positive milk keyword', (query) => {
+    const intent = parseMenuSearchIntent(query);
+    expect(intent.keywords).not.toContain('sua');
+    expect(intent.requirements.noDairy).toBe(true);
+    const ids = rankMenuProducts(products, intent).map((item) => item.productId);
+    expect(ids).toContain('coffee-black');
+    expect(ids).not.toContain('latte');
+    expect(ids).not.toContain('cacao-milk');
+    expect(ids).not.toContain('unknown');
+  });
+
   it('distinguishes strict "dưới" from inclusive "không quá" at the price boundary', () => {
     const strictIds = search('dưới 40 nghìn').map((item) => item.productId);
     const inclusiveIds = search('không quá 40 nghìn').map((item) => item.productId);
@@ -96,6 +127,30 @@ describe('Vietnamese menu search evaluation set', () => {
     });
     expect(intent.requirements.noCaffeine).toBe(false);
     expect(intent.requirements.budget).toBeNull();
+  });
+
+  it('does not fuzz ambiguous three-letter words into menu terms', () => {
+    const intent = parseMenuSearchIntent('ngon quá, thích lắm');
+    expect(intent.keywords).not.toContain('sua');
+    expect(intent.preferences.flavors).not.toContain('bitter');
+    expect(parseMenuSearchIntent('traa daoo').normalizedQuery).toBe('tra dao');
+  });
+
+  it('can rank with soft keywords and any-of groups for recommendations', () => {
+    const intent = parseMenuSearchIntent('trà đào');
+    const strict = rankMenuProducts(products, intent).map((item) => item.productId);
+    const soft = rankMenuProducts(products, { ...intent, keywords: ['xyz'] }, {
+      keywordsRequired: false,
+    }).map((item) => item.productId);
+    expect(strict[0]).toBe('peach-tea');
+    expect(soft.length).toBeGreaterThan(0);
+    const anyGroup = rankMenuProducts(
+      products,
+      { ...intent, keywords: [], requirements: { ...intent.requirements, includedGroups: ['tea', 'fruit'] } },
+      { keywordsRequired: false, includedGroupsMode: 'any' },
+    ).map((item) => item.productId);
+    expect(anyGroup).toContain('lemon-soda');
+    expect(anyGroup).toContain('matcha-latte');
   });
 });
 

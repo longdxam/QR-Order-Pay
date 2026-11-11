@@ -446,8 +446,12 @@ export const aiRecommendRequestSchema = z.object({
     .optional(),
 });
 
+export const aiRecommendRouteSchema = z.enum(['rules', 'llm', 'llm_fallback']);
+export type AiRecommendRoute = z.infer<typeof aiRecommendRouteSchema>;
+
 export const aiRecommendResponseSchema = z.object({
   mode: z.enum(['llm', 'fallback']),
+  route: aiRecommendRouteSchema.optional(),
   message: z.string(),
   recommendations: z.array(
     z.object({
@@ -462,6 +466,26 @@ export const aiRecommendResponseSchema = z.object({
   followUpQuestion: z.string().optional(),
   latencyMs: z.number().int().optional(),
 });
+
+export const menuTagSuggestionRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(1000).optional(),
+  categoryId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/i)
+    .optional(),
+  tags: z.array(z.string().max(60)).max(30).optional(),
+  flavorProfile: z.array(z.string().max(40)).max(20).optional(),
+  caffeine: z.boolean().nullable().optional(),
+  dairy: z.boolean().nullable().optional(),
+});
+export type MenuTagSuggestionRequest = z.infer<typeof menuTagSuggestionRequestSchema>;
+
+export const menuTagSuggestionResponseSchema = z.object({
+  mode: z.enum(['llm', 'fallback']),
+  tags: z.array(z.string()),
+});
+export type MenuTagSuggestionResponse = z.infer<typeof menuTagSuggestionResponseSchema>;
 
 export const menuSearchIntentSchema = z.object({
   normalizedQuery: z.string(),

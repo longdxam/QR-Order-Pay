@@ -74,7 +74,7 @@ Công thức nền áp dụng khi size không có công thức riêng. Công th�
 | Hồng Trà Sữa          | Cốt hồng trà đã ủ: 180 ml; Sữa tươi: 100 ml; Sữa đặc: 20 ml                                   | Dùng nền cho các size hiện có                                                                                                                                                                                |
 | Smoothie Berry        | Việt quất: 60 g; Dâu tây: 80 g; Chuối bóc vỏ: 80 g; Sữa chua: 100 g; Mật ong: 10 ml           | Dùng nền cho các size hiện có                                                                                                                                                                                |
 | Bánh Cookie Socola    | Cookie socola thành phẩm: 1 cái/phần                                                          | Dùng nền cho các size hiện có                                                                                                                                                                                |
-| Cà phê Sữa Đá (Hết)   | Cà phê hạt rang: 18 g; Sữa đặc: 35 ml                                                         | Dùng nền cho các size hiện có                                                                                                                                                                                |
+| Cà phê Sữa Đá         | Cà phê hạt rang: 18 g; Sữa đặc: 35 ml                                                         | Dùng nền cho các size hiện có                                                                                                                                                                                |
 
 ## Công thức topping cho một phần thêm
 
@@ -89,7 +89,7 @@ Công thức nền áp dụng khi size không có công thức riêng. Công th�
 
 Giữ nguyên liên kết topping hiện tại: Bạc Xỉu Đá có Pudding trứng, Trà Đào Cam Sả có Trân châu trắng, Mocha có Kem cheese. Ba topping còn lại có công thức kho nhưng chưa liên kết vào món trong catalog hiện tại. Không tự đổi tùy chọn món.
 
-Giữ nguyên các món đã xóa: Trà Vải Hoa Hồng, Trà Sữa Oolong và Trà Xanh Matcha Latte. Tên cũ **Cà phê Sữa Đá (Hết)** cũng được giữ nguyên: cờ bán hiện tại của món đang bật, chữ “(Hết)” là nội dung tên cũ, không phải kết quả kiểm tra tồn mới.
+Giữ nguyên các món đã xóa: Trà Vải Hoa Hồng, Trà Sữa Oolong và Trà Xanh Matcha Latte. Ngày 11/11/2026 đã đổi tên **Cà phê Sữa Đá (Hết)** thành **Cà phê Sữa Đá** và thay mô tả hết nguyên liệu bằng mô tả món. Trạng thái bán vẫn do cờ món/size và tồn nguyên liệu quyết định; không gắn chữ hết món cố định vào tên. Lúc kiểm tra, món đang bật bán và đủ nguyên liệu.
 
 ## Bảo toàn dữ liệu và chạy lại
 

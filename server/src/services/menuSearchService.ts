@@ -27,7 +27,7 @@ const KNOWN_TOKENS = ['caphe', 'coffee', 'cafe', 'tra', 'dao', 'dau', 'sua', 'ca
 const STOP_WORDS = new Set([
   'toi', 'minh', 'muon', 'can', 'tim', 'goi', 'y', 'giup', 'cho', 'mot', 'mon', 'do', 'uong', 'co', 'vi', 'duoi', 'toi',
   'da', 'khong', 'it', 'nhieu', 'nghin', 'ngan', 'vnd', 'dong', 'k', 'ngan', 'sach', 'qua', 'gia', 'tam', 'khoang',
-  'caffeine', 'cafein', 'sua', 'ngot', 'duong', 'chua', 'dang', 'dam', 'thanh', 'beo', 'cafe', 'coffee', 'caphe', 'tra',
+  'caffeine', 'cafein', 'ngot', 'duong', 'chua', 'dang', 'dam', 'thanh', 'beo', 'cafe', 'coffee', 'caphe', 'tra',
   'trai', 'cay', 'ca', 'phe',
 ]);
 
@@ -77,7 +77,7 @@ export function parseMenuSearchIntent(query: string, filters: MenuSearchRequest[
   if (/\bthanh\b/.test(normalizedQuery)) flavors.add('light');
   if (/\b(?:beo|ngay)\b/.test(normalizedQuery)) flavors.add('rich');
 
-  const keywords = normalizedQuery
+  const keywords = stripNoMilk(normalizedQuery)
     .split(/\s+/)
     .filter((token) => token.length >= 2 && !STOP_WORDS.has(token) && !/^\d/.test(token))
     .filter((token, index, all) => all.indexOf(token) === index);
@@ -96,7 +96,20 @@ export function parseMenuSearchIntent(query: string, filters: MenuSearchRequest[
   };
 }
 
-export function rankMenuProducts(products: readonly SearchableProduct[], intent: MenuSearchIntent): MenuSearchResponse['items'] {
+export interface RankOptions {
+  /** Search requires at least one keyword hit; recommendations treat keywords as soft hints. */
+  keywordsRequired?: boolean;
+  /** Search requires every included group; recommendations accept any of them. */
+  includedGroupsMode?: 'all' | 'any';
+}
+
+export function rankMenuProducts(
+  products: readonly SearchableProduct[],
+  intent: MenuSearchIntent,
+  options: RankOptions = {},
+): MenuSearchResponse['items'] {
+  const keywordsRequired = options.keywordsRequired ?? true;
+  const groupsMode = options.includedGroupsMode ?? 'all';
   const ranked: Array<MenuSearchResponse['items'][number] & { score: number }> = [];
   for (const product of products) {
     if (!product.isAvailable || product.isArchived) continue;
@@ -110,7 +123,9 @@ export function rankMenuProducts(products: readonly SearchableProduct[], intent:
 
     const text = productText(product);
     const groups = classifyGroups(text);
-    if (intent.requirements.includedGroups.some((group) => !groups.has(group))) continue;
+    const included = intent.requirements.includedGroups;
+    if (groupsMode === 'all' && included.some((group) => !groups.has(group))) continue;
+    if (groupsMode === 'any' && included.length > 0 && !included.some((group) => groups.has(group))) continue;
     if (intent.requirements.excludedGroups.some((group) => groups.has(group))) continue;
 
     const textTokens = text.split(/\s+/);
@@ -121,11 +136,11 @@ export function rankMenuProducts(products: readonly SearchableProduct[], intent:
       keywordScore += score;
       if (score > 0) matchedKeywords += 1;
     }
-    if (intent.keywords.length > 0 && matchedKeywords === 0) continue;
+    if (keywordsRequired && intent.keywords.length > 0 && matchedKeywords === 0) continue;
 
     const flavors = (product.ingredientMetadata?.flavorProfile ?? []).map(fold);
     let score = keywordScore;
-    score += intent.requirements.includedGroups.length * 4;
+    score += included.filter((group) => groups.has(group)).length * 4;
     score += intent.preferences.flavors.filter((flavor) => flavorMatches(flavor, flavors)).length * 3;
     if (intent.preferences.lowSugar && product.allowedOptions.sugarLevels.some((level) => /^(0|25)%$/.test(level))) score += 2;
     if (product.isFeatured) score += 1;
@@ -165,12 +180,17 @@ function cheapestAvailableVariant(product: SearchableProduct) {
 }
 
 function productText(product: SearchableProduct): string {
-  return fold([
+  return stripNoMilk(fold([
     product.name,
     product.description,
     ...(product.tags ?? []),
     ...(product.ingredientMetadata?.flavorProfile ?? []),
-  ].join(' '));
+  ].join(' ')));
+}
+
+function stripNoMilk(text: string): string {
+  // A "without milk" request or description must not become a positive milk keyword.
+  return text.replace(/\bkhong\s+(?:co\s+)?sua\b/g, ' ');
 }
 
 function classifyGroups(text: string): Set<Group> {
@@ -214,6 +234,8 @@ function canonicalizeTypos(value: string): string {
     if (token.length < 3 || /^\d/.test(token)) return token;
     const exact = KNOWN_TOKENS.find((known) => known === token);
     if (exact) return exact;
+    // Three-letter folded words are too ambiguous to fuzz ("qua"→"sua", "lam"→"dam").
+    if (token.length < 4) return token;
     const fuzzy = KNOWN_TOKENS.find((known) => Math.abs(known.length - token.length) <= 1 && levenshtein(known, token) <= 1);
     return fuzzy ?? token;
   }).join(' ');
@@ -233,6 +255,30 @@ function levenshtein(a: string, b: string): number {
     for (let j = 0; j < current.length; j += 1) previous[j] = current[j]!;
   }
   return previous[b.length] ?? 0;
+}
+
+/** Folded tokens that appear in the public menu text (names, descriptions, tags, flavors). */
+export function menuVocabulary(products: readonly SearchableProduct[]): Set<string> {
+  const vocabulary = new Set<string>();
+  for (const product of products) {
+    if (!product.isAvailable || product.isArchived) continue;
+    for (const token of productText(product).split(/\s+/)) if (token.length >= 2) vocabulary.add(token);
+  }
+  return vocabulary;
+}
+
+/** True when a folded token exists in the menu vocabulary, allowing one typo for longer words. */
+export function isMenuTerm(token: string, vocabulary: ReadonlySet<string>): boolean {
+  if (vocabulary.has(token)) return true;
+  if (token.length < 4) return false;
+  for (const known of vocabulary) {
+    if (Math.abs(known.length - token.length) <= 1 && levenshtein(known, token) <= 1) return true;
+  }
+  return false;
+}
+
+export function foldText(value: string): string {
+  return fold(value);
 }
 
 function fold(value: string): string {

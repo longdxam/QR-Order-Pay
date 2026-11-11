@@ -1,4 +1,4 @@
-import type { ClientSession } from 'mongoose';
+import { Types, type ClientSession, type FilterQuery } from 'mongoose';
 import { OrderModel, type OrderDoc } from '../models/Order.js';
 import type { OrderStatus, PaymentStatus } from '@may-cafe/contracts';
 import { settleOrderInventory } from '../services/orderInventoryService.js';
@@ -14,6 +14,28 @@ export const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
 export interface StaffOrderFeedFilters {
   tableSessionIds: string[];
   status?: OrderStatus;
+}
+
+/** Shared scope for KDS and operational counters; aggregate pipelines need real ObjectIds. */
+export function staffOrderFeedQuery(
+  filters: StaffOrderFeedFilters,
+  now = new Date(),
+): FilterQuery<OrderDoc> {
+  return {
+    $or: [
+      { tableSessionId: { $in: filters.tableSessionIds.map((id) => new Types.ObjectId(id)) } },
+      {
+        fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] },
+        'pickup.outcome': 'ACTIVE',
+        $or: [
+          { 'pickup.scheduledAt': null },
+          { 'pickup.scheduledAt': { $lte: new Date(now.getTime() + 15 * 60000) } },
+        ],
+      },
+    ],
+    paymentStatus: 'PAID',
+    status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },
+  };
 }
 
 export interface OrderListFilters {
@@ -94,21 +116,7 @@ export const orderRepository = {
   },
   /** Feed KDS: chỉ đơn của các phiên đang hoạt động, nên không phình theo lịch sử. */
   async listForStaff(filters: StaffOrderFeedFilters): Promise<OrderDoc[]> {
-    return OrderModel.find({
-      $or: [
-        { tableSessionId: { $in: filters.tableSessionIds } },
-        {
-          fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] },
-          'pickup.outcome': 'ACTIVE',
-          $or: [
-            { 'pickup.scheduledAt': null },
-            { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } },
-          ],
-        },
-      ],
-      paymentStatus: 'PAID',
-      status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },
-    }).sort({ createdAt: 1 });
+    return OrderModel.find(staffOrderFeedQuery(filters)).sort({ createdAt: 1 });
   },
   async transitionStatus(
     id: string,

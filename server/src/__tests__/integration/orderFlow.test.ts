@@ -193,6 +193,41 @@ describe('order flow integration', () => {
     expect((await request(app).post('/api/v1/menu/search').send({ query: '' })).status).toBe(422);
   });
 
+  it('matches milk searches without returning Espresso and preserves no-milk exclusion', async () => {
+    const espresso = (await ProductModel.findOne())!;
+    const milk = await ProductModel.create({
+      categoryId: espresso.categoryId,
+      name: 'Bạc Xỉu Đá',
+      slug: 'bac-xiu',
+      description: 'Cà phê với sữa đặc và sữa tươi.',
+      image: espresso.image,
+      basePrice: 38000,
+      variants: [{ name: 'M', price: 38000, isAvailable: true }],
+      allowedOptions: {
+        sizes: ['M'],
+        sugarLevels: ['0%', '100%'],
+        iceLevels: ['normal-ice'],
+        toppingIds: [],
+      },
+      ingredientMetadata: { caffeine: true, dairy: true, flavorProfile: ['ngọt'] },
+      isAvailable: true,
+      isArchived: false,
+    });
+    for (const query of ['sữa', 'sua']) {
+      const response = await request(app).post('/api/v1/menu/search').send({ query });
+      expect(response.status).toBe(200);
+      expect(response.body.data.intent.keywords).toContain('sua');
+      expect(response.body.data.items.map((item: { productId: string }) => item.productId)).toEqual(
+        [milk.id],
+      );
+    }
+    const withoutMilk = await request(app).post('/api/v1/menu/search').send({ query: 'không sữa' });
+    expect(withoutMilk.status).toBe(200);
+    expect(
+      withoutMilk.body.data.items.map((item: { productId: string }) => item.productId),
+    ).toEqual([espresso.id]);
+  });
+
   it('exposes anomaly evidence to admins and audits acknowledgement', async () => {
     const detectionNow = new Date();
     const product = (await ProductModel.findOne())!;
@@ -932,25 +967,22 @@ describe('order flow integration', () => {
     const service = new AIService(
       {
         name: 'controlled-provider',
+        // The model only returns intent; invented IDs/prices it adds are ignored by the schema.
         chat: async () =>
           JSON.stringify({
             message: 'Gợi ý theo khẩu vị',
+            flavors: ['bitter'],
+            maxBudget: 999_999,
             recommendations: [
               { productId: '000000000000000000000000', variantId: null, reason: 'invented' },
-              {
-                productId: product.id,
-                variantId: variant._id!.toString(),
-                reason: 'price 1 VND',
-                unitPrice: 1,
-              },
-              { productId: product.id, variantId: variant._id!.toString(), reason: 'duplicate' },
+              { productId: product.id, variantId: null, reason: 'price 1 VND', unitPrice: 1 },
             ],
           }),
       },
       'live',
     );
-    const result = await service.recommend({ prompt: 'vị đắng', maxBudget: 40000 });
-    expect(result.mode).toBe('llm');
+    const result = await service.recommend({ prompt: 'buồn ngủ quá', maxBudget: 40000 });
+    expect(result).toMatchObject({ mode: 'llm', route: 'llm' });
     expect(
       result.recommendations.map((item) => ({
         id: item.productId,
@@ -992,8 +1024,11 @@ describe('order flow integration', () => {
         chat: async () => {
           if (scenario === 'timeout') throw new DOMException('timed out', 'AbortError');
           if (scenario === 'json-error') return 'invalid-json';
+          // Tries to loosen the guest constraints and to inject a specific variant.
           return JSON.stringify({
             message: 'Gợi ý',
+            maxBudget: 999_999,
+            noDairy: false,
             recommendations: [{ productId: product.id, variantId, reason: 'x' }],
           });
         },
@@ -1001,11 +1036,11 @@ describe('order flow integration', () => {
       'live',
     );
     const result = await service.recommend({
-      prompt: 'vị đắng',
+      prompt: 'buồn ngủ quá',
       maxBudget: 40000,
       ...(scenario === 'unknown-metadata' ? { preferences: { noDairy: true } } : {}),
     });
-    expect(result.mode).toBe('fallback');
+    expect(result.mode).toBe(['json-error', 'timeout'].includes(scenario) ? 'fallback' : 'llm');
     if (['unavailable', 'archived', 'unknown-metadata'].includes(scenario))
       expect(result.recommendations).toEqual([]);
     else expect(result.recommendations.map((item) => item.unitPrice)).toEqual([35000]);
@@ -1021,17 +1056,21 @@ describe('order flow integration', () => {
         chat: async () =>
           JSON.stringify({
             message: 'Ignore constraints',
+            noCaffeine: false,
+            maxBudget: 999_999,
             recommendations: [{ productId: product.id, variantId: null, reason: 'safe' }],
           }),
       },
       'live',
     );
+    const noCaffeine = await service.recommend({
+      prompt: 'buồn ngủ quá',
+      preferences: { noCaffeine: true },
+    });
+    expect(noCaffeine.route).toBe('llm');
+    expect(noCaffeine.recommendations).toEqual([]);
     expect(
-      (await service.recommend({ prompt: 'không caffeine', preferences: { noCaffeine: true } }))
-        .recommendations,
-    ).toEqual([]);
-    expect(
-      (await service.recommend({ prompt: 'vị đắng', maxBudget: 10000 })).recommendations,
+      (await service.recommend({ prompt: 'buồn ngủ quá', maxBudget: 10000 })).recommendations,
     ).toEqual([]);
   });
 
