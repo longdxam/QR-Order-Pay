@@ -101,6 +101,7 @@ async function run() {
       code: i.code,
       name: i.name,
       unit: i.unit,
+      unitCost: i.unitCost,
       lowStockThreshold: i.lowStockThreshold,
     });
     inventoryQuantitySchema.parse(i.openingStock);
@@ -201,6 +202,7 @@ async function run() {
         code: i.code,
         name: i.name,
         unit: i.unit,
+        unitCost: i.unitCost,
         lowStockThreshold: i.lowStockThreshold,
       });
       ids.set(i.code, result.ingredient.id);

@@ -10,11 +10,15 @@ export function MenuCatalog<T extends Product & { categoryId: string; isArchived
   categories,
   onChoose,
   status,
+  title = 'Thực đơn đầy đủ',
+  intro,
 }: {
   products: T[];
   categories: Array<{ _id: string; name: string }>;
   onChoose: (product: T) => void;
   status?: ReactNode;
+  title?: string;
+  intro?: ReactNode;
 }): JSX.Element {
   const visible = products.filter((product) => !product.isArchived);
   const groups = categories.map((category) => ({
@@ -36,11 +40,12 @@ export function MenuCatalog<T extends Product & { categoryId: string; isArchived
     >
       <header className="menu-catalog-heading">
         <div>
-          <h2 id="menu-catalog-title">Thực đơn đầy đủ</h2>
+          <h2 id="menu-catalog-title">{title}</h2>
           <p>Chọn món bạn thích để tùy chỉnh theo khẩu vị.</p>
         </div>
         {!status ? <span>{visible.length} món</span> : null}
       </header>
+      {intro}
       {status ??
         (visible.length === 0 ? (
           <p className="text-sm text-muted-foreground">Thực đơn đang được cập nhật.</p>

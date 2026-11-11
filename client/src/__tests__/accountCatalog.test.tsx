@@ -161,7 +161,7 @@ describe('accounts, toppings and compact receipts', () => {
     );
   });
 
-  it('keeps payment ID collapsed while showing table, order and amount', async () => {
+  it('keeps order codes, collection time and payment ID inside collapsed receipt details', async () => {
     mock.get.mockResolvedValue(
       response({
         items: [
@@ -180,8 +180,11 @@ describe('accounts, toppings and compact receipts', () => {
       }),
     );
     mount(<PaymentAccounting />);
-    expect(await screen.findByText('Bàn 01 · MC01')).toBeTruthy();
+    const title = await screen.findByText('Bàn 01', { exact: true });
+    expect(title.textContent).not.toContain('MC01');
     const details = screen.getByText('Mã khoản thu: long-payment-id').closest('details')!;
+    expect(screen.getByText('Mã đơn: MC01').closest('details')).toBe(details);
+    expect(screen.getByText(/^Thu lúc/).closest('details')).toBe(details);
     expect(details.open).toBe(false);
     fireEvent.click(screen.getByText('Chi tiết'));
     expect(details.open).toBe(true);

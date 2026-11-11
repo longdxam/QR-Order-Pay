@@ -6,6 +6,7 @@
       "code": "COFFEE_BEANS",
       "name": "Cà phê hạt rang",
       "unit": "g",
+      "unitCost": 280,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -13,6 +14,7 @@
       "code": "FRESH_MILK",
       "name": "Sữa tươi",
       "unit": "ml",
+      "unitCost": 32,
       "openingStock": 5000,
       "lowStockThreshold": 500
     },
@@ -20,6 +22,7 @@
       "code": "CONDENSED_MILK",
       "name": "Sữa đặc",
       "unit": "ml",
+      "unitCost": 65,
       "openingStock": 2000,
       "lowStockThreshold": 200
     },
@@ -27,6 +30,7 @@
       "code": "COCONUT_MILK",
       "name": "Cốt dừa",
       "unit": "ml",
+      "unitCost": 70,
       "openingStock": 1500,
       "lowStockThreshold": 150
     },
@@ -34,6 +38,7 @@
       "code": "COLD_BREW_BASE",
       "name": "Cốt cold brew đã ủ",
       "unit": "ml",
+      "unitCost": 30,
       "openingStock": 3000,
       "lowStockThreshold": 300
     },
@@ -41,6 +46,7 @@
       "code": "FRUIT_TEA_BASE",
       "name": "Cốt trà trái cây không caffeine",
       "unit": "ml",
+      "unitCost": 8,
       "openingStock": 5000,
       "lowStockThreshold": 500
     },
@@ -48,6 +54,7 @@
       "code": "BLACK_TEA_BASE",
       "name": "Cốt hồng trà đã ủ",
       "unit": "ml",
+      "unitCost": 7,
       "openingStock": 4000,
       "lowStockThreshold": 400
     },
@@ -55,6 +62,7 @@
       "code": "PEACH",
       "name": "Đào miếng",
       "unit": "g",
+      "unitCost": 75,
       "openingStock": 1500,
       "lowStockThreshold": 150
     },
@@ -62,6 +70,7 @@
       "code": "ORANGE",
       "name": "Cam tươi sơ chế",
       "unit": "g",
+      "unitCost": 35,
       "openingStock": 6000,
       "lowStockThreshold": 600
     },
@@ -69,6 +78,7 @@
       "code": "LEMONGRASS",
       "name": "Sả tươi",
       "unit": "g",
+      "unitCost": 25,
       "openingStock": 200,
       "lowStockThreshold": 20
     },
@@ -76,6 +86,7 @@
       "code": "AVOCADO",
       "name": "Thịt bơ",
       "unit": "g",
+      "unitCost": 95,
       "openingStock": 2000,
       "lowStockThreshold": 200
     },
@@ -83,6 +94,7 @@
       "code": "MANGO",
       "name": "Thịt xoài",
       "unit": "g",
+      "unitCost": 55,
       "openingStock": 2000,
       "lowStockThreshold": 200
     },
@@ -90,6 +102,7 @@
       "code": "STRAWBERRY",
       "name": "Dâu tây",
       "unit": "g",
+      "unitCost": 150,
       "openingStock": 2000,
       "lowStockThreshold": 200
     },
@@ -97,6 +110,7 @@
       "code": "YOGURT",
       "name": "Sữa chua",
       "unit": "g",
+      "unitCost": 45,
       "openingStock": 3000,
       "lowStockThreshold": 300
     },
@@ -104,6 +118,7 @@
       "code": "HONEY",
       "name": "Mật ong",
       "unit": "ml",
+      "unitCost": 140,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -111,6 +126,7 @@
       "code": "BLUEBERRY",
       "name": "Việt quất",
       "unit": "g",
+      "unitCost": 280,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -118,6 +134,7 @@
       "code": "BANANA",
       "name": "Chuối bóc vỏ",
       "unit": "g",
+      "unitCost": 30,
       "openingStock": 1500,
       "lowStockThreshold": 150
     },
@@ -125,6 +142,7 @@
       "code": "WATERMELON",
       "name": "Thịt dưa hấu",
       "unit": "g",
+      "unitCost": 22,
       "openingStock": 5000,
       "lowStockThreshold": 500
     },
@@ -132,6 +150,7 @@
       "code": "CARROT",
       "name": "Cà rốt sơ chế",
       "unit": "g",
+      "unitCost": 25,
       "openingStock": 4000,
       "lowStockThreshold": 400
     },
@@ -139,6 +158,7 @@
       "code": "GINGER",
       "name": "Gừng tươi",
       "unit": "g",
+      "unitCost": 55,
       "openingStock": 300,
       "lowStockThreshold": 30
     },
@@ -146,6 +166,7 @@
       "code": "HAZELNUT_SYRUP",
       "name": "Syrup hạt phỉ",
       "unit": "ml",
+      "unitCost": 150,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -153,6 +174,7 @@
       "code": "CHOCOLATE_SAUCE",
       "name": "Sốt chocolate",
       "unit": "ml",
+      "unitCost": 110,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -160,6 +182,7 @@
       "code": "BLACK_PEARL",
       "name": "Trân châu đen đã nấu",
       "unit": "g",
+      "unitCost": 25,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -167,6 +190,7 @@
       "code": "WHITE_PEARL",
       "name": "Trân châu trắng đã chuẩn bị",
       "unit": "g",
+      "unitCost": 45,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -174,6 +198,7 @@
       "code": "COFFEE_JELLY",
       "name": "Thạch cà phê đã chuẩn bị",
       "unit": "g",
+      "unitCost": 22,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -181,6 +206,7 @@
       "code": "EGG_PUDDING",
       "name": "Pudding trứng thành phẩm",
       "unit": "unit",
+      "unitCost": 4500,
       "openingStock": 20,
       "lowStockThreshold": 3
     },
@@ -188,6 +214,7 @@
       "code": "CHEESE_FOAM",
       "name": "Kem cheese đã đánh",
       "unit": "g",
+      "unitCost": 90,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -195,6 +222,7 @@
       "code": "CARAMEL_SAUCE",
       "name": "Sốt caramel",
       "unit": "ml",
+      "unitCost": 100,
       "openingStock": 1000,
       "lowStockThreshold": 100
     },
@@ -202,6 +230,7 @@
       "code": "CROISSANT_READY",
       "name": "Croissant thành phẩm",
       "unit": "unit",
+      "unitCost": 14000,
       "openingStock": 30,
       "lowStockThreshold": 5
     },
@@ -209,6 +238,7 @@
       "code": "TIRAMISU_READY",
       "name": "Tiramisu thành phẩm (phần)",
       "unit": "unit",
+      "unitCost": 22000,
       "openingStock": 20,
       "lowStockThreshold": 3
     },
@@ -216,6 +246,7 @@
       "code": "MOUSSE_READY",
       "name": "Mousse chanh dây thành phẩm (phần)",
       "unit": "unit",
+      "unitCost": 19000,
       "openingStock": 20,
       "lowStockThreshold": 3
     },
@@ -223,6 +254,7 @@
       "code": "COOKIE_READY",
       "name": "Cookie socola thành phẩm",
       "unit": "unit",
+      "unitCost": 7000,
       "openingStock": 50,
       "lowStockThreshold": 5
     }

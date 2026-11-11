@@ -1,6 +1,45 @@
 # Bộ nhớ dự án — Fantastic Cafe
 
-Cập nhật: 10/11/2026.
+Cập nhật: 11/11/2026.
+
+## Checkpoint Git: giá vốn, khoản thu và tìm món — 11/11/2026
+
+- User yêu cầu push các thay đổi vừa hoàn tất lên Git. Nhánh main, origin `https://github.com/longdxam/QR-Order-Pay`; fetch xác nhận HEAD/origin/main cùng3cced71 trước checkpoint. Phạm vi:32giá vốn mẫu và script bổ sung qua API, Khoản thu/Danh mục gọn hơn, tìm kiếm dẫn tới catalog có lọc, chữ input16px và kết quả ngắn gọn, tests/docs/PWA69. Xem git log/remote để lấy SHA checkpoint mới.
+- Kết quả kiểm tra ở các mục bên dưới; Safari/iPhonezoom thực tế vẫn chưa xác minh. Những dòng chưacommit/push bên dưới là trạng thái lịch sử trước checkpoint này. Lượt Git không chạy lại seed hoặc thay runtime/publicURL/dữ liệu quán; .env/.cache không đưa lên Git.
+
+## Kiểm tra lại toàn bộ một lượt — 11/11/2026
+
+- User yêu cầu test lại hết. Không sửa source. Lint (server + boundaries, client, max-warnings 0), typecheck server/client/contracts PASS. **557 test PASS = 110 unit (18 file) + 191 client (30 file) + 256 integration (12 file, MongoMemoryReplSet tạm)**. Log lỗi level 50 ở unit là ca readiness giả lập lỗi, không phải fail. Prettier các file đang sửa, `git diff --check` và cú pháp sw.js PASS. Logs `.cache/full-recheck-{lint,typecheck,unit,client,integration}.log`.
+- Lightpanda (container `lightpanda/browser:nightly` cổng 9224 + relay node:24-alpine dùng chung network, chạy `.cache/startup-relay-20261018.cjs`) chỉ đọc, PASS: public vào bàn/menu, tìm kiếm 375/1280 + PWA69, Staff/Admin nav/logout/Vận hành, Khoản thu 30 thẻ/32 giá vốn/Danh mục. `inventory-cost-ui-smoke.mjs` gốc fail chỉ vì hard-code PWA v67; bản copy sửa thành v69 `.cache/full-recheck-inventory-cost-v69.mjs` PASS. Không có business write/pageerror/5xx; chỉ DOM/network, chưa kiểm trực quan/điện thoại thật. Đã dọn container LP/relay, giữ stack/public chạy. Chưa commit/push.
+
+## Tránh zoom ô tìm trên điện thoại, rút gọn kết quả — 11/11/2026
+
+- User báo focus tìm kiếm trên điện thoại tự phóng to rồi giữ zoom, yêu cầu bỏ giải thích giá, Đã hiểu/từ khóa tự do/hướng dẫn sửa câu. Nguyên nhân trong source: searchinput12px desktop/11px mobile. Đổi `.menu-search input` thành16px và bỏ override11px; không thay meta viewport, không vô hiệu pinch zoom hay ép reset scale bằng JS. Phòng ngừa auto-focus zoom của Safari; không tuyên bố đã xác minh iPhone thực tế.
+- MenuPage bỏ UnderstoodFilters và import Badge/vnd không còn dùng; success summary tự hiển thị Tìm thấy N món phù hợp theo filtered.length, không dùng message verbose từ server. Từ khóa, kết quả, bộ lọc, Enter/icon cuộn/focus, empty/error/retry và nút trở lại đầy đủ giữ nguyên. Existing integration test bổ sung assert loại bỏ copy thừa và count thực tế (loại archived), không thêm test mirror CSS.
+- **PWA v69**, deploy riêngweb. Focused menuCatalog+menuShowcase13/13PASS, fullclientlint/DockerTypeScript-Vitebuild/Prettier/swsyntax/diff-checkPASS. Lightpanda local375/1280PASS luồng tìm/chọn/reset, copy/count; kiểm tra stylesheet thực được phục vụ có16px/không11-12px override, viewport vẫn chozoom. PublicHTTPS375PASS tìm croissant1thẻ/countgọn/copyđãbỏ; publichealth200. Harness đầy đủ dùng Nodefetch public banđầu timeout/ECONNRESET, tunnel có DNSrefresh timeout, localapphealthy; kiểm tra public cuối dùng LPnetwork trực tiếp đạt, không restarttunnel/đổiURL. Logs `.cache/menu-search-mobile-{tests,lint,build,deploy,smoke-local,public}.log`.
+- **Lightpanda chỉDOM/network/sourceCSS: chưa xác minh native Safari tự zoom/blur, bố cục trực quan hoặc bàn phím điện thoại thật.** DọnLP/relay tạm, giữ app/public chạy tại https://appearing-gallery-attached-gasoline.trycloudflare.com/menu. Chưa commit/push.
+
+## Tìm kiếm dẫn tới danh sách món phù hợp — 11/11/2026
+
+- User báo tìm món khách hàng sai hành vi: chỉ đổi hero, catalog vẫn đầy đủ. Đã sửa `MenuPage` và `MenuCatalog`: catalog dùng kết quả `/menu/search` khi có từ khóa/bộ lọc, tiêu đề Kết quả tìm kiếm, có câu tìm kiếm/intent và nút Xem toàn bộ thực đơn xóa toàn bộ tìm/lọc. Loại archived ngay khi map response về catalog. Không tìm thì vẫn toàn bộ20món hiện tại, kể cả món tạm hết; chọn danh mục ở hero khi không tìm vẫn không cắt catalog như yêu cầu trước.
+- Search input là native form, nút kính lúp submit thật + enterKeyHint search + aria-controls. Enter/icon/phím Tìm gửi ngay (không chờ debounce), cuộn native tới #menu-catalog và focus preventScroll, respect reduced motion. Đổi từ khóa reset category all để không giấu kết quả khác nhóm. Gõ tiếp giữ debounce350ms cập nhật danh sách, chỉ submit mới cuộn. Pending/error/empty ở catalog; kết quả cũ/đầy đủ không hiện lẫn khi đang chờ hoặc không khớp. Không thay backend/thuật toán hay endpoint. Chọn món từ kết quả vẫn mở modal, không tự thêm giỏ/đặt đơn.
+- **PWA v68**, deploy riêng web giữ public URL/cookie/tunnel/dữ liệu. Focused menuCatalog+menuShowcase **13/13PASS**, full client lint PASS, Docker TypeScript/Vite build PASS. 4 integrationcases mới: submit/scroll/focus/cross-category/archived/reset/modal; empty; pending/late response; error/retry. Lượt test đầu phát hiện message rỗng lặp ở intro+empty, đã bỏ lặp; build đầu phát hiện thuộc tính exact không thuộc Testing Library ByRoleOptions, sửa test rồi build lại đạt. Logs `.cache/menu-search-catalog-{tests-final,lint,build-final,deploy,smoke}.log`.
+- Lightpanda public HTTPS375/1280 PASS Enter/icon submit, section focus, resetcategory, croissant/cà phê không sữa khớp đúng ID từ server, từ khóa vô nghĩa0card/empty, chọn kết quả mở modal, reset đủ20món, PWA68/3localhealth; không businesswrite/pageerror/5xx (POST menu/search chỉ đọc). **Chỉ DOM/network: chưa xác minh vị trí cuộn trực quan, hiệu ứng smooth hoặc bàn phím điện thoại thật.** Dọn LP/relay tạm, giữ stack/public healthy. Chưa commit/push.
+
+## Giá vốn mẫu và thu gọn Khoản thu/Danh mục — 11/11/2026
+
+- User yêu cầu tự tạo giá vốn nguyên liệu, bỏ mã sau tên bàn, ẩn thời gian thu trong Chi tiết, bỏ slug/hướng dẫn slug/số món khỏi thẻ Danh mục. Đã hoàn thành, deploy riêng web, **PWA v67**.
+- 32 nguyên liệu hiện có đều chưa có unitCost. Thêm32 giá mẫu (đồng/g, đồng/ml, đồng/đơn vị) vào `docs/data/inventory-demo.json`, ví dụ cà phê280đ/g, sữa32đ/ml, croissant14000đ/cái; đây là dữ liệu tự tạo, không phải báo giá thực tế. `scripts/setup-inventory-costs.mjs` mặc định preview, `--apply` ghi qua Admin API có audit/optimistic locking, chỉ điền null/undefined, giữ cả giá0 có sẵn, re-read trước mỗi ghi. Đã apply32 và chạy lại0; exact so sánh overview chứng minh tồn/giữ/ngưỡng/tên/cờ/công thức/catalog không đổi. Không chạy seed reset hoặc nhập thêm tồn. `setup-inventory-demo.mjs` lấy unitCost khi tạo mới. Docs bảng giá/cách chạy/kịch bản kiểm tra cập nhật.
+- PaymentAccounting Staff/Admin: ngoài thẻ chỉ tên bàn hoặc Mang đi, loại bỏ mã đơn cạnh tên và trùng tên bàn. Component ReceiptDetails trong native details đóng mặc định giữ mã đơn/mã khoản thu/Thu lúc/liên kết thay thế và thông tin hoàn. Trạng thái/tiền/phương thức/nút điều chỉnh và quyết định duyệt giữ nguyên. Thông tin quyết định quan trọng trong modal vẫn giữ mã. AdminCategories bỏ hintslug/slug/count trên thẻ; tên modal sửa dùng tên danh mục, logic tạo slug/xóa-chuyển món vẫn giữ.
+- Focused accountCatalog+inventory **11/11PASS**, full client lint PASS, Docker web TypeScript/Vite build PASS, node syntax/Prettier/diff-check PASS. Lightpanda smoke Staff/Admin khoản thu30thẻ mỗi portal, open/close Chi tiết,32giá nguyên liệu/recipepanel, Danh mục375/1280, publicAPI/PWA67 PASS; không businesswrite/pageerror/5xx trong smoke. Lượt smoke đầu fail vì locator label công thức exact bao gồm textoption trong Field, sửa harness bỏ exact rồi PASS, không sửa app để né. Logs `.cache/inventory-costs-{preview,apply,rerun}.log`, `.cache/inventory-cost-ui-{tests,lint,build,deploy,smoke-final}.log`, harness `.cache/inventory-cost-ui-smoke.mjs`. Lightpanda chỉ kiểm tra DOM/network, chưa xác minh trực quan bố cục thực tế.
+- Dọn LP/relay tạm, giữ toàn stack/public tunnel healthy tại https://appearing-gallery-attached-gasoline.trycloudflare.com/menu. Chưa commit/push trong lượt này.
+
+## Khôi phục đường dẫn public vào bàn — 11/11/2026
+
+- User báo không vào được bàn sau khi bật web. Stack local healthy nhưng `fantastic-public-tunnel` exited255; đã chạy `scripts/public-web.ps1`, giữ dữ liệu/QR epochs/secrets, khởi động tunnel và cập nhật PUBLIC_APP_URL/cookie public overlay.
+- **Địa chỉ public hiện tại: https://appearing-gallery-attached-gasoline.trycloudflare.com/menu**. Địa chỉ `host-weekly-tonight-festivals` trong các mục cũ không còn dùng. Cần tải lại Staff/Admin và mở Xem QR tĩnh để lấy mã chứa hostname mới; QR ảnh/link cũ không tự cập nhật.
+- Read-only xác minh QR của10bàn active đều HTTPS đúng origin và resolveAdmissionTable hợp lệ; không join/mở phiên thử hay ghi nghiệp vụ. Lightpanda DOM/network PASS form vào bàn375/1280, menu/catalog, public health/categories/current API200, không pageerror. Chưa xác minh camera/điện thoại thực tế hoặc POST vào bàn. Harness `.cache/table-entry-restart-smoke.mjs`; log restart `.cache/restart-public-web.log`.
+- Dọn Lightpanda/relay thử nghiệm, giữ app và public tunnel chạy.
 
 ## Checkpoint giao diện và luồng menu lên Git — 10/11/2026
 

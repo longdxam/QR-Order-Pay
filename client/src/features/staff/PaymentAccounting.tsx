@@ -56,6 +56,39 @@ const KINDS = {
   TRANSFER: 'Chuyển sang đúng đơn',
 };
 
+function receiptLocation(receipt: Receipt): string {
+  return [...new Set(receipt.orders.map((order) => order?.tableName ?? 'Đơn đã lưu trữ'))].join(
+    ', ',
+  );
+}
+
+function ReceiptDetails({ receipt }: { receipt: Receipt }): JSX.Element {
+  return (
+    <>
+      <p className="mt-2">
+        Thu lúc {new Date(receipt.paidAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+      </p>
+      <p className="mt-1">
+        Mã đơn:{' '}
+        {receipt.orders
+          .map((order) => order?.code)
+          .filter(Boolean)
+          .join(', ') || 'Đơn đã lưu trữ'}
+      </p>
+      <p className="mt-1 break-all">Mã khoản thu: {receipt.id}</p>
+      {receipt.replacesPaymentId ? (
+        <p className="mt-1 break-all">Thay thế: {receipt.replacesPaymentId}</p>
+      ) : null}
+      {receipt.refundedAt ? (
+        <p className="mt-1">
+          {new Date(receipt.refundedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} ·{' '}
+          {receipt.refundReason}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.Element {
   useDocumentTitle('Khoản thu');
   const [page, setPage] = useState(1);
@@ -158,15 +191,17 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               </p>
               {item.receipt ? (
                 <p className="text-sm">
-                  {item.receipt.orders
-                    .map((order) => (order ? `${order.tableName} · ${order.code}` : ''))
-                    .join(', ')}{' '}
-                  · {vnd(item.receipt.amount)} · {METHODS[item.receipt.method]}
+                  {receiptLocation(item.receipt)} · {vnd(item.receipt.amount)} ·{' '}
+                  {METHODS[item.receipt.method]}
                 </p>
               ) : null}
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">Chi tiết</summary>
-                <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                {item.receipt ? (
+                  <ReceiptDetails receipt={item.receipt} />
+                ) : (
+                  <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                )}
               </details>
               <p className="text-sm">{item.reason}</p>
               {item.method ? (
@@ -215,26 +250,13 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
           <div className="grid gap-3 lg:grid-cols-2">
             {query.data.items.map((item) => (
               <Card key={item.id} className="space-y-2 p-4">
-                <p className="font-semibold">
-                  {item.orders
-                    .map((order) =>
-                      order ? `${order.tableName} · ${order.code}` : 'Đơn đã lưu trữ',
-                    )
-                    .join(', ')}
-                </p>
+                <p className="font-semibold">{receiptLocation(item)}</p>
                 <p>
                   {vnd(item.amount)} · {METHODS[item.method]}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Thu lúc{' '}
-                  {new Date(item.paidAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
-                </p>
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">Chi tiết</summary>
-                  <p className="mt-2 break-all">Mã khoản thu: {item.id}</p>
-                  {item.replacesPaymentId ? (
-                    <p className="mt-1 break-all">Thay thế: {item.replacesPaymentId}</p>
-                  ) : null}
+                  <ReceiptDetails receipt={item} />
                 </details>
                 <p className="text-sm">
                   {item.status === 'SUCCESS'
@@ -243,11 +265,6 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                       ? 'Đã đảo ghi nhận'
                       : 'Đã hoàn tiền'}
                 </p>
-                {item.refundedAt ? (
-                  <p className="text-sm">
-                    {new Date(item.refundedAt).toLocaleString('vi-VN')} · {item.refundReason}
-                  </p>
-                ) : null}
                 {item.status === 'SUCCESS' &&
                 !pending.some((correction) => correction.paymentId === item.id) ? (
                   <Button
@@ -293,12 +310,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               </p>
               {item.receipt ? (
                 <p className="text-muted-foreground">
-                  {item.receipt.orders
-                    .map((order) =>
-                      order ? `${order.tableName} · ${order.code}` : 'Đơn đã lưu trữ',
-                    )
-                    .join(', ')}{' '}
-                  · {vnd(item.receipt.amount)}
+                  {receiptLocation(item.receipt)} · {vnd(item.receipt.amount)}
                 </p>
               ) : null}
               <p>{item.reason}</p>
@@ -307,7 +319,11 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               </p>
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">Chi tiết</summary>
-                <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                {item.receipt ? (
+                  <ReceiptDetails receipt={item.receipt} />
+                ) : (
+                  <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                )}
               </details>
             </Card>
           ))}

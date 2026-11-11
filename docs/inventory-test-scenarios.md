@@ -25,6 +25,7 @@ Dữ liệu đã nạp ngày **19/10/2026**: **32 nguyên liệu**, **32 phiếu
 ### Đối chiếu dữ liệu mẫu
 
 1. Mở kho, kiểm tra 32 nguyên liệu và 28 công thức bật.
+   Giá vốn mẫu đã bổ sung ngày 11/11/2026: cà phê **280 đ/g**, sữa tươi **32 đ/ml**, croissant **14.000 đ/đơn vị**. Cả 32 nguyên liệu đều có giá; số liệu đầy đủ tại [bộ dữ liệu kho mẫu](inventory-demo-data.md). Giá tính theo g/ml/đơn vị hiển thị, không nhân 1.000 theo số lượng lưu nội bộ.
 2. Kiểm tra ví dụ: cà phê hạt **1000 g**, sữa tươi **5000 ml**, sả **200 g**, trân châu trắng **1000 g**, croissant **30 cái**. Ban đầu đang giữ bằng 0.
 3. Trong Công thức chọn Espresso Mây: S **18 g**, M **24 g**, L **30 g** cà phê. Chọn Trà Đào Cam Sả: M **5 g sả**, L **8 g sả**.
 4. Lịch sử có 32 dòng Nhập kho, có lý do chứa `fantastic-inventory-demo-v1`. Danh sách phân trang 30 dòng, nên kiểm tra cả trang 2; sau khi bạn test sẽ có thêm dòng.

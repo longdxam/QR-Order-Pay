@@ -118,9 +118,6 @@ export function AdminCategories(): JSX.Element {
             <Plus className="h-4 w-4" /> Tạo
           </Button>
         </form>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Slug tự sinh từ tên (vd: "Trà sữa" → "tra-sua").
-        </p>
       </Card>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {listQuery.data?.categories.map((c) => (
@@ -128,10 +125,6 @@ export function AdminCategories(): JSX.Element {
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-display font-semibold">{c.name}</p>
-                <p className="text-xs text-muted-foreground">{c.slug}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {c.productCount ?? 0} món (gồm món đã xóa mềm)
-                </p>
               </div>
               <span className={`text-xs ${c.isActive ? 'text-success' : 'text-muted-foreground'}`}>
                 {c.isActive ? 'Đang hiển thị' : 'Đã ẩn'}
@@ -238,7 +231,7 @@ export function AdminCategories(): JSX.Element {
       <Modal
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
-        title={`Sửa danh mục: ${editing?.slug ?? ''}`}
+        title={`Sửa danh mục: ${editing?.name ?? ''}`}
       >
         <form
           className="space-y-3"

@@ -161,7 +161,8 @@
   width: 100%;
   background: transparent;
   color: rgb(var(--c-foreground));
-  font-size: 12px;
+  /* Keep focused search text large enough to avoid Safari's automatic input zoom. */
+  font-size: 16px;
   outline: none;
 }
 .menu-search input::placeholder {
@@ -646,9 +647,6 @@
     flex: 1;
     padding-inline: 13px;
     gap: 8px;
-  }
-  .menu-search input {
-    font-size: 11px;
   }
   .menu-tool-button,
   .menu-ai-button {

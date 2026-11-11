@@ -4,42 +4,46 @@
 
 Trái cây tính phần ăn được sau sơ chế; trà/cold brew, topping và bánh là bán thành phẩm/thành phẩm. Không hạch toán nước, đá hoặc lượng đường thêm theo lựa chọn. Công thức không thay đổi theo mức đường/đá trong phiên bản hiện tại.
 
+Ngày 11/11/2026 bổ sung giá vốn mẫu cho 32 nguyên liệu. `unitCost` tính bằng **đồng/g, đồng/ml hoặc đồng/cái/phần** theo đơn vị nguyên liệu, không phải theo 1.000 đơn vị lưu kho nội bộ. Đây là số liệu tự tạo cho bản demo, không phải báo giá nhà cung cấp. Ví dụ: cà phê 280 đ/g tương đương 280.000 đ/kg; sữa tươi 32 đ/ml tương đương 32.000 đ/lít; croissant 14.000 đ/cái.
+
+Để bổ sung giá vốn còn thiếu vào dữ liệu đã có, chạy `node scripts/setup-inventory-costs.mjs` để xem trước, thêm `--apply` để ghi qua API quản trị có audit và kiểm tra phiên bản. Dùng các biến `INVENTORY_ADMIN_PASSWORD`, `INVENTORY_ADMIN_EMAIL`, `INVENTORY_API_URL` như bộ nạp kho. Script chỉ điền ô chưa có giá, giữ giá đã nhập kể cả 0; không nhập thêm tồn hoặc sửa công thức. Chạy lại không ghi trùng. Báo cáo nằm trong `.cache/inventory-costs-report.json`. Bộ nạp kho gốc cũng lấy `unitCost` khi tạo nguyên liệu mới.
+
 ## Nguyên liệu và tồn đầu
 
-| Mã              | Nguyên liệu                        | Đơn vị   | Tồn đầu | Ngưỡng sắp hết |
-| --------------- | ---------------------------------- | -------- | ------: | -------------: |
-| COFFEE_BEANS    | Cà phê hạt rang                    | g        |   1.000 |            100 |
-| FRESH_MILK      | Sữa tươi                           | ml       |   5.000 |            500 |
-| CONDENSED_MILK  | Sữa đặc                            | ml       |   2.000 |            200 |
-| COCONUT_MILK    | Cốt dừa                            | ml       |   1.500 |            150 |
-| COLD_BREW_BASE  | Cốt cold brew đã ủ                 | ml       |   3.000 |            300 |
-| FRUIT_TEA_BASE  | Cốt trà trái cây không caffeine    | ml       |   5.000 |            500 |
-| BLACK_TEA_BASE  | Cốt hồng trà đã ủ                  | ml       |   4.000 |            400 |
-| PEACH           | Đào miếng                          | g        |   1.500 |            150 |
-| ORANGE          | Cam tươi sơ chế                    | g        |   6.000 |            600 |
-| LEMONGRASS      | Sả tươi                            | g        |     200 |             20 |
-| AVOCADO         | Thịt bơ                            | g        |   2.000 |            200 |
-| MANGO           | Thịt xoài                          | g        |   2.000 |            200 |
-| STRAWBERRY      | Dâu tây                            | g        |   2.000 |            200 |
-| YOGURT          | Sữa chua                           | g        |   3.000 |            300 |
-| HONEY           | Mật ong                            | ml       |   1.000 |            100 |
-| BLUEBERRY       | Việt quất                          | g        |   1.000 |            100 |
-| BANANA          | Chuối bóc vỏ                       | g        |   1.500 |            150 |
-| WATERMELON      | Thịt dưa hấu                       | g        |   5.000 |            500 |
-| CARROT          | Cà rốt sơ chế                      | g        |   4.000 |            400 |
-| GINGER          | Gừng tươi                          | g        |     300 |             30 |
-| HAZELNUT_SYRUP  | Syrup hạt phỉ                      | ml       |   1.000 |            100 |
-| CHOCOLATE_SAUCE | Sốt chocolate                      | ml       |   1.000 |            100 |
-| BLACK_PEARL     | Trân châu đen đã nấu               | g        |   1.000 |            100 |
-| WHITE_PEARL     | Trân châu trắng đã chuẩn bị        | g        |   1.000 |            100 |
-| COFFEE_JELLY    | Thạch cà phê đã chuẩn bị           | g        |   1.000 |            100 |
-| EGG_PUDDING     | Pudding trứng thành phẩm           | cái/phần |      20 |              3 |
-| CHEESE_FOAM     | Kem cheese đã đánh                 | g        |   1.000 |            100 |
-| CARAMEL_SAUCE   | Sốt caramel                        | ml       |   1.000 |            100 |
-| CROISSANT_READY | Croissant thành phẩm               | cái/phần |      30 |              5 |
-| TIRAMISU_READY  | Tiramisu thành phẩm (phần)         | cái/phần |      20 |              3 |
-| MOUSSE_READY    | Mousse chanh dây thành phẩm (phần) | cái/phần |      20 |              3 |
-| COOKIE_READY    | Cookie socola thành phẩm           | cái/phần |      50 |              5 |
+| Mã              | Nguyên liệu                        | Đơn vị   | Tồn đầu | Ngưỡng sắp hết | Giá vốn (đ/đơn vị) |
+| --------------- | ---------------------------------- | -------- | ------: | -------------: | -----------------: |
+| COFFEE_BEANS    | Cà phê hạt rang                    | g        |   1.000 |            100 |                280 |
+| FRESH_MILK      | Sữa tươi                           | ml       |   5.000 |            500 |                 32 |
+| CONDENSED_MILK  | Sữa đặc                            | ml       |   2.000 |            200 |                 65 |
+| COCONUT_MILK    | Cốt dừa                            | ml       |   1.500 |            150 |                 70 |
+| COLD_BREW_BASE  | Cốt cold brew đã ủ                 | ml       |   3.000 |            300 |                 30 |
+| FRUIT_TEA_BASE  | Cốt trà trái cây không caffeine    | ml       |   5.000 |            500 |                  8 |
+| BLACK_TEA_BASE  | Cốt hồng trà đã ủ                  | ml       |   4.000 |            400 |                  7 |
+| PEACH           | Đào miếng                          | g        |   1.500 |            150 |                 75 |
+| ORANGE          | Cam tươi sơ chế                    | g        |   6.000 |            600 |                 35 |
+| LEMONGRASS      | Sả tươi                            | g        |     200 |             20 |                 25 |
+| AVOCADO         | Thịt bơ                            | g        |   2.000 |            200 |                 95 |
+| MANGO           | Thịt xoài                          | g        |   2.000 |            200 |                 55 |
+| STRAWBERRY      | Dâu tây                            | g        |   2.000 |            200 |                150 |
+| YOGURT          | Sữa chua                           | g        |   3.000 |            300 |                 45 |
+| HONEY           | Mật ong                            | ml       |   1.000 |            100 |                140 |
+| BLUEBERRY       | Việt quất                          | g        |   1.000 |            100 |                280 |
+| BANANA          | Chuối bóc vỏ                       | g        |   1.500 |            150 |                 30 |
+| WATERMELON      | Thịt dưa hấu                       | g        |   5.000 |            500 |                 22 |
+| CARROT          | Cà rốt sơ chế                      | g        |   4.000 |            400 |                 25 |
+| GINGER          | Gừng tươi                          | g        |     300 |             30 |                 55 |
+| HAZELNUT_SYRUP  | Syrup hạt phỉ                      | ml       |   1.000 |            100 |                150 |
+| CHOCOLATE_SAUCE | Sốt chocolate                      | ml       |   1.000 |            100 |                110 |
+| BLACK_PEARL     | Trân châu đen đã nấu               | g        |   1.000 |            100 |                 25 |
+| WHITE_PEARL     | Trân châu trắng đã chuẩn bị        | g        |   1.000 |            100 |                 45 |
+| COFFEE_JELLY    | Thạch cà phê đã chuẩn bị           | g        |   1.000 |            100 |                 22 |
+| EGG_PUDDING     | Pudding trứng thành phẩm           | cái/phần |      20 |              3 |              4.500 |
+| CHEESE_FOAM     | Kem cheese đã đánh                 | g        |   1.000 |            100 |                 90 |
+| CARAMEL_SAUCE   | Sốt caramel                        | ml       |   1.000 |            100 |                100 |
+| CROISSANT_READY | Croissant thành phẩm               | cái/phần |      30 |              5 |             14.000 |
+| TIRAMISU_READY  | Tiramisu thành phẩm (phần)         | cái/phần |      20 |              3 |             22.000 |
+| MOUSSE_READY    | Mousse chanh dây thành phẩm (phần) | cái/phần |      20 |              3 |             19.000 |
+| COOKIE_READY    | Cookie socola thành phẩm           | cái/phần |      50 |              5 |              7.000 |
 
 Mức cảnh báo áp dụng cho **tồn thực trừ lượng đang giữ**. Tồn đầu không có lượng giữ và không có nguyên liệu sắp hết. Sau khi test đặt/pha chế, số liệu có thể khác; bộ nạp không tự reset.
 

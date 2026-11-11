@@ -2,10 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Sparkles, SlidersHorizontal, X } from 'lucide-react';
 import type { MenuSearchResponse } from '@may-cafe/contracts';
-import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
+import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { Input } from '../../components/ui/Input';
-import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
@@ -109,7 +108,11 @@ export function MenuPage(): JSX.Element {
 
   const filtered = useMemo(() => {
     if (!menuQuery.data) return [];
-    const byId = new Map(menuQuery.data.products.map((product) => [product._id, product]));
+    const byId = new Map(
+      menuQuery.data.products
+        .filter((product) => !product.isArchived)
+        .map((product) => [product._id, product]),
+    );
     const list = searchActive
       ? (searchQuery.data?.items
           .map((item) => byId.get(item.productId))
@@ -122,6 +125,27 @@ export function MenuPage(): JSX.Element {
   }, [menuQuery.data, activeCat, searchActive, searchQuery.data]);
 
   const searchPending = searchActive && (searchQuery.isLoading || debouncedQuery !== searchText);
+  function showSearchResults(): void {
+    setActiveCat('all');
+    setDebouncedQuery(searchText);
+    const catalog = document.getElementById('menu-catalog');
+    catalog?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+    catalog?.focus({ preventScroll: true });
+  }
+
+  function clearSearch(): void {
+    setQuery('');
+    setDebouncedQuery('');
+    setManualFilters(false);
+    setMaxBudget('');
+    setNoCaffeine(false);
+    setNoDairy(false);
+    setActiveCat('all');
+  }
+
   const status =
     menuQuery.isLoading || searchPending ? (
       <div className="space-y-4" aria-label="Đang tải thực đơn">
@@ -168,13 +192,28 @@ export function MenuPage(): JSX.Element {
             ))}
           </div>
           <div className="menu-toolbar-actions">
-            <div className="menu-search">
-              <Search aria-hidden="true" className="h-4 w-4" />
+            <form
+              className="menu-search"
+              role="search"
+              aria-label="Tìm món trong thực đơn"
+              onSubmit={(event) => {
+                event.preventDefault();
+                showSearchResults();
+              }}
+            >
+              <button type="submit" aria-label="Tìm kiếm món" title="Tìm kiếm món">
+                <Search aria-hidden="true" className="h-4 w-4" />
+              </button>
               <input
                 type="search"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActiveCat('all');
+                }}
+                enterKeyHint="search"
                 aria-label="Tìm món"
+                aria-controls="menu-catalog"
                 placeholder="Thử: cà phê không sữa"
               />
               {query ? (
@@ -182,7 +221,7 @@ export function MenuPage(): JSX.Element {
                   <X className="h-4 w-4" />
                 </button>
               ) : null}
-            </div>
+            </form>
             <button
               type="button"
               className={cn('menu-tool-button', manualFilters && 'is-active')}
@@ -228,23 +267,35 @@ export function MenuPage(): JSX.Element {
             <p className="text-xs text-muted-foreground">Giá theo size rẻ nhất còn bán.</p>
           </div>
         ) : null}
-        {searchActive ? (
-          <div className="menu-search-summary" aria-live="polite">
-            <p>
-              {searchQuery.isFetching
-                ? 'Đang hiểu câu tìm kiếm…'
-                : (searchQuery.data?.message ?? 'Đang tìm trong menu…')}
-            </p>
-            {searchQuery.data ? <UnderstoodFilters intent={searchQuery.data.intent} /> : null}
-          </div>
-        ) : null}
       </MenuShowcase>
       <MenuCatalog
-        products={menuQuery.data?.products ?? []}
+        products={searchActive ? filtered : (menuQuery.data?.products ?? [])}
         categories={menuQuery.data?.categories ?? []}
         onChoose={setSelected}
+        title={searchActive ? 'Kết quả tìm kiếm' : 'Thực đơn đầy đủ'}
+        intro={
+          searchActive ? (
+            <div className="mb-6 space-y-3">
+              <div className="text-sm" aria-live="polite">
+                {query.trim() ? <p className="mb-2">Kết quả cho “{query.trim()}”</p> : null}
+                {searchPending || searchQuery.isFetching ? (
+                  <p>Đang tìm món…</p>
+                ) : searchQuery.isError ? (
+                  <p>Chưa tải được kết quả tìm kiếm.</p>
+                ) : filtered.length > 0 ? (
+                  <p>Tìm thấy {filtered.length} món phù hợp.</p>
+                ) : null}
+              </div>
+              <button type="button" className="btn-outline" onClick={clearSearch}>
+                Xem toàn bộ thực đơn
+              </button>
+            </div>
+          ) : undefined
+        }
         status={
-          menuQuery.isLoading ? (
+          searchActive ? (
+            status
+          ) : menuQuery.isLoading ? (
             <div
               className="grid grid-cols-2 gap-4 md:grid-cols-4"
               aria-label="Đang tải danh sách món"
@@ -274,38 +325,6 @@ export function MenuPage(): JSX.Element {
         toppings={menuQuery.data?.toppings ?? []}
       />
     </>
-  );
-}
-
-function UnderstoodFilters({ intent }: { intent: MenuSearchResponse['intent'] }): JSX.Element {
-  const labels: string[] = [];
-  if (intent.requirements.noCaffeine) labels.push('Không caffeine');
-  if (intent.requirements.noDairy) labels.push('Không sữa');
-  for (const group of intent.requirements.includedGroups)
-    labels.push({ coffee: 'Nhóm cà phê', tea: 'Nhóm trà', fruit: 'Trái cây' }[group]);
-  for (const group of intent.requirements.excludedGroups)
-    labels.push(`Loại ${{ coffee: 'cà phê', tea: 'trà', fruit: 'trái cây' }[group]}`);
-  if (intent.requirements.budget)
-    labels.push(
-      `${intent.requirements.budget.inclusive ? 'Không quá' : 'Dưới'} ${vnd(intent.requirements.budget.maxVnd)}/món`,
-    );
-  if (intent.preferences.lowSugar) labels.push('Ưu tiên ít đường');
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground">Đã hiểu:</span>
-      {labels.length > 0 ? (
-        labels.map((label) => (
-          <Badge key={label} tone="info">
-            {label}
-          </Badge>
-        ))
-      ) : (
-        <span className="text-muted-foreground">từ khóa tự do</span>
-      )}
-      <span className="basis-full text-muted-foreground">
-        Sửa câu tìm kiếm hoặc bấm nút bộ lọc để thay đổi.
-      </span>
-    </div>
   );
 }
 
