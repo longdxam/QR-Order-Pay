@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createAdmissionTicket,
   verifyAdmissionTicket,
@@ -6,7 +6,7 @@ import {
   verifyTableTicket,
 } from '../../services/tableQrService.js';
 
-describe('short-lived table admission QR', () => {
+describe('fixed table QR with legacy ticket compatibility', () => {
   const tableId = '0123456789abcdef01234567';
   const now = 1_800_000_000_000;
   it('issues stable static QR without a clock deadline and rejects tampering', () => {
@@ -18,7 +18,21 @@ describe('short-lived table admission QR', () => {
     expect(() => verifyTableTicket(`${ticket.token}.extra`)).toThrow();
     expect(() => verifyAdmissionTicket(ticket.token, now)).toThrow();
   });
-  it('expires at the next 60-second boundary and is shared by a group during that period', () => {
+  it('keeps a fixed ticket unchanged across minute boundaries and days', () => {
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(now);
+      const ticket = createStaticAdmissionTicket(tableId, 0);
+      for (const elapsed of [61000, 3600000, 7 * 86400000]) {
+        clock.mockReturnValue(now + elapsed);
+        expect(createStaticAdmissionTicket(tableId, 0)).toEqual(ticket);
+        expect(verifyTableTicket(ticket.token)).toEqual({ tableId, epoch: 0, fixed: true });
+      }
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it('legacy qr1 only: expires at the next 60-second boundary', () => {
     const ticket = createAdmissionTicket(tableId, 2, now);
     expect(ticket.expiresAt).toBe(now + 60_000);
     expect(createAdmissionTicket(tableId, 2, now + 30_000)).toEqual(ticket);

@@ -90,6 +90,12 @@ Thực hiện bằng dữ liệu demo do bạn chủ động chọn. Không ch�
 
 ## Giới hạn kiểm chứng
 
+### Đồng hồ kiểm thử — sửa ngày 15/11/2026
+
+Suite workforce dùng đồng hồ nghiệp vụ `workforceClock` cố định, mặc định **00:05 Việt Nam**. Khoảng truy vấn tuần/ngày lấy từ ngày của fixture lịch sử, thay vì lấy ngày hôm nay trong khi fixture ở trước nửa đêm. Vì vậy chấm công, hoạt động, sao chép lịch và đối soát không bị rơi khỏi khoảng lọc khi chạy sau 0h. Chỉ mock đồng hồ nghiệp vụ; `Date`, timer mạng, xác thực và MongoDB vẫn dùng thời gian thật. Ứng dụng thực tế tiếp tục lấy giờ server.
+
+Chạy `npm -w @may-cafe/server run test:workforce:clocks` để kiểm toàn bộ 33 test trong ba tiến trình độc lập: **00:05**, **12:00**, **23:59 ở ranh giới tuần/tháng** theo giờ Việt Nam. Lượt ngày 15/11 đạt **99/99**. Đây là hồi quy ranh giới ngày; không đổi giờ của ứng dụng sản xuất để làm test xanh.
+
 Đã bổ sung dữ liệu theo yêu cầu user ngày 19/10/2026: từ 18 lên 20 đơn hợp lệ bằng 2 đơn DEMO 0đ, hiện có 3 gợi ý. Chi tiết định danh, ảnh hưởng báo cáo, bộ nạp và kiểm chứng tại [dữ liệu lịch sử demo #11](workforce-history-demo.md).
 
 Kiểm thử tích hợp chạy MongoDB replica set tạm riêng; smoke các thao tác nghiệp vụ dùng Lightpanda trên frontend build và DB tạm. DOM/hành vi không chứng minh CSS/layout trực quan, thao tác dropdown native hoặc giao diện điện thoại thật. Bộ dữ liệu lịch sử demo ở trên là lần nạp riêng được user yêu cầu; không tạo ca/chấm công hay đặt/thu đơn thật để chạy kiểm thử tự động trên quán.

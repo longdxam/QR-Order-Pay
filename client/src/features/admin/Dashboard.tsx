@@ -5,17 +5,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  LineChart,
-  Line,
-  CartesianGrid,
-} from 'recharts';
+import { BusinessReports } from './BusinessReports';
 import { useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -152,66 +142,7 @@ export function AdminDashboard(): JSX.Element {
         thu trung bình {vnd(data.averageOrderValue)}/đơn.
       </p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-5 sm:p-6">
-          <h3 className="font-display font-semibold">Thực thu ròng theo ngày</h3>
-          <div className="h-72 mt-3">
-            <ResponsiveContainer>
-              <LineChart data={data.revenueByDay}>
-                <CartesianGrid
-                  vertical={false}
-                  strokeDasharray="3 3"
-                  stroke="rgb(var(--c-muted))"
-                />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip formatter={(v: number) => vnd(v)} />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="rgb(var(--c-primary))"
-                  strokeWidth={2.5}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <Card className="p-5 sm:p-6">
-          <h3 className="font-display font-semibold">Thực thu ròng theo giờ</h3>
-          <div className="h-72 mt-3">
-            <ResponsiveContainer>
-              <BarChart data={data.revenueByHour}>
-                <CartesianGrid
-                  vertical={false}
-                  strokeDasharray="3 3"
-                  stroke="rgb(var(--c-muted))"
-                />
-                <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip formatter={(v: number) => vnd(v)} />
-                <Bar
-                  dataKey="revenue"
-                  fill="rgb(var(--c-accent-ink))"
-                  radius={[8, 8, 0, 0]}
-                  isAnimationActive={false}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
+      <BusinessReports data={data} />
 
       <Card className="overflow-x-auto p-5 sm:p-6">
         <h3 className="font-display font-semibold mb-2">Top 5 sản phẩm</h3>
@@ -227,6 +158,13 @@ export function AdminDashboard(): JSX.Element {
             </tr>
           </thead>
           <tbody>
+            {totalTop.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="py-6 text-muted-foreground">
+                  Chưa có món đã thanh toán trong khoảng ngày này.
+                </td>
+              </tr>
+            ) : null}
             {totalTop.map((p) => (
               <tr key={p.productId} className="border-t border-border">
                 <td className="py-2 font-medium">{p.name}</td>
@@ -295,15 +233,12 @@ function AdminQuickLinks(): JSX.Element {
 function defaultDateRange(): { from: string; to: string } {
   const to = new Date();
   const from = new Date(to);
-  from.setDate(from.getDate() - 29);
+  from.setTime(from.getTime() - 29 * 86400000);
   return { from: formatInputDate(from), to: formatInputDate(to) };
 }
 
 function formatInputDate(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Date(value.getTime() + 7 * 3600000).toISOString().slice(0, 10);
 }
 
 function formatDisplayDate(value: string): string {

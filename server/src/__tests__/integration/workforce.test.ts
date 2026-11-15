@@ -1,3 +1,4 @@
+import { workforceClock } from '../../utils/workforceClock.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 import request from 'supertest';
@@ -33,8 +34,10 @@ import { CashShiftModel } from '../../models/CashShift.js';
 let repl: MongoMemoryReplSet, app: ReturnType<typeof buildApp>;
 let adminId: string, staffId: string, otherId: string;
 let admin: Record<string, string>, staff: Record<string, string>;
-const iso = (offset: number) => new Date(Date.now() + offset * 60000).toISOString();
-const dateInVn = (time = Date.now()) => new Date(time + 7 * 3600000).toISOString().slice(0, 10);
+const testNow = () => new Date(process.env.WORKFORCE_TEST_NOW ?? '2026-11-14T17:05:00Z');
+const iso = (offset: number) => new Date(testNow().getTime() + offset * 60000).toISOString();
+const dateInVn = (time = testNow().getTime()) =>
+  new Date(time + 7 * 3600000).toISOString().slice(0, 10);
 const input = (extra = {}) => ({
   staffId,
   label: 'Ca thử',
@@ -45,7 +48,8 @@ const input = (extra = {}) => ({
   ...extra,
 });
 const shift = (extra = {}) => createWorkShift(adminId, input(extra));
-const week = (isAdmin = true, from = dateInVn()) =>
+// Historical attendance/activity fixtures reach three hours before the test clock.
+const week = (isAdmin = true, from = dateInVn(testNow().getTime() - 3 * 3600000)) =>
   workforceWeek(isAdmin ? adminId : staffId, isAdmin, { from });
 async function historic(extra = {}) {
   return WorkShiftModel.create({
@@ -76,8 +80,14 @@ beforeAll(async () => {
   app = buildApp();
   await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
 }, 120000);
+afterAll(async () => {
+  await mongoose.disconnect();
+  await repl?.stop();
+});
+
 beforeEach(async () => {
   vi.restoreAllMocks();
+  vi.spyOn(workforceClock, 'now').mockImplementation(testNow);
   for (const collection of Object.values(mongoose.connection.collections))
     await collection.deleteMany({});
   const passwordHash = await hashPassword('Password@123');
@@ -111,10 +121,6 @@ beforeEach(async () => {
   staff = {
     Authorization: `Bearer ${signAccessToken({ sub: staffId, role: 'STAFF', name: 'Nhân viên thử' })}`,
   };
-});
-afterAll(async () => {
-  await mongoose.disconnect();
-  await repl.stop();
 });
 
 describe('work schedule and attendance', () => {
@@ -277,7 +283,7 @@ describe('work schedule and attendance', () => {
     await expect(clockWorkShift(a.id, staffId, 'in', { expectedVersion: 0 })).rejects.toMatchObject(
       { code: 'ATTENDANCE_OVERLAP' },
     );
-    const mine = await week(false, dateInVn(Date.now() + 7 * 86400000));
+    const mine = await week(false, dateInVn(testNow().getTime() + 7 * 86400000));
     expect(mine.currentShift?.id).toBe(old.id); // The out button survives week navigation.
     await clockWorkShift(old.id, staffId, 'out', { expectedVersion: 0 });
     await clockWorkShift(a.id, staffId, 'in', { expectedVersion: 0 });
@@ -302,7 +308,9 @@ describe('work schedule and attendance', () => {
     expect(fixed.status).toBe('COMPLETED');
     expect(replay.version).toBe(1);
     expect(await AuditLogModel.countDocuments({ action: 'workforce.attendanceCorrected' })).toBe(1);
-    const audit = await AuditLogModel.findOne({ action: 'workforce.attendanceCorrected' }).orFail();
+    const audit = await AuditLogModel.findOne({
+      action: 'workforce.attendanceCorrected',
+    }).orFail();
     expect(audit.metadata.before.effectiveOutAt).toBeNull();
     expect(audit.metadata.after.correctionReason).toBe(correction.reason);
   });
@@ -421,7 +429,7 @@ describe('staffing coverage and attributed performance', () => {
     expect(ended.status).toBe('COMPLETED');
   });
   it('uses minimum simultaneous coverage across a whole window, not the count of overlapping shifts', async () => {
-    const tomorrow = dateInVn(Date.now() + 86400000),
+    const tomorrow = dateInVn(testNow().getTime() + 86400000),
       start = Date.parse(`${tomorrow}T00:00:00+07:00`);
     const day = new Date(start + 7 * 3600000).getUTCDay() || 7;
     await shift({
@@ -500,7 +508,7 @@ describe('staffing coverage and attributed performance', () => {
     await transitionByStaff(order.id, 'PREPARING', { id: staffId });
     await WorkActivityModel.updateOne(
       { orderId: order.id, stage: 'PREPARING' },
-      { $set: { at: new Date(Date.now() - 6 * 60000) } },
+      { $set: { at: new Date(testNow().getTime() - 6 * 60000) } },
     );
     await transitionByStaff(order.id, 'READY', { id: otherId });
     await transitionByStaff(order.id, 'SERVED', { id: otherId });
@@ -650,13 +658,15 @@ describe('completed workforce planning and reports', () => {
     expect(await WorkShiftModel.countDocuments()).toBe(2);
     expect(await WorkScheduleCopyModel.countDocuments()).toBe(0);
     vi.restoreAllMocks();
+    vi.spyOn(workforceClock, 'now').mockImplementation(testNow);
     await copyWorkSchedule(adminId, body);
     await copyWorkSchedule(adminId, body);
     expect(await OutboxEventModel.countDocuments({ eventType: 'workforce.changed' })).toBe(1);
   });
-  const targetDay = () => dateInVn(Date.now() + 7 * 86400000);
+  const sourceDay = () => dateInVn(testNow().getTime() - 10 * 60000);
+  const targetDay = () => dateInVn(Date.parse(`${sourceDay()}T00:00:00+07:00`) + 7 * 86400000);
   async function preview() {
-    return previewWorkSchedule(adminId, { from: dateInVn(), targetFrom: targetDay() });
+    return previewWorkSchedule(adminId, { from: sourceDay(), targetFrom: targetDay() });
   }
   const copyBody = (p: Awaited<ReturnType<typeof preview>>) => ({
     from: p.from,
@@ -723,6 +733,7 @@ describe('completed workforce planning and reports', () => {
     expect(await WorkShiftModel.countDocuments()).toBe(2);
     expect(await WorkScheduleCopyModel.countDocuments()).toBe(0);
     vi.restoreAllMocks();
+    vi.spyOn(workforceClock, 'now').mockImplementation(testNow);
     const results = await Promise.allSettled([
       copyWorkSchedule(adminId, copyBody(p)),
       copyWorkSchedule(adminId, copyBody(p)),
@@ -747,7 +758,7 @@ describe('completed workforce planning and reports', () => {
     await expect(
       previewWorkSchedule(adminId, {
         from: dateInVn(),
-        targetFrom: dateInVn(Date.now() + 8 * 86400000),
+        targetFrom: dateInVn(testNow().getTime() + 8 * 86400000),
       }),
     ).rejects.toThrow();
     await UserModel.updateOne({ _id: staffId }, { $set: { isActive: false } });
@@ -818,8 +829,8 @@ describe('completed workforce planning and reports', () => {
       openingCash: 0,
     });
     const report = await workforceCash(
-      new Date(`${dateInVn()}T00:00:00+07:00`),
-      new Date(Date.now() + 86400000),
+      new Date(`${dateInVn(testNow().getTime() - 120 * 60000)}T00:00:00+07:00`),
+      new Date(testNow().getTime() + 86400000),
     );
     expect(report.total).toBe(61);
     expect(report.items).toHaveLength(50);

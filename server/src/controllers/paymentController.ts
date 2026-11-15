@@ -6,7 +6,7 @@ import {
 } from '../services/paymentService.js';
 import { toStaffOrder } from '../services/orderDto.js';
 import { tableRepository } from '../repositories/tableRepository.js';
-import { NotFoundError, ValidationError } from '../errors/AppError.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { buildBill } from '../services/paymentService.js';
 import { paymentRequestSchema, refundOrderRequestSchema } from '@may-cafe/contracts';
 import { refundAndCancelOrder } from '../services/orderRefundService.js';
@@ -30,7 +30,15 @@ import {
 export async function accounting(req: Request, res: Response, next: NextFunction) {
   try {
     const page = Math.max(1, Math.min(10000, Number(req.query['page']) || 1));
-    res.json({ success: true, data: await listPaymentAccounting(Math.floor(page), 30) });
+    const scope = req.query['scope'] ?? 'current';
+    if (scope !== 'current' && scope !== 'retired' && scope !== 'all')
+      throw new ValidationError('Phạm vi khoản thu không hợp lệ.');
+    if (scope === 'all' && req.user?.role !== 'ADMIN')
+      throw new ForbiddenError('Chỉ quản trị được xem toàn bộ phạm vi khoản thu.');
+    res.json({
+      success: true,
+      data: await listPaymentAccounting(Math.floor(page), 30, undefined, scope),
+    });
   } catch (error) {
     next(error);
   }
@@ -38,12 +46,10 @@ export async function accounting(req: Request, res: Response, next: NextFunction
 export async function requestCorrection(req: Request, res: Response, next: NextFunction) {
   try {
     const input = paymentCorrectionRequestSchema.parse(req.body);
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await requestPaymentCorrection(String(req.params['id']), req.user!.id, input),
-      });
+    res.status(201).json({
+      success: true,
+      data: await requestPaymentCorrection(String(req.params['id']), req.user!.id, input),
+    });
   } catch (error) {
     next(error);
   }

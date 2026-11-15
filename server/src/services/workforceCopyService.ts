@@ -1,3 +1,4 @@
+import { workforceClock } from '../utils/workforceClock.js';
 import { randomUUID } from 'node:crypto';
 import type { ClientSession } from 'mongoose';
 import {
@@ -57,7 +58,7 @@ async function plan(
     const reason =
       !user || !user.isActive || user.isDeleted
         ? 'Tài khoản đã khóa/xóa'
-        : Date.parse(s.startsAt) <= Date.now()
+        : Date.parse(s.startsAt) <= workforceClock.now().getTime()
           ? 'Ca đích phải bắt đầu trong tương lai'
           : targets.some(
                 (t) =>

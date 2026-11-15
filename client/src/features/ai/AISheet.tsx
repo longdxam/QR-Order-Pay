@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useGuestContext } from '../guest/guestContext';
 import type { CartItem } from '../../store/cart';
-import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Send, ArrowUpRight, LoaderCircle } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -16,41 +15,13 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { MenuPhoto } from '../guest/MenuPhoto';
 import type { ReactNode } from 'react';
+import type { AiRecommendation, AiRecommendResponse } from '@may-cafe/contracts';
 import {
   ProductDetailModal,
-  type Product as MenuProduct,
+  type Product as ModalProduct,
   type Topping,
 } from '../guest/ProductDetailModal';
-
-interface Recommendation {
-  productId: string;
-  variantId: string | null;
-  reason: string;
-  unitPrice: number;
-  name: string;
-  image: string;
-  evidence: {
-    variant: string | null;
-    price: number;
-    withinBudget: boolean;
-    caffeine: boolean | null;
-    dairy: boolean | null;
-  };
-}
-
-interface AIRecommendResponse {
-  mode: 'llm' | 'fallback';
-  message: string;
-  recommendations: Recommendation[];
-  followUpQuestion?: string;
-  latencyMs?: number;
-}
-
-interface MenuResponse {
-  categories: Array<{ _id: string; name: string }>;
-  products: MenuProduct[];
-  toppings: Array<{ _id: string; name: string; price: number }>;
-}
+import { usePublicMenu } from '../guest/usePublicMenu';
 
 const PRESETS = [
   {
@@ -65,7 +36,7 @@ const PRESETS = [
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  products: MenuProduct[];
+  products: ModalProduct[];
   toppings?: Topping[];
   children?: ReactNode;
   onAdd?: (item: Omit<CartItem, 'clientId'>) => void;
@@ -81,9 +52,9 @@ export function AISheet({
   useDocumentTitle('AI Barista');
   const guest = useGuestContext();
   const needsTable = !onAdd && !guest?.tableName;
-  const [prompt, setPrompt] = useState(PRESETS[0]?.prompt ?? '');
+  const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
-  const [response, setResponse] = useState<AIRecommendResponse | null>(null);
+  const [response, setResponse] = useState<AiRecommendResponse | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!response) return;
@@ -93,7 +64,7 @@ export function AISheet({
     });
   }, [response]);
   const { toast } = useToast();
-  const [selected, setSelected] = useState<MenuProduct | null>(null);
+  const [selected, setSelected] = useState<ModalProduct | null>(null);
   const [selectedConstraints, setSelectedConstraints] = useState<{
     noCaffeine?: boolean;
     noDairy?: boolean;
@@ -106,7 +77,7 @@ export function AISheet({
   async function ask(): Promise<void> {
     setBusy(true);
     try {
-      const data = await unwrap<AIRecommendResponse>(
+      const data = await unwrap<AiRecommendResponse>(
         await api.post('/ai/recommendations', {
           prompt,
           ...(budget ? { maxBudget: Number(budget) } : {}),
@@ -121,7 +92,7 @@ export function AISheet({
     }
   }
 
-  function addRec(rec: Recommendation): void {
+  function addRec(rec: AiRecommendation): void {
     const product = products.find((p) => p._id === rec.productId);
     if (!product) return;
     setSelected(product);
@@ -181,7 +152,7 @@ export function AISheet({
               maxLength={500}
               aria-label="Mô tả khẩu vị"
               className="ai-prompt mt-2 w-full rounded-2xl border border-control p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Bạn thích vị gì?"
+              placeholder="Ví dụ: Mình thích vị chua nhẹ, ít ngọt, dưới 50 nghìn…"
             />
           </label>
           <div className="ai-presets">
@@ -301,10 +272,7 @@ export function AISheet({
 
 export function AIPage(): JSX.Element {
   const [open, setOpen] = useState(true);
-  const menuQuery = useQuery({
-    queryKey: ['menu'],
-    queryFn: async () => unwrap<MenuResponse>(await api.get('/categories')),
-  });
+  const menuQuery = usePublicMenu();
 
   if (menuQuery.isLoading) {
     return <Skeleton className="h-64" />;

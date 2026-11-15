@@ -184,6 +184,35 @@ it('submits to the catalog, displays matching products across categories, and re
   expect((screen.getByRole('searchbox', { name: 'Tìm món' }) as HTMLInputElement).value).toBe('');
 });
 
+it('combines text with manual filters, keeps the toolbar compact, and never invents a query', async () => {
+  mock.post.mockResolvedValue(searchResponse(['coffee']));
+  const { container } = mount();
+  await screen.findByRole('button', { name: 'Chọn món Bánh Croissant' });
+  fireEvent.click(screen.getByRole('button', { name: 'Chỉnh bộ lọc' }));
+  expect(mock.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Không sữa' }));
+  await waitFor(() =>
+    expect(mock.post).toHaveBeenCalledWith(
+      '/menu/search',
+      { query: '', filters: { noDairy: true } },
+      expect.anything(),
+    ),
+  );
+  expect(container.querySelector('.menu-experience-search')).toBeTruthy();
+  expect(container.querySelector('.menu-backdrop')).toBeNull();
+  submitSearch('cà phê');
+  await waitFor(() =>
+    expect(mock.post).toHaveBeenCalledWith(
+      '/menu/search',
+      { query: 'cà phê', filters: { noDairy: true } },
+      expect.anything(),
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Ẩn bộ lọc' }));
+  expect(screen.getByRole('searchbox').getAttribute('value')).toBe('cà phê');
+  expect(screen.queryByText('Kết quả cho “món”')).toBeNull();
+});
+
 it('keeps an empty search result empty instead of showing the full catalog', async () => {
   mock.post.mockResolvedValue(searchResponse([]));
   mount();

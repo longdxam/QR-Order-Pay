@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -65,6 +65,10 @@ export function StaffTables(): JSX.Element {
     queryKey: ['staff-tables'],
     queryFn: async () => unwrap(await api.get<{ tables: Table[] }>('/staff/tables')),
   });
+  useEffect(() => {
+    if (!sessions.isLoading && !tables.isLoading && window.location.hash === '#awaiting-payments')
+      document.getElementById('awaiting-payments')?.scrollIntoView({ block: 'start' });
+  }, [sessions.isLoading, tables.isLoading]);
   if (sessions.isLoading || tables.isLoading) return <p>Đang tải bàn...</p>;
   if (sessions.isError || tables.isError)
     return (

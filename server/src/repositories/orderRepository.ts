@@ -155,6 +155,70 @@ export const orderRepository = {
     if (updated && session) await settleOrderBenefits(updated, nextStatus, session);
     return updated;
   },
+  /** Mọi đơn của một phiên bàn (kể cả đã hủy), cũ trước. */
+  async listBySession(tableSessionId: string, session?: ClientSession | null): Promise<OrderDoc[]> {
+    return OrderModel.find({ tableSessionId }, null, { session: session ?? undefined }).sort({
+      createdAt: 1,
+    });
+  },
+  /** Đơn chưa thu đủ tiền và chưa hủy trong các phiên cho trước, cũ trước. */
+  async listUnpaidInSessions(tableSessionIds: Types.ObjectId[]): Promise<OrderDoc[]> {
+    return OrderModel.find({
+      tableSessionId: { $in: tableSessionIds },
+      status: { $ne: 'CANCELLED' },
+      paymentStatus: 'UNPAID',
+    }).sort({ createdAt: 1 });
+  },
+  /**
+   * Ghi nhận tiền thu cho một đơn bằng optimistic lock (`version` + còn UNPAID). Thu đủ thì đơn thành
+   * PAID và, nếu đang AWAITING_PAYMENT, chuyển sang PENDING để vào KDS. Trả null nếu đơn vừa bị đổi.
+   */
+  async recordPayment(
+    order: OrderDoc,
+    paidAmount: number,
+    staffId: string,
+    session: ClientSession,
+  ): Promise<OrderDoc | null> {
+    const paid = paidAmount === order.total;
+    const nextStatus = paid && order.status === 'AWAITING_PAYMENT' ? 'PENDING' : order.status;
+    return OrderModel.findOneAndUpdate(
+      { _id: order._id, version: order.version, paymentStatus: 'UNPAID' },
+      {
+        $set: { paidAmount, paymentStatus: paid ? 'PAID' : 'UNPAID', status: nextStatus },
+        $inc: { version: 1 },
+        ...(nextStatus !== order.status
+          ? {
+              $push: {
+                statusHistory: {
+                  from: order.status,
+                  to: nextStatus,
+                  at: new Date(),
+                  by: staffId,
+                  reason: 'Đã nhận đủ tiền',
+                },
+              },
+            }
+          : {}),
+      },
+      { new: true, session },
+    );
+  },
+  /** Thu gộp cuối phiên: đánh dấu từng đơn đã thu đủ tổng tiền. */
+  async markFullyPaid(orders: OrderDoc[], session: ClientSession): Promise<void> {
+    if (orders.length === 0) return;
+    await OrderModel.bulkWrite(
+      orders.map((order) => ({
+        updateOne: {
+          filter: { _id: order._id },
+          update: {
+            $set: { paymentStatus: 'PAID' as const, paidAmount: order.total },
+            $inc: { version: 1 },
+          },
+        },
+      })),
+      { session },
+    );
+  },
   async setPaymentStatus(
     orderIds: string[],
     paymentStatus: PaymentStatus,

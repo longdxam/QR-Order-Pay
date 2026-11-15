@@ -14,7 +14,7 @@ Workers ◄── report/realtime queues ──────────┘
 
 Một request đặt món đi qua các tầng:
 
-1. **Route** `/api/v1/orders` (`server/src/routes/index.ts`) gắn middleware:
+1. **Route** `/api/v1/orders` (`server/src/routes/guestRoutes.ts`) gắn middleware:
    - `loadGuest` đọc cookie `mc_guest`, sinh `req.guest` (id, tableSessionId, participantId) hoặc null.
    - `guestCsrfGuard` kiểm tra Origin/Referer.
    - `guestOrderLimiter` dùng Redis và khóa theo `tableSessionId` (fallback IP trước khi có guest).
@@ -48,7 +48,7 @@ Realtime consumer invalidate cache menu trước khi phát event availability. A
 
 ## Luồng vào bàn (join)
 
-`POST /api/v1/table-sessions/join` (`server/src/routes/index.ts`) gắn middleware:
+`POST /api/v1/table-sessions/join` (`server/src/routes/guestRoutes.ts`) gắn middleware:
 
 1. `loadGuest` — đọc cookie `mc_guest` (nếu có) để biết phiên hiện tại.
 2. `guestCsrfGuard` — kiểm tra Origin/Referer.
@@ -105,7 +105,9 @@ server/src/
 ├── server.ts              # HTTP + Socket.IO + lifecycle
 ├── worker.ts              # report/notification queue + scheduler/sweeper
 ├── config/                # env loader
-├── routes/                # REST endpoints
+├── routes/                # REST endpoints: index.ts mount router theo domain (guest, menu, payment,
+│                          # serviceFloor, workforce, admin…); guards.ts (staffOnly/adminOnly),
+│                          # rateLimits.ts. Ma trận quyền kiểm ở __tests__/unit/routeAuthorization.test.ts
 ├── controllers/           # HTTP I/O
 ├── services/              # business rules
 ├── repositories/          # Mongo access

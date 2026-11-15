@@ -27,7 +27,7 @@ Dùng CupPhoto sẵn có, thêm kind PHOTO/LATTE_ART, latteStyle SOFT/BOLD/DOTS,
 
 Prefix `/api/v1`, generation strict `{}`:
 
-- GET `/{cup-photos|pickup/cup-photos|staff/cup-photos|admin/cup-photos}/:id/details`: metadata riêng của chủ, có kind/latteStyle khi latte art.
+- GET `/{cup-photos|staff/cup-photos|admin/cup-photos}/:id/details`: metadata riêng của chủ, có kind/latteStyle khi latte art.
 - POST cùng prefix `/:id/latte-art`: sourceId chính chủ chưa hết hạn, trả sourceId và đúng3 CupPhotoView; không nhận style/món/owner tự khai. Không generate lặp từ ảnh đã chuyển. Guest yêu cầu OPEN + CSRF, member/counter đúng chủ và portal/role như upload.
 - POST `/{staff|admin}/cup-prints/latte-art/exports`: strict `{requestId UUID,orderId24hex,itemIndex>=0}`, trả attachment PNG/no-store; kiểm đúng dòng, PAID/còn hạn/kind LATTE_ART, audit/replay. Endpoint in tem cũ không nhận ảnh LATTE_ART.
 
@@ -45,7 +45,7 @@ Prefix `/api/v1`, generation strict `{}`:
 10. Đặt2cốc cùng bản, kiểm tổng tiền/giữ kho; trước thu không có export, thu đủ mới xuất đúng bản/dòng/số cốc.
 11. Staff xem latte art → xuấtPNG: 1024×1024, nền trắng, không chữ/mã/foam; không mở in tem, không ghi đã in.
 12. Mất phản hồi export → retry đúng request/key, một journal; đã hủy/hoàn/hết hạn thì retry bị chặn.
-13. Member pickup/counter/quà giữ đúng ảnh và quyền; bàn nhận quà chỉ có cờ ảnh, không thấy nguồn riêng của sender.
+13. Đơn tại bàn và quà giữ đúng ảnh và quyền; bàn nhận quà chỉ có cờ ảnh, không thấy nguồn riêng của sender.
 14. Đóng preview/rời rồi in tem/hóa đơn: CSS/Blob không lẫn. Khi mua máy, kiểm căn tâm, vùng in, độ tương phản/màu/mực thực phẩm/độ bền trên loại bọt của quán trước nghiệm thu in thực tế.
 
 Lightpanda chỉ xác minh DOM/hành vi/luồng dữ liệu. Ảnh đầu ra có thể kiểm độc lập bằng decoder/render; chưa phải bằng chứng bố cục trên điện thoại, cảm nhận thẩm mỹ trên cốc hay chất lượng in thực. Chưa có máy nên phần in trực tiếp lên bọt chưa nghiệm thu.

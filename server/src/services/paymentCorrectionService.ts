@@ -32,7 +32,8 @@ export async function assertNoPaymentCorrection(orderId: string, session: Client
 
 async function guardSession(order: OrderDoc, session: ClientSession, allowClosed = false) {
   if (!order.tableSessionId) {
-    if (order.pickup?.outcome !== 'ACTIVE' && !allowClosed) throw new ForbiddenError('Đơn mang đi đã kết thúc.');
+    if (order.pickup?.outcome !== 'ACTIVE' && !allowClosed)
+      throw new ForbiddenError('Đơn mang đi đã kết thúc.');
     await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
     return;
   }
@@ -294,16 +295,43 @@ function receiptDto(payment: PaymentDoc) {
   };
 }
 
-export async function listPaymentAccounting(page: number, limit: number, sessionId?: string) {
-  const filter = sessionId ? { tableSessionId: sessionId } : {};
+export async function listPaymentAccounting(
+  page: number,
+  limit: number,
+  sessionId?: string,
+  scope: 'current' | 'retired' | 'all' = 'current',
+) {
+  const retiredOrderIds = await OrderModel.distinct('_id', {
+    fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] },
+  });
+  const retiredPaymentIds =
+    scope === 'all'
+      ? []
+      : await PaymentModel.distinct('_id', {
+          orderIds: { $in: retiredOrderIds },
+        });
+  const paymentScope =
+    scope === 'all' ? {} : { _id: { [scope === 'retired' ? '$in' : '$nin']: retiredPaymentIds } };
+  const correctionScope =
+    scope === 'all'
+      ? {}
+      : { paymentId: { [scope === 'retired' ? '$in' : '$nin']: retiredPaymentIds } };
+  const filter = { ...paymentScope, ...(sessionId ? { tableSessionId: sessionId } : {}) };
   const [payments, total, corrections, targets] = await Promise.all([
     PaymentModel.find(filter)
       .sort({ paidAt: -1, _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit),
     PaymentModel.countDocuments(filter),
-    PaymentCorrectionModel.find().sort({ status: -1, createdAt: -1 }).limit(200).lean(),
-    OrderModel.find({ status: 'AWAITING_PAYMENT', paymentStatus: 'UNPAID' })
+    PaymentCorrectionModel.find(correctionScope)
+      .sort({ status: -1, createdAt: -1 })
+      .limit(200)
+      .lean(),
+    OrderModel.find({
+      _id: { $nin: retiredOrderIds },
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+    })
       .select('code tableId total paidAmount')
       .limit(200)
       .lean(),
@@ -325,7 +353,12 @@ export async function listPaymentAccounting(page: number, limit: number, session
   const names = new Map(
     orders.map((o) => [
       o.id,
-      { code: o.code, tableName: (o.tableId as unknown as { name?: string })?.name ?? (o.fulfillmentType !== 'DINE_IN' ? 'Mang đi' : '') },
+      {
+        code: o.code,
+        tableName:
+          (o.tableId as unknown as { name?: string })?.name ??
+          (o.fulfillmentType !== 'DINE_IN' ? 'Đơn lịch sử' : 'Bàn đã lưu trữ'),
+      },
     ]),
   );
   return {

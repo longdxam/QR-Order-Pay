@@ -194,22 +194,26 @@ export const transferTableSessionRequestSchema = z.object({
 export const roleSchema = z.enum(['ADMIN', 'STAFF']);
 export type Role = z.infer<typeof roleSchema>;
 
+// Thực đơn công khai (`GET /categories`, `GET /products`): tài liệu Mongo đã serialize, nên khóa là `_id`.
+// Integration test catalogLifecycle parse response thật bằng các schema này để chặn lệch hợp đồng.
 export const toppingSchema = z.object({
-  id: z.string(),
+  _id: z.string(),
   name: z.string(),
   price: moneyVndSchema,
   isAvailable: z.boolean(),
 });
+export type MenuTopping = z.infer<typeof toppingSchema>;
 
 export const productVariantSchema = z.object({
-  id: z.string(),
+  _id: z.string(),
   name: z.string(),
   price: moneyVndSchema,
   isAvailable: z.boolean().optional(),
 });
+export type MenuVariant = z.infer<typeof productVariantSchema>;
 
 export const productSchema = z.object({
-  id: z.string(),
+  _id: z.string(),
   categoryId: z.string(),
   name: z.string(),
   description: z.string(),
@@ -222,6 +226,7 @@ export const productSchema = z.object({
     iceLevels: z.array(z.string()),
     toppingIds: z.array(z.string()),
   }),
+  toppingIds: z.array(z.string()),
   tags: z.array(z.string()),
   ingredientMetadata: z.object({
     caffeine: z.boolean().optional(),
@@ -233,14 +238,23 @@ export const productSchema = z.object({
   isFeatured: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
 });
+export type MenuProduct = z.infer<typeof productSchema>;
 
 export const categorySchema = z.object({
-  id: z.string(),
+  _id: z.string(),
   name: z.string(),
   slug: z.string(),
   sortOrder: z.number().int(),
   isActive: z.boolean(),
 });
+export type MenuCategory = z.infer<typeof categorySchema>;
+
+export const publicMenuResponseSchema = z.object({
+  categories: z.array(categorySchema),
+  products: z.array(productSchema),
+  toppings: z.array(toppingSchema),
+});
+export type PublicMenuResponse = z.infer<typeof publicMenuResponseSchema>;
 
 export const tableSchema = z.object({
   id: z.string(),
@@ -461,11 +475,21 @@ export const aiRecommendResponseSchema = z.object({
       unitPrice: moneyVndSchema,
       name: z.string(),
       image: z.string(),
+      /** Bằng chứng backend tự tính (không lấy từ model) để khách thấy vì sao món phù hợp. */
+      evidence: z.object({
+        variant: z.string().nullable(),
+        price: moneyVndSchema,
+        withinBudget: z.boolean(),
+        caffeine: z.boolean().nullable(),
+        dairy: z.boolean().nullable(),
+      }),
     }),
   ),
   followUpQuestion: z.string().optional(),
   latencyMs: z.number().int().optional(),
 });
+export type AiRecommendResponse = z.infer<typeof aiRecommendResponseSchema>;
+export type AiRecommendation = AiRecommendResponse['recommendations'][number];
 
 export const menuTagSuggestionRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -506,16 +530,25 @@ export const menuSearchIntentSchema = z.object({
 });
 export type MenuSearchIntent = z.infer<typeof menuSearchIntentSchema>;
 
-export const menuSearchRequestSchema = z.object({
-  query: z.string().trim().min(1).max(200),
-  filters: z
-    .object({
-      maxBudget: z.number().int().positive().nullable().optional(),
-      noCaffeine: z.boolean().optional(),
-      noDairy: z.boolean().optional(),
-    })
-    .optional(),
-});
+export const menuSearchRequestSchema = z
+  .object({
+    query: z.string().trim().max(200),
+    filters: z
+      .object({
+        maxBudget: z.number().int().positive().nullable().optional(),
+        noCaffeine: z.boolean().optional(),
+        noDairy: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .refine(
+    (data) =>
+      data.query.length > 0 ||
+      !!data.filters?.maxBudget ||
+      data.filters?.noCaffeine === true ||
+      data.filters?.noDairy === true,
+    { message: 'Nhập từ khóa hoặc chọn bộ lọc.' },
+  );
 export type MenuSearchRequest = z.infer<typeof menuSearchRequestSchema>;
 
 export const menuSearchResponseSchema = z.object({
@@ -797,6 +830,47 @@ export const billSchema = z.object({
 });
 
 export const dashboardOverviewSchema = z.object({
+  hasFinancialData: z.boolean().optional(),
+  ordersCreated: z.number().int().nonnegative().optional(),
+  cancelledOrders: z.number().int().nonnegative().optional(),
+  cancellationRate: z.number().min(0).max(1).nullable().optional(),
+  ordersByHour: z
+    .array(
+      z.object({ hour: z.number().int().min(0).max(23), orders: z.number().int().nonnegative() }),
+    )
+    .optional(),
+  categorySales: z
+    .array(
+      z.object({
+        categoryId: z.string(),
+        name: z.string(),
+        quantity: z.number().int(),
+        revenue: moneyVndSchema,
+      }),
+    )
+    .optional(),
+  revenueByMethod: z
+    .array(
+      z.object({
+        method: z.string(),
+        revenue: z.number().int(),
+        collected: moneyVndSchema,
+        refunded: moneyVndSchema,
+        adjustment: z.number().int(),
+      }),
+    )
+    .optional(),
+  comparison: z
+    .object({
+      from: z.string(),
+      to: z.string(),
+      totalRevenue: z.number().int(),
+      orderCount: z.number().int(),
+      ordersCreated: z.number().int(),
+      cancelledOrders: z.number().int(),
+      cancellationRate: z.number().min(0).max(1).nullable(),
+    })
+    .optional(),
   totalRevenue: z.number().int(),
   grossCollected: moneyVndSchema.default(0),
   totalRefunded: moneyVndSchema.default(0),

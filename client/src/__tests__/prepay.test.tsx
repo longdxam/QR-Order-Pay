@@ -53,7 +53,9 @@ describe('table QR display and manual prepayment', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(screen.getByText('QR cố định · Có thể tải ảnh để in tại bàn')).toBeTruthy();
+    expect(
+      screen.getByText('QR cố định · Dùng lại qua các phiên · Có thể in tại bàn'),
+    ).toBeTruthy();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(65000);
     });
@@ -129,7 +131,7 @@ describe('table QR display and manual prepayment', () => {
       true,
     );
   });
-  it('rotates after 60 seconds, hides expired QR when offline and never joins on behalf of the display', async () => {
+  it('keeps the fixed QR beyond 60 seconds without polling or joining on behalf of the display', async () => {
     vi.useFakeTimers();
     window.history.replaceState(null, '', '/display#display-secret');
     mock.qr.mockResolvedValue('data:image/png;base64,aW1hZ2U=');
@@ -138,9 +140,9 @@ describe('table QR display and manual prepayment', () => {
         response({
           tableId: 't1',
           tableName: 'Bàn 01',
-          url: 'https://cafe.test/t/short-ticket',
+          url: 'https://cafe.test/t/qrs1-fixed-ticket',
           serverTime: 1000,
-          expiresAt: 61000,
+          expiresAt: null,
         }),
       )
       .mockRejectedValue(new Error('Mất mạng'));
@@ -152,20 +154,24 @@ describe('table QR display and manual prepayment', () => {
     expect(mock.get).toHaveBeenCalledWith('/table-displays/qr', {
       headers: { 'X-Table-Display-Token': 'display-secret' },
     });
-    expect(mock.qr).toHaveBeenCalledWith('https://cafe.test/t/short-ticket', expect.anything());
+    expect(mock.qr).toHaveBeenCalledWith(
+      'https://cafe.test/t/qrs1-fixed-ticket',
+      expect.anything(),
+    );
     expect(screen.getByRole('link', { name: 'Mở link vào bàn' }).getAttribute('href')).toBe(
-      'https://cafe.test/t/short-ticket',
+      'https://cafe.test/t/qrs1-fixed-ticket',
     );
     expect((screen.getByRole('textbox', { name: 'Link vào bàn' }) as HTMLInputElement).value).toBe(
-      'https://cafe.test/t/short-ticket',
+      'https://cafe.test/t/qrs1-fixed-ticket',
     );
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60000);
+      await vi.advanceTimersByTimeAsync(7 * 24 * 60 * 60000);
     });
-    expect(screen.queryByRole('img')).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Mở link vào bàn' })).toBeNull();
-    expect(screen.queryByRole('textbox', { name: 'Link vào bàn' })).toBeNull();
-    expect(screen.getByText('Mất mạng')).toBeTruthy();
+    expect(screen.getByAltText('QR vào Bàn 01')).toBeTruthy();
+    expect(
+      screen.getByText('QR cố định · Dùng lại qua các phiên · Có thể in tại bàn'),
+    ).toBeTruthy();
+    expect(mock.get).toHaveBeenCalledTimes(1);
     expect(mock.post).not.toHaveBeenCalled();
   });
   it('confirms exactly one order amount and reuses its key after a network failure', async () => {
@@ -213,7 +219,8 @@ describe('table QR display and manual prepayment', () => {
   it('does not offer closure while a prepaid order is still being prepared', async () => {
     const table = { _id: 't1', name: 'Bàn 01', code: 'B01', capacity: 4, isActive: true };
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders')
+        return response({ items: [] });
       if (url === '/staff/tables') return response({ tables: [table] });
       if (url === '/staff/table-sessions')
         return response({
@@ -246,7 +253,8 @@ describe('table QR display and manual prepayment', () => {
       },
     ];
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders')
+        return response({ items: [] });
       if (url === '/staff/tables') return response({ tables: [table] });
       if (url === '/staff/table-sessions')
         return response({

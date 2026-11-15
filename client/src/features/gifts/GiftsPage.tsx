@@ -8,19 +8,13 @@ import type {
   GiftView,
   OrderQuoteResponse,
 } from '@may-cafe/contracts';
-import {
-  api,
-  unwrap,
-  vnd,
-  getErrorMessage,
-  getAxiosError,
-  generateIdempotencyKey,
-} from '../../lib/api';
+import { api, unwrap, vnd, getErrorMessage, getAxiosError, generateRequestId } from '../../lib/api';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
-import { ProductDetailModal, type Product, type Topping } from '../guest/ProductDetailModal';
+import { ProductDetailModal, type Product } from '../guest/ProductDetailModal';
+import { usePublicMenu } from '../guest/usePublicMenu';
 import { MenuPhoto } from '../guest/MenuPhoto';
 import type { CartItem } from '../../store/cart';
 import { useGifts } from './useGifts';
@@ -57,10 +51,6 @@ const toItems = (items: Array<GiftView['items'][number] | Omit<CartItem, 'client
     quantity: i.quantity,
     ...(i.cupPhotoId ? { cupPhotoId: i.cupPhotoId } : {}),
   }));
-function uuid() {
-  const h = generateIdempotencyKey();
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20)}`;
-}
 
 export function GiftsPage(): JSX.Element {
   useDocumentTitle('Tặng quà');
@@ -93,12 +83,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
     queryFn: async () => unwrap<{ items: GiftTable[] }>(await api.get('/gifts/tables')),
     refetchInterval: 10000,
   });
-  const menu = useQuery({
-    queryKey: ['menu'],
-    enabled: open,
-    queryFn: async () =>
-      unwrap<{ products: Product[]; toppings: Topping[] }>(await api.get('/categories')),
-  });
+  const menu = usePublicMenu({ enabled: open });
   const [selected, setSelected] = useState<GiftTable | null>(null);
   const [items, setItems] = useState<Array<Omit<CartItem, 'clientId'>>>([]);
   const { photoBusy, setPhotoBusy } = useCupPhotoBusy();
@@ -196,14 +181,14 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
   const availableProducts = (menu.data?.products ?? []).filter(
     (p) =>
       p.isAvailable &&
-      !(p as Product & { isArchived?: boolean }).isArchived &&
+      !p.isArchived &&
       p.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
   );
   function decide(gift: GiftView, decision: 'ACCEPT' | 'DECLINE' | 'CANCEL') {
     void submit({
       url: `/gifts/${gift.id}/decision`,
       payload: { expectedVersion: gift.version, decision },
-      key: uuid(),
+      key: generateRequestId(),
     });
   }
   return (
@@ -365,7 +350,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
               disabled={locked || !targetValid || !items.length}
               onClick={() => {
                 const payload: GiftCreate = {
-                  requestId: uuid(),
+                  requestId: generateRequestId(),
                   recipientTableId: selected!.tableId,
                   recipientSessionId: selected!.sessionId,
                   message,
@@ -540,7 +525,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
               onClick={() =>
                 void submit({
                   url: '/orders',
-                  key: uuid(),
+                  key: generateRequestId(),
                   payload: {
                     giftId: quote.gift.id,
                     items: toItems(quote.gift.items),

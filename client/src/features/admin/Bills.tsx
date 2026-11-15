@@ -20,6 +20,24 @@ import {
 
 type BillDetail = BillHistoryDetail;
 
+const PAYMENT_METHODS = {
+  CASH: 'Tiền mặt',
+  BANK_TRANSFER: 'Chuyển khoản',
+  OTHER: 'Khác',
+};
+
+function paymentLabel(bill: Pick<BillDetail, 'paymentMethods' | 'total' | 'paidAmount'>): string {
+  if (bill.paymentMethods.length)
+    return bill.paymentMethods.map((method) => PAYMENT_METHODS[method]).join(', ');
+  return bill.total === 0 && bill.paidAmount === 0
+    ? 'Không phát sinh thu tiền'
+    : 'Thiếu thông tin phương thức';
+}
+
+function billTime(value: string): string {
+  return new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+
 export function AdminBills(): JSX.Element {
   useDocumentTitle('Lịch sử hóa đơn');
   const [filters, setFilters] = useState({ q: '', table: '', cashier: '', from: '', to: '' });
@@ -93,8 +111,10 @@ export function AdminBills(): JSX.Element {
                 </td>
                 <td className="p-3">{bill.cashierName}</td>
                 <td className="p-3">
-                  {new Date(bill.closedAt).toLocaleString('vi-VN')} ·{' '}
-                  {bill.paymentMethods.join(', ') || 'Không rõ'}
+                  <p className="font-medium">{paymentLabel(bill)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Chốt: {billTime(bill.closedAt)}
+                  </p>
                 </td>
                 <td className="p-3 text-right font-semibold">{vnd(bill.total)}</td>
                 <td className="p-3">
@@ -162,9 +182,38 @@ function BillPrint({ bill }: { bill: BillDetail }): JSX.Element {
         <span>
           Thu ngân: <strong>{bill.cashierName}</strong>
         </span>
-        <span>Mở: {new Date(bill.openedAt).toLocaleString('vi-VN')}</span>
-        <span>Chốt: {new Date(bill.closedAt).toLocaleString('vi-VN')}</span>
+        <span>Mở: {billTime(bill.openedAt)}</span>
+        <span>Chốt: {billTime(bill.closedAt)}</span>
       </div>
+      <section className="space-y-2 rounded-xl border p-3 text-sm" aria-label="Thanh toán hóa đơn">
+        <h3 className="font-semibold">Thanh toán</h3>
+        {bill.payments.length ? (
+          <ul className="divide-y" aria-label="Các khoản thu">
+            {bill.payments.map((payment, index) => (
+              <li key={index} className="flex flex-wrap justify-between gap-2 py-2">
+                <div>
+                  <p className="font-medium">{PAYMENT_METHODS[payment.method]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Thu lúc {billTime(payment.paidAt)}
+                  </p>
+                </div>
+                <strong>{vnd(payment.amount)}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <p className="font-medium">{paymentLabel(bill)}</p>
+            <p className="text-muted-foreground">
+              {bill.total === 0 && bill.paidAmount === 0
+                ? bill.orders.length === 0
+                  ? 'Phiên được đóng khi chưa có món, không phát sinh thu tiền.'
+                  : 'Hóa đơn 0đ, không phát sinh thu tiền.'
+                : 'Bản lưu hóa đơn chưa có thông tin phương thức thu tiền.'}
+            </p>
+          </>
+        )}
+      </section>
       <div className="divide-y rounded-xl border">
         {bill.orders.flatMap((order) =>
           order.items.map((item, index) => (

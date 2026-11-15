@@ -17,6 +17,7 @@ import { AuditLogModel } from '../../models/AuditLog.js';
 import { ReviewModel } from '../../models/Review.js';
 import { PaymentCorrectionModel } from '../../models/PaymentCorrection.js';
 import { paymentAnalytics } from '../../services/paymentAnalyticsService.js';
+import { listPaymentAccounting } from '../../services/paymentCorrectionService.js';
 import { createAdmissionTicket } from '../../services/tableQrService.js';
 import { registerMember, resolveMember } from '../../services/memberService.js';
 import { hashPassword, randomToken, sha256 } from '../../utils/crypto.js';
@@ -189,6 +190,94 @@ beforeEach(async () => {
 });
 
 describe('payment safeguards', () => {
+  it('separates retired receipts before pagination, keeps corrections in scope and never rewrites the ledger', async () => {
+    const actor = (await UserModel.findOne({ role: 'STAFF' }))!;
+    const makeOrder = (fulfillmentType: 'DINE_IN' | 'TAKEAWAY' | 'PICKUP', unpaid = false) =>
+      OrderModel.create({
+        code: randomToken(12),
+        fulfillmentType,
+        tableId: fulfillmentType === 'DINE_IN' ? tableId : null,
+        tableSessionId: fulfillmentType === 'DINE_IN' ? new mongoose.Types.ObjectId() : null,
+        pickup: fulfillmentType === 'DINE_IN' ? null : { name: 'Khách cũ', phone: '0900000000' },
+        participantId: randomToken(12),
+        items: [],
+        total: 35000,
+        status: unpaid ? 'AWAITING_PAYMENT' : 'SERVED',
+        paymentStatus: unpaid ? 'UNPAID' : 'PAID',
+        paidAmount: unpaid ? 0 : 35000,
+        idempotencyKey: randomToken(16),
+        requestHash: 'fixture',
+      });
+    const dineIn = await makeOrder('DINE_IN');
+    const takeaway = await makeOrder('TAKEAWAY');
+    const pickup = await makeOrder('PICKUP');
+    const currentTarget = await makeOrder('DINE_IN', true);
+    await makeOrder('PICKUP', true);
+    const receipts = await Promise.all(
+      [dineIn, takeaway, pickup].map((order, index) =>
+        PaymentModel.create({
+          orderIds: [order._id],
+          tableSessionId: order.tableSessionId,
+          amount: 35000,
+          confirmedBy: actor._id,
+          idempotencyKey: randomToken(16),
+          paidAt: new Date(1000 + index),
+        }),
+      ),
+    );
+    await PaymentCorrectionModel.create(
+      receipts.map((receipt) => ({
+        paymentId: receipt._id,
+        paymentVersion: 0,
+        kind: 'VOID',
+        reason: 'Đối soát lịch sử',
+        requestedBy: actor._id,
+        requestedByName: actor.name,
+      })),
+    );
+    const snapshot = async () =>
+      JSON.stringify(
+        await Promise.all([
+          OrderModel.find().sort({ _id: 1 }).lean(),
+          PaymentModel.find().sort({ _id: 1 }).lean(),
+          PaymentCorrectionModel.find().sort({ _id: 1 }).lean(),
+        ]),
+      );
+    const before = await snapshot();
+    const current = await request(app).get('/api/v1/staff/payments').set(auth());
+    expect(current.status).toBe(200);
+    expect(current.body.data.total).toBe(1);
+    expect(current.body.data.items[0].id).toBe(receipts[0]!.id);
+    expect(current.body.data.items[0].orders[0].tableName).toBe('Bàn 01');
+    expect(current.body.data.corrections).toHaveLength(1);
+    expect(current.body.data.targets.map((order: { _id: string }) => order._id)).toEqual([
+      currentTarget.id,
+    ]);
+    const archive = await request(app).get('/api/v1/staff/payments?scope=retired').set(auth());
+    expect(archive.status).toBe(200);
+    expect(archive.body.data.total).toBe(2);
+    expect(archive.body.data.corrections).toHaveLength(2);
+    expect(
+      archive.body.data.items.every(
+        (receipt: { orders: { tableName: string }[] }) =>
+          receipt.orders[0]?.tableName === 'Đơn lịch sử',
+      ),
+    ).toBe(true);
+    const second = await listPaymentAccounting(2, 1, undefined, 'retired');
+    expect(second.total).toBe(2);
+    expect(second.items.map((receipt) => receipt.id)).toEqual([receipts[1]!.id]);
+    expect((await request(app).get('/api/v1/staff/payments?scope=all').set(auth())).status).toBe(
+      403,
+    );
+    expect(
+      (await request(app).get('/api/v1/staff/payments?scope=unknown').set(auth())).status,
+    ).toBe(422);
+    const admin = await person('ADMIN');
+    const all = await request(app).get('/api/v1/admin/payments?scope=all').set(admin.headers);
+    expect(all.status).toBe(200);
+    expect(all.body.data.total).toBe(3);
+    expect(await snapshot()).toBe(before);
+  });
   it('requires an explanation for a shift discrepancy and blocks closing while a cashier holds a table', async () => {
     const visit = await join();
     const id = (await place(cookieOf(visit))).body.data.order._id;
@@ -753,7 +842,10 @@ describe('dynamic QR and pay-before-preparation', () => {
     const cookies = login.headers['set-cookie'] as unknown as string[];
     expect(cookies.join(';')).not.toMatch(/Max-Age|Expires=/i);
     const memberCookie = cookies.map((s) => s.split(';')[0]).join('; ');
-    const guestCookies = cookieOf(visit).split('; ').filter((s) => !s.startsWith('mc_member=')).join('; ');
+    const guestCookies = cookieOf(visit)
+      .split('; ')
+      .filter((s) => !s.startsWith('mc_member='))
+      .join('; ');
     const both = `${guestCookies}; ${memberCookie}`;
     const rejoin = await request(app)
       .post('/api/v1/table-sessions/join')

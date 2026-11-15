@@ -10,6 +10,7 @@ import { AuditLogModel } from '../../models/AuditLog.js';
 import { hashPassword } from '../../utils/crypto.js';
 import { AIService } from '../../services/aiService.js';
 import type { AIProvider, AIProviderMessage } from '../../providers/aiProvider.js';
+import { aiRecommendResponseSchema } from '@may-cafe/contracts';
 
 let repl: MongoMemoryReplSet;
 let app: ReturnType<typeof buildApp>;
@@ -143,6 +144,8 @@ describe('AI Barista — rules router (B)', () => {
     expect(provider.calls).toHaveLength(0);
     const peach = await service.recommend({ prompt: 'trà đào' });
     expect(peach.recommendations[0]!.productId).toBe(ids.peach);
+    // AISheet đọc `evidence` qua type dùng chung; kết quả thật phải khớp hợp đồng.
+    expect(aiRecommendResponseSchema.safeParse(peach).error?.issues ?? []).toEqual([]);
     const noCaffeine = await service.recommend({ prompt: 'không caffeine dưới 40k' });
     expect(noCaffeine.recommendations.map((item) => item.productId)).toEqual([ids.soda]);
   });

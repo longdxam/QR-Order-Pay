@@ -224,16 +224,17 @@ export function StaffKDS(): JSX.Element {
         <div>
           <h1 className="font-display text-2xl font-semibold">Kitchen Display</h1>
         </div>
-        <Link
-          to="/staff/tables"
-          className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          <WalletCards className="h-5 w-5 text-primary" />
-          Chờ thanh toán
-          {awaiting.data ? <Badge tone="warning">{awaiting.data.items.length}</Badge> : null}
-        </Link>
+        {(awaiting.data?.items.length ?? 0) > 0 ? (
+          <Link
+            to="/staff/tables#awaiting-payments"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-primary underline underline-offset-4"
+          >
+            <WalletCards className="h-5 w-5 text-primary" />
+            Thu tiền tại Bàn & phiên
+            {awaiting.data ? <Badge tone="warning">{awaiting.data.items.length}</Badge> : null}
+          </Link>
+        ) : null}
       </div>
-      <RecentCancellations />
       {cancelRequests.isError ? (
         <ErrorState
           message={getErrorMessage(cancelRequests.error)}
@@ -340,6 +341,12 @@ export function StaffKDS(): JSX.Element {
           );
         })}
       </div>
+      <details className="rounded-2xl border border-border p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Lịch sử đơn đã hủy</summary>
+        <div className="mt-4">
+          <RecentCancellations />
+        </div>
+      </details>
       <OrderDetailModal orderId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );

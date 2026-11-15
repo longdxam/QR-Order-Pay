@@ -2,6 +2,8 @@
 
 Cập nhật 26/10/2026 theo yêu cầu người dùng, thay thế luồng QR đổi mỗi 60 giây.
 
+**Chốt cách vận hành, kiểm tra lại 15/11/2026:** Quán dùng QR cố định ký HMAC `qrs1`, in tại bàn và dùng lại qua các phiên. Không có đếm ngược hay đổi mã tự động mỗi phút. Màn hình `/display` cũng hiển thị chính mã cố định đó; ghi chú QR động ngày 12/10 trong memory là lịch sử thiết kế.
+
 ## Dùng QR tại bàn
 
 1. Staff mở **Bàn & phiên** hoặc Admin mở **Bàn & QR tĩnh**, chọn **Xem QR tĩnh**.

@@ -22,6 +22,18 @@ export const serviceRequestRepository = {
       session: session ?? undefined,
     }).sort({ createdAt: -1 });
   },
+  /** Đóng mọi yêu cầu còn mở của phiên (dùng khi thu tiền và đóng bàn). */
+  async resolveOpenBySession(
+    tableSessionId: string,
+    resolvedBy: string,
+    session?: ClientSession | null,
+  ): Promise<void> {
+    await ServiceRequestModel.updateMany(
+      { tableSessionId, status: 'OPEN' },
+      { $set: { status: 'RESOLVED', resolvedBy, resolvedAt: new Date() } },
+      { session: session ?? undefined },
+    );
+  },
   async resolve(id: string, resolvedBy: string, session?: ClientSession | null) {
     return ServiceRequestModel.findOneAndUpdate(
       { _id: id, status: 'OPEN' },

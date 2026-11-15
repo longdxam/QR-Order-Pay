@@ -1,4 +1,23 @@
-# Test report — cập nhật 07/11/2026
+# Test report — cập nhật 15/11/2026
+
+> Nhật ký theo ngày: các tính năng/thiết kế trong mục cũ có thể đã ngừng. Phạm vi hiện tại xem [tính năng đã gỡ](retired-features.md), [QR cố định](qr-prepayment.md) và [bộ nhớ dự án](../PROJECT_MEMORY.md).
+
+## Luồng khách, vận hành và báo cáo — 15/11/2026
+
+- **622 test đạt: 138 unit + 278 integration + 206 client.** Lint/boundaries, typecheck, Docker build bốn API + worker-report + web, OpenAPI YAML và diff-check đạt. Regression dùng MongoMemoryReplSet riêng, không dữ liệu quán.
+- Test mới: khoảng ngày có đủ ngày 0đ/biên VN, tiền hoàn khác phương thức và cột âm, tổng phương thức = thực thu, ròng0 có giao dịch, kỳ trước cùng số ngày, nhu cầu đơn chưa thu và tỉ lệ hủy, danh mục gồm món archived/tiền trước ưu đãi, CSV tiền âm; text+filter/query rỗng không hack, compact hero, AI trống, CTA QR chưa có variant, cờ demo, KDS và đổi ngày hiển thị 5 trạng thái rỗng.
+- Build/deploy bốn API theo đợt A/B + report worker + web/PWA73. Asset audit xác nhận **20/20** ảnh hiện có là WebP nội bộ hợp lệ, HTTP200; không tái hiện “12/20 thiếu ảnh” ở catalog đang chạy. Lightpanda guest375/1280: 20 ảnh catalog eager/alt và20hero src nội bộ, tìm/lọc không dựng hero, clear/preset/entry đúng. Staff: lịch sử hủy dưới cột và thu gọn; link nơi thu tiền. Login không điền/hiện demo. Admin: card/UI report worker, API24ngày đầy đủ có ngày0, giờâm, tổngmethodkhớpKPI/cơ cấu/kỳtrước, emptyjob thực. Không businesswrite/pageerror/5xx; auth và report job read-only computation có thực hiện.
+- **Giới hạn:** Lightpanda fill ô ngày native đổi DOM value nhưng không kích hoạt React handler, nên thao tác bộ chọn ngày native chưa xác minh bằng browser. Handler/đổi ngày/emptyUI đã đạt jsdom; empty worker/API đạt live. Không thay bằng Chrome/Chromium; không suy diễn chứng cứ render trực quan, camera hay zoom/cảm ứng thiết bị thật từ DOM.
+- Hash/số bản ghi trước/sau deploy+smoke giữ nguyên:155đơn/77khoảnthu/25hóađơn/1điềuchỉnh/26món. Không seed/reset hoặc tạo đơn/thu/hoàn, không đổi catalog. Chi tiết [usability-and-reporting.md](usability-and-reporting.md); logs `.cache/usability-*`, smoke cuối `usability-smoke-verified.log`, các lượt native date diagnostic không tính là đạt.
+
+## Tàn dư tính năng, QR cố định và workforce — 15/11/2026
+
+- **611 test đạt: 137 unit, 275 integration** trên MongoMemoryReplSet tạm, **199 client**; lint/boundaries, typecheck server/client/contracts và Docker build bốn API + web đạt. Test khoản thu mới kiểm loại đơn, phân trang sau lọc, yêu cầu điều chỉnh cùng phạm vi, loại mục tiêu chuyển đơn cũ, quyền API và dữ liệu trước/sau không đổi.
+- Workforce cố định đồng hồ nghiệp vụ, không mock Date/timer toàn cục; mặc định 00:05 Việt Nam. Fixture tuần/ngày bao gồm ngày của ca/hoạt động lịch sử, nguồn/đích sao chép cùng mốc. **33/33 ở mỗi mốc 00:05, 12:00, 23:59 ranh giới tuần/tháng: 99 lần chạy đạt**. Không còn kết luận dựa trên lượt diagnostic chạy riêng lúc trưa. Script và giải thích tại [workforce.md](workforce.md).
+- QR: unit kiểm chữ ký, thế hệ, token không đổi sau 61 giây/1 giờ/7 ngày; client giữ QR cố định không polling/đếm ngược và không tự join. Integration hiện có kiểm QR tĩnh dùng lại qua đóng/chuyển phiên, bàn ngừng dùng và cấp lại khóa. `qr1` có hạn chỉ là tương thích lịch sử; các endpoint cấp mới trả `qrs1`.
+- Deploy API A/B + web/PWA72. Lightpanda chỉ DOM/network, 375/1280 cả Staff/Admin: tab khoản thu hiện hành/lưu trữ, không còn nhãn Mang đi, QR xem hai lần không đổi; Admin đối soát **70 + 7 = 77**. Public menu/API/PWA mới hoạt động; API tính năng đã gỡ trả 404, không pageerror/5xx hoặc ghi nghiệp vụ (có đăng nhập/đăng xuất). Không dùng Chrome/Chromium để thay thế. Chưa xác nhận CSS trực quan, camera hoặc điện thoại thật.
+- Logs: `.cache/retirement-{client,integration-final,lint-final,typecheck-final,build,server-build-final,deploy-a,deploy-b,deploy-web,smoke}.log`, `.cache/workforce-clock-domain-matrix.log`. Các lượt thử lỗi trước bản cuối vẫn giữ log, không tính là đạt.
+- Hash và số bản ghi trước/sau triển khai + smoke giữ nguyên: **155 đơn, 77 khoản thu, 25 hóa đơn, 1 yêu cầu điều chỉnh**. Log snapshot chỉ đọc `.cache/retirement-ledger-{before,after}.json`. Không seed/reset hoặc tạo dữ liệu nghiệp vụ để kiểm tra trên quán.
 
 ## Fantastic Cafe, thanh menu, kho và điểm thành viên — 07/11/2026
 

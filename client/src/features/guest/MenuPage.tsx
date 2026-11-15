@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Sparkles, SlidersHorizontal, X } from 'lucide-react';
-import type { MenuSearchResponse } from '@may-cafe/contracts';
+import type { MenuProduct, MenuSearchResponse } from '@may-cafe/contracts';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { Input } from '../../components/ui/Input';
@@ -13,48 +13,9 @@ import { ToggleCheck } from './ToggleCheck';
 import { AISheet } from '../ai/AISheet';
 import { MenuShowcase } from './MenuShowcase';
 import { MenuCatalog } from './MenuCatalog';
+import { usePublicMenu } from './usePublicMenu';
 
-interface Product {
-  _id: string;
-  name: string;
-  description: string;
-  image: string;
-  basePrice: number;
-  categoryId: string;
-  isArchived: boolean;
-  variants: Array<{ _id: string; name: string; price: number; isAvailable?: boolean }>;
-  allowedOptions: {
-    sizes: string[];
-    sugarLevels: string[];
-    iceLevels: string[];
-    toppingIds: string[];
-  };
-  toppingIds: string[];
-  tags: string[];
-  ingredientMetadata: { caffeine: boolean; dairy: boolean; flavorProfile: string[] };
-  isAvailable: boolean;
-  isFeatured: boolean;
-}
-
-interface Category {
-  _id: string;
-  name: string;
-  slug: string;
-  sortOrder: number;
-}
-
-interface Topping {
-  _id: string;
-  name: string;
-  price: number;
-  isAvailable: boolean;
-}
-
-interface MenuResponse {
-  categories: Category[];
-  products: Product[];
-  toppings: Topping[];
-}
+type Product = MenuProduct;
 
 export function MenuPage(): JSX.Element {
   useDocumentTitle('Menu');
@@ -68,31 +29,29 @@ export function MenuPage(): JSX.Element {
   const [noCaffeine, setNoCaffeine] = useState(false);
   const [noDairy, setNoDairy] = useState(false);
 
-  const searchText = query.trim() || (manualFilters ? 'món' : '');
+  const searchText = query.trim();
+  const hasFilters = !!maxBudget || noCaffeine || noDairy;
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(searchText), 350);
     return () => window.clearTimeout(timer);
   }, [searchText]);
 
-  const menuQuery = useQuery({
-    queryKey: ['menu'],
-    queryFn: async () => unwrap(await api.get<MenuResponse>('/categories')),
-  });
+  const menuQuery = usePublicMenu();
 
   const searchQuery = useQuery({
-    queryKey: ['menu-search', debouncedQuery, manualFilters, maxBudget, noCaffeine, noDairy],
+    queryKey: ['menu-search', debouncedQuery, maxBudget, noCaffeine, noDairy],
     queryFn: async ({ signal }) =>
       unwrap<MenuSearchResponse>(
         await api.post(
           '/menu/search',
           {
             query: debouncedQuery,
-            ...(manualFilters
+            ...(hasFilters
               ? {
                   filters: {
-                    maxBudget: maxBudget ? Number(maxBudget) : null,
-                    noCaffeine,
-                    noDairy,
+                    ...(maxBudget ? { maxBudget: Number(maxBudget) } : {}),
+                    ...(noCaffeine ? { noCaffeine: true } : {}),
+                    ...(noDairy ? { noDairy: true } : {}),
                   },
                 }
               : {}),
@@ -100,11 +59,11 @@ export function MenuPage(): JSX.Element {
           { signal },
         ),
       ),
-    enabled: debouncedQuery.length > 0,
+    enabled: debouncedQuery.length > 0 || hasFilters,
     staleTime: 30_000,
   });
 
-  const searchActive = searchText.length > 0;
+  const searchActive = searchText.length > 0 || hasFilters;
 
   const filtered = useMemo(() => {
     if (!menuQuery.data) return [];
@@ -174,6 +133,7 @@ export function MenuPage(): JSX.Element {
         categories={menuQuery.data?.categories ?? []}
         onChoose={setSelected}
         status={status}
+        compact={searchActive}
       >
         <div className="menu-toolbar">
           <h1 className="sr-only">Thực đơn</h1>
@@ -224,10 +184,11 @@ export function MenuPage(): JSX.Element {
             </form>
             <button
               type="button"
-              className={cn('menu-tool-button', manualFilters && 'is-active')}
+              className={cn('menu-tool-button', (manualFilters || hasFilters) && 'is-active')}
               onClick={() => setManualFilters((value) => !value)}
-              aria-label={manualFilters ? 'Dùng câu tìm kiếm' : 'Chỉnh bộ lọc'}
-              title={manualFilters ? 'Dùng câu tìm kiếm' : 'Chỉnh bộ lọc'}
+              aria-label={manualFilters ? 'Ẩn bộ lọc' : 'Chỉnh bộ lọc'}
+              title={manualFilters ? 'Ẩn bộ lọc' : 'Chỉnh bộ lọc'}
+              aria-expanded={manualFilters}
             >
               <SlidersHorizontal className="h-4 w-4" />
             </button>
@@ -264,7 +225,7 @@ export function MenuPage(): JSX.Element {
                 Không sữa
               </ToggleCheck>
             </div>
-            <p className="text-xs text-muted-foreground">Giá theo size rẻ nhất còn bán.</p>
+            <p className="text-xs text-muted-foreground">Bộ lọc kết hợp với từ khóa đang tìm.</p>
           </div>
         ) : null}
       </MenuShowcase>
@@ -278,6 +239,17 @@ export function MenuPage(): JSX.Element {
             <div className="mb-6 space-y-3">
               <div className="text-sm" aria-live="polite">
                 {query.trim() ? <p className="mb-2">Kết quả cho “{query.trim()}”</p> : null}
+                {hasFilters ? (
+                  <p className="mb-2 text-muted-foreground">
+                    {[
+                      maxBudget ? `Tối đa ${Number(maxBudget).toLocaleString('vi-VN')}đ` : '',
+                      noCaffeine ? 'Không caffeine' : '',
+                      noDairy ? 'Không sữa' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                ) : null}
                 {searchPending || searchQuery.isFetching ? (
                   <p>Đang tìm món…</p>
                 ) : searchQuery.isError ? (

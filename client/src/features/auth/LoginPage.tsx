@@ -16,10 +16,11 @@ export function LoginPage(): JSX.Element {
   const setSession = useAuth((s) => s.setSession);
   const { toast } = useToast();
   const portal = getPortalMode();
+  const showDemo = import.meta.env.VITE_SHOW_DEMO_CREDENTIALS === 'true';
   const [email, setEmail] = useState(
-    portal === 'admin' ? 'admin@maycafe.vn' : 'staff.a@maycafe.vn',
+    showDemo ? (portal === 'admin' ? 'admin@maycafe.vn' : 'staff.a@maycafe.vn') : '',
   );
-  const [password, setPassword] = useState('MayCafe@2025');
+  const [password, setPassword] = useState(showDemo ? 'MayCafe@2025' : '');
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent): Promise<void> {
@@ -123,10 +124,12 @@ export function LoginPage(): JSX.Element {
               {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </Button>
           </form>
-          <p className="mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
-            Demo: admin@maycafe.vn / MayCafe@2025 (ADMIN) hoặc staff.a@maycafe.vn / MayCafe@2025
-            (STAFF).
-          </p>
+          {showDemo ? (
+            <p className="mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
+              Demo: admin@maycafe.vn / MayCafe@2025 (ADMIN) hoặc staff.a@maycafe.vn / MayCafe@2025
+              (STAFF).
+            </p>
+          ) : null}
         </Card>
       </section>
     </main>

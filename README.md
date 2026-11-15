@@ -39,7 +39,7 @@ Từ 07/11/2026 đã gỡ mini-game (#2), mang đi/đặt trước nhận tại 
 - Thanh toán trước từng đơn: Staff xác nhận đã nhận đủ tiền thì đơn mới vào KDS. Khách gọi thêm thanh toán tiếp; đóng phiên mới chốt hóa đơn bất biến và thu hồi quyền gọi món.
 - Thu từng phần, hiển thị đã thu/còn thiếu; khóa thu tiền theo phiên bàn, điều chỉnh khoản thu có quản lý khác duyệt, lịch sử đảo/thay thế và đối soát ca. Xem [quy trình xử lý thanh toán](docs/payment-safeguards.md).
 - Đánh giá riêng từng đơn ngay khi đã thanh toán và phục vụ xong, vẫn tiếp tục gọi thêm; hóa đơn sau đóng phiên giữ đánh giá đã gửi và cho đánh giá các đơn còn thiếu.
-- Staff/Admin cấp liên kết riêng cho thiết bị hiển thị QR tại từng bàn; token QR tĩnh cũ không còn được dùng để vào bàn.
+- Staff/Admin xem và tải QR cố định ký HMAC `qrs1` để in tại bàn; màn hình `/display` tùy chọn cũng hiển thị cùng mã cố định. [Quy tắc QR hiện hành](docs/qr-prepayment.md).
 - Dashboard doanh thu, lịch sử/in lại hóa đơn snapshot, biểu đồ ngày/giờ và top sản phẩm.
 - Dashboard vận hành riêng cho ADMIN: dependency, hàng đợi, socket, lỗi HTTP, tài nguyên và thời gian công đoạn.
 - Detector bất thường định kỳ cho lỗi/độ trễ/pha chế/hủy đơn, có baseline, “chưa đủ dữ liệu”, bằng chứng, cooldown và giải thích fallback an toàn.
@@ -81,6 +81,8 @@ Server đọc cấu hình dev từ `server/.env`, không từ `.env` ở repo ro
 - `staff.a@maycafe.vn` (STAFF)
 - `staff.b@maycafe.vn` (STAFF)
 
+Giao diện đăng nhập mặc định không điền/hiện tài khoản demo. Chỉ bật `VITE_SHOW_DEMO_CREDENTIALS=true` và build lại web khi trình diễn; production để `false`. [Luồng khách, vận hành và cách đọc báo cáo](docs/usability-and-reporting.md).
+
 Staff **Bàn & phiên** hoặc Admin **Bàn & QR tĩnh** → **Xem QR tĩnh** → tải PNG để in hoặc mở/sao chép link vào bàn. Không cần seed lại hoặc màn hình đổi mã. Xem [hướng dẫn QR tĩnh và thanh toán trước](docs/qr-prepayment.md).
 
 ## Luồng khách: quét QR → đặt món
@@ -89,9 +91,9 @@ Staff **Bàn & phiên** hoặc Admin **Bàn & QR tĩnh** → **Xem QR tĩnh** �
 2. Nếu bàn **chưa có phiên**, server tự mở phiên mới (`source: 'GUEST'`, có audit log) và trả `created: true`, kèm `guestSessionId` / `participantId` để đặt món. Thao tác này **idempotent** và an toàn khi nhiều người quét cùng lúc: hai request đồng thời chỉ tạo đúng một phiên, cả hai nhận cùng `tableSessionId`.
 3. Nếu bàn **đang có phiên**, khách được đưa vào đúng phiên đó (`created: false`) — không tạo phiên trùng.
 4. Khách gửi đơn ở trạng thái `AWAITING_PAYMENT / UNPAID`. Nhân viên kiểm tra đã nhận đủ tiền từng đơn thì đơn chuyển `PENDING / PAID` và xuất hiện trên KDS.
-5. Khách gọi thêm không cần quét lại, mỗi đơn mới thanh toán riêng. QR hết hạn không thu hồi quyền của khách đã vào bàn.
+5. Khách gọi thêm không cần quét lại, mỗi đơn mới thanh toán riêng. QR cố định không hết hạn theo đồng hồ; quyền khách thuộc từng phiên bàn.
 
-Khi khách rời bàn, Staff đóng phiên sau khi phục vụ/hủy hết đơn, thu đủ tiền và xử lý yêu cầu hủy. Server **chốt thành `Bill` bất biến** trong cùng transaction, thu hồi quyền gọi món và QR cũ. Bàn trở lại trạng thái tự do; khách lượt sau quét QR mới để mở phiên. Bản ghi `Bill` chỉ ghi một lần (unique theo `tableSessionId`), không có API sửa/xóa. Xác nhận tiền từng đơn không đóng phiên.
+Khi khách rời bàn, Staff đóng phiên sau khi phục vụ/hủy hết đơn, thu đủ tiền và xử lý yêu cầu hủy. Server **chốt thành `Bill` bất biến** trong cùng transaction, thu hồi quyền gọi món của khách thuộc phiên cũ. Bàn trở lại trạng thái tự do; khách lượt sau quét lại cùng QR đã in để mở phiên mới. Bản ghi `Bill` chỉ ghi một lần (unique theo `tableSessionId`), không có API sửa/xóa. Xác nhận tiền từng đơn không đóng phiên.
 
 > Nếu quán muốn giữ quyền kiểm soát của nhân viên, đặt `GUEST_AUTO_OPEN=false`: khách quét QR lúc bàn chưa mở phiên sẽ nhận `403` với thông báo _"Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên."_ như hành vi cũ.
 

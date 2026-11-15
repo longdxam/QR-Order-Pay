@@ -27,7 +27,10 @@ export function AwaitingPayments(): JSX.Element {
     refetchInterval: 5_000,
   });
   return (
-    <section className="space-y-4 rounded-3xl border border-accent/30 bg-accent/5 p-4 sm:p-5">
+    <section
+      id="awaiting-payments"
+      className="scroll-mt-20 space-y-4 rounded-3xl border border-accent/30 bg-accent/5 p-4 sm:p-5"
+    >
       <div className="flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-primary">
           <WalletCards className="h-5 w-5" />

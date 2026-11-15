@@ -66,7 +66,7 @@ export function MenuCatalog<T extends Product & { categoryId: string; isArchived
                       onClick={() => onChoose(product)}
                     >
                       <span className="menu-catalog-photo">
-                        <MenuPhoto source={product.image} />
+                        <MenuPhoto source={product.image} alt={product.name} eager />
                       </span>
                       <span className="menu-catalog-copy">
                         <span className="menu-catalog-name">{product.name}</span>

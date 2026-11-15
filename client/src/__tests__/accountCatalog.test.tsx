@@ -50,6 +50,21 @@ afterEach(() => {
 });
 
 describe('accounts, toppings and compact receipts', () => {
+  it('defaults to dine-in receipts and opens retired receipts only through the archive tab', async () => {
+    mock.get.mockResolvedValue(response({ items: [], total: 0, corrections: [], targets: [] }));
+    mount(<PaymentAccounting />);
+    await waitFor(() =>
+      expect(mock.get).toHaveBeenCalledWith('/staff/payments?page=1&scope=current'),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Lịch sử đã lưu trữ' }));
+    await waitFor(() =>
+      expect(mock.get).toHaveBeenCalledWith('/staff/payments?page=1&scope=retired'),
+    );
+    expect(screen.getByText(/Khoản thu từ các chức năng đã ngừng/)).toBeTruthy();
+    expect(mock.post).not.toHaveBeenCalled();
+    expect(mock.patch).not.toHaveBeenCalled();
+    expect(mock.delete).not.toHaveBeenCalled();
+  });
   it('cancels or confirms employee deletion by name', async () => {
     mock.get.mockResolvedValue(
       response({

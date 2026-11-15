@@ -1,4 +1,4 @@
-> **Đã gỡ ngày 07/11/2026.** Tài liệu này chỉ lưu lịch sử, không mô tả chức năng đang cung cấp. Xem [phạm vi gỡ](retired-features.md).
+> **Đã gỡ ngày 07/11/2026.** Tài liệu này chỉ lưu lịch sử, không mô tả chức năng đang cung cấp. Xem [phạm vi gỡ](../../retired-features.md).
 
 # Smart Insights và gợi ý bán kèm (#12)
 

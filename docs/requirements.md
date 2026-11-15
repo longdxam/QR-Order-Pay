@@ -21,7 +21,7 @@
 | UC-09 | Tiếp nhận & chuyển trạng thái đơn | Staff | Theo state machine. |
 | UC-10 | Thu tiền & đóng phiên | Staff | Kiểm tra tổng, ghi Payment, đóng phiên. |
 | UC-11 | Quản lý menu | Admin | CRUD danh mục, món, topping, bật/tắt còn bán. |
-| UC-12 | Quản lý bàn | Admin | CRUD bàn, xoay token QR (P2). |
+| UC-12 | Quản lý bàn | Admin | CRUD bàn, xem/tải QR cố định có chữ ký; cấp lại khóa có chủ đích khi cần thu hồi mã cũ. |
 | UC-13 | Quản lý nhân viên | Admin | CRUD tài khoản Staff. |
 | UC-14 | Xem báo cáo | Admin | Doanh thu, top món, biểu đồ theo ngày/giờ. |
 

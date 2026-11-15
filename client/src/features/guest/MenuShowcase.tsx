@@ -12,12 +12,14 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
   onChoose,
   children,
   status,
+  compact = false,
 }: {
   products: T[];
   categories: Array<{ _id: string; name: string }>;
   onChoose: (product: T) => void;
   children: ReactNode;
   status?: ReactNode;
+  compact?: boolean;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(null);
   const index = Math.max(
@@ -40,7 +42,7 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
     setActiveId(products[(index + direction + products.length) % products.length]!._id);
   }
   useEffect(() => {
-    if (!active) return;
+    if (!active || compact) return;
     for (const next of [
       products[(index - 1 + products.length) % products.length],
       products[(index + 1) % products.length],
@@ -50,7 +52,15 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
         image.src = menuImageSource(next.image);
       }
     }
-  }, [active, index, products]);
+  }, [active, index, products, compact]);
+  if (compact)
+    return (
+      <section className="menu-experience menu-experience-search" aria-label="Tìm và lọc món">
+        <div className="menu-experience-inner">
+          <div className="menu-tools">{children}</div>
+        </div>
+      </section>
+    );
   return (
     <section className="menu-experience" aria-label="Thực đơn">
       <div className="menu-backdrop" aria-hidden="true" data-product-id={active?._id ?? ''}>

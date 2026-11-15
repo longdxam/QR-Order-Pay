@@ -14,6 +14,7 @@ import { OutboxEventModel } from '../../models/OutboxEvent.js';
 import { hashPassword } from '../../utils/crypto.js';
 import { AIService, validateRecommendedConfiguration } from '../../services/aiService.js';
 import { priceOrderItems } from '../../services/orderPricingService.js';
+import { publicMenuResponseSchema } from '@may-cafe/contracts';
 
 let repl: MongoMemoryReplSet;
 let app: ReturnType<typeof buildApp>;
@@ -186,7 +187,10 @@ describe('catalog lifecycle and visibility', () => {
           .send({ isArchived: false })
       ).status,
     ).toBe(200);
-    expect((await request(app).get('/api/v1/categories')).body.data.products).toHaveLength(1);
+    const restored = (await request(app).get('/api/v1/categories')).body.data;
+    expect(restored.products).toHaveLength(1);
+    // Client dùng chung type này; response thật phải khớp, kể cả khóa `_id`.
+    expect(publicMenuResponseSchema.safeParse(restored).error?.issues ?? []).toEqual([]);
   });
 
   it('hides category products from catalog, featured, search, AI and old carts, then restores them', async () => {

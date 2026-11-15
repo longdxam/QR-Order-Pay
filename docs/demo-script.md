@@ -14,7 +14,7 @@
   ```
 
 - Mở Guest portal `http://localhost:8080` và kiểm tra `http://localhost:8080/healthz`.
-- Trên điện thoại cùng mạng Wi-Fi, mở `http://<IP-máy>:8080/t/<token-bàn-01>`. Lấy token từ log khi seed và đặt `PUBLIC_APP_URL` theo IP LAN trước khi xoay QR.
+- Trên điện thoại cùng mạng Wi-Fi, đặt `PUBLIC_APP_URL` theo IP LAN rồi mở **Bàn & phiên → Xem QR tĩnh** để lấy link đúng máy chủ; không cần seed hay xoay QR. Nếu dùng mạng di động, dùng public URL HTTPS đang chạy.
 - Mở sẵn:
   - 1 tab guest trên điện thoại (hoặc tab ẩn danh).
   - 1 tab guest thứ hai trên trình duyệt khác.

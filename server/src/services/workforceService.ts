@@ -1,3 +1,4 @@
+import { workforceClock } from '../utils/workforceClock.js';
 import { Types, type ClientSession } from 'mongoose';
 import {
   workShiftCreateSchema,
@@ -123,7 +124,7 @@ async function assertAttendanceFree(
     );
 }
 
-export function toWorkShift(shift: WorkShiftDoc, now = new Date()): WorkShiftDto {
+export function toWorkShift(shift: WorkShiftDoc, now = workforceClock.now()): WorkShiftDto {
   const effectiveIn = shift.effectiveInAt ?? null;
   const effectiveOut = shift.effectiveOutAt ?? null;
   return {
@@ -175,7 +176,7 @@ export async function createWorkShift(actorId: string, raw: unknown) {
       }
       const start = new Date(data.startsAt),
         end = new Date(data.endsAt);
-      if (end <= new Date())
+      if (end <= workforceClock.now())
         throw new ValidationError(
           'Không tạo lịch ca đã kết thúc. Dùng điều chỉnh chấm công cho ca đã có.',
         );
@@ -223,7 +224,7 @@ export async function updateWorkShift(id: string, actorId: string, raw: unknown)
       throw new ConflictError('WORK_SHIFT_LOCKED', 'Ca đã vào làm hoặc đã hủy không thể đổi lịch.');
     const start = new Date(data.startsAt),
       end = new Date(data.endsAt);
-    if (end <= new Date()) throw new ValidationError('Lịch mới phải chưa kết thúc.');
+    if (end <= workforceClock.now()) throw new ValidationError('Lịch mới phải chưa kết thúc.');
     await assertScheduleFree(data.staffId, start, end, id, session);
     const before = toWorkShift(shift);
     shift.set({ ...data, staffName: user.name, version: shift.version + 1 });
@@ -268,7 +269,7 @@ export async function clockWorkShift(
     if ((direction === 'in' && shift.clockInAt) || (direction === 'out' && shift.clockOutAt))
       return toWorkShift(shift);
     checkVersion(shift, data.expectedVersion);
-    const now = new Date(),
+    const now = workforceClock.now(),
       before = toWorkShift(shift, now);
     if (direction === 'in') {
       if (shift.status !== 'SCHEDULED')
@@ -320,7 +321,7 @@ export async function correctWorkAttendance(id: string, actorId: string, raw: un
     const start = new Date(data.startsAt),
       end = new Date(data.endsAt);
     if (
-      end > new Date() ||
+      end > workforceClock.now() ||
       start.getTime() < shift.startsAt.getTime() - 12 * HOUR ||
       end.getTime() > shift.endsAt.getTime() + 12 * HOUR
     )
@@ -424,7 +425,7 @@ export async function recordWorkActivity(
   session: ClientSession,
 ) {
   if (!['CONFIRMED', 'PREPARING', 'READY', 'SERVED'].includes(stage)) return;
-  const at = new Date();
+  const at = workforceClock.now();
   const user = await UserModel.findById(actorId).session(session);
   const shift = await WorkShiftModel.findOneAndUpdate(
     { staffId: actorId, status: 'WORKING', effectiveInAt: { $lte: at } },
@@ -462,7 +463,7 @@ export async function workforceWeek(
   const { from } = workWeekQuerySchema.parse(raw);
   const start = new Date(`${from}T00:00:00+07:00`),
     end = new Date(start.getTime() + 7 * 24 * HOUR),
-    now = new Date();
+    now = workforceClock.now();
   const own = admin ? {} : { staffId: new Types.ObjectId(actorId) };
   const shifts = await WorkShiftModel.find({
     ...own,

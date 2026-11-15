@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2, ArchiveRestore, Sparkles, Search, X } from 'lucide-react';
+import { Pencil, Plus, Trash2, ArchiveRestore, Search, X } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -11,75 +11,19 @@ import { ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { useToast } from '../../components/ui/useToast';
-
-interface Variant {
-  _id?: string;
-  name: string;
-  price: number;
-  isAvailable: boolean;
-}
-
-interface AdminProduct {
-  _id: string;
-  categoryId: string;
-  name: string;
-  description: string;
-  image: string;
-  basePrice: number;
-  variants: Variant[];
-  isAvailable: boolean;
-  isArchived: boolean;
-  isFeatured: boolean;
-  tags: string[];
-  toppingIds?: string[];
-  ingredientMetadata?: {
-    caffeine: boolean;
-    dairy: boolean;
-    flavorProfile: string[];
-    allergens?: string[];
-    notes?: string;
-  };
-  allowedOptions?: {
-    sizes?: string[];
-    sugarLevels?: string[];
-    iceLevels?: string[];
-    toppingIds?: string[];
-  };
-}
-
-interface Category {
-  _id: string;
-  name: string;
-  slug: string;
-  isActive: boolean;
-}
-
-interface FormState {
-  name: string;
-  description: string;
-  image: string;
-  basePrice: string;
-  variants: Variant[];
-  isAvailable: boolean;
-  isFeatured: boolean;
-  isArchived: boolean;
-  categoryId: string;
-  tagInput: string;
-}
-
-const EMPTY_FORM: FormState = {
-  name: '',
-  description: '',
-  image: '',
-  basePrice: '35000',
-  variants: [{ name: 'M', price: 35000, isAvailable: true }],
-  isAvailable: true,
-  isFeatured: false,
-  isArchived: false,
-  categoryId: '',
-  tagInput: '',
-};
-
+import {
+  EMPTY_FORM,
+  buildProductPayload,
+  formFromProduct,
+  mergeSuggestedTags,
+  normalizeProductName,
+  parseTags,
+  type AdminProduct,
+  type Category,
+  type FormState,
+  type TagSuggestions,
+} from './products/model';
+import { ProductForm } from './products/ProductForm';
 export function AdminProducts(): JSX.Element {
   useDocumentTitle('Quản lý món');
   const qc = useQueryClient();
@@ -104,72 +48,15 @@ export function AdminProducts(): JSX.Element {
     if (editing === 'new') {
       setForm({ ...EMPTY_FORM, categoryId: categoriesQuery.data?.categories[0]?._id ?? '' });
     } else if (editing) {
-      const p = editing;
-      setForm({
-        name: p.name,
-        description: p.description,
-        image: p.image,
-        basePrice: String(p.basePrice),
-        variants: p.variants.length
-          ? p.variants
-          : [{ name: 'M', price: p.basePrice, isAvailable: true }],
-        isAvailable: p.isAvailable,
-        isFeatured: p.isFeatured,
-        isArchived: p.isArchived,
-        categoryId: p.categoryId,
-        tagInput: p.tags.join(', '),
-      });
+      setForm(formFromProduct(editing));
     }
   }, [editing, categoriesQuery.data]);
 
   const save = useMutation({
     mutationFn: async () => {
-      const tags = parseTags(form.tagInput);
-      const payload = {
-        name: form.name,
-        description: form.description,
-        image: form.image,
-        basePrice: Number(form.basePrice),
-        variants: form.variants.map((v) => ({
-          ...(v._id ? { _id: v._id } : {}),
-          name: v.name,
-          price: Number(v.price),
-          isAvailable: v.isAvailable,
-        })),
-        isAvailable: form.isAvailable,
-        isFeatured: form.isFeatured,
-        isArchived: form.isArchived,
-        tags,
-        categoryId: form.categoryId || undefined,
-        allowedOptions: {
-          sizes: Array.from(new Set(form.variants.map((v) => v.name))),
-          sugarLevels:
-            editing && editing !== 'new'
-              ? (editing.allowedOptions?.sugarLevels ?? [])
-              : ['0%', '30%', '50%', '70%', '100%'],
-          iceLevels:
-            editing && editing !== 'new'
-              ? (editing.allowedOptions?.iceLevels ?? [])
-              : ['no-ice', 'less-ice', 'normal-ice'],
-          toppingIds:
-            editing && editing !== 'new' ? (editing.allowedOptions?.toppingIds ?? []) : [],
-        },
-        toppingIds: editing && editing !== 'new' ? (editing.toppingIds ?? []) : [],
-        ingredientMetadata:
-          editing && editing !== 'new'
-            ? editing.ingredientMetadata
-            : {
-                caffeine: false,
-                dairy: false,
-                flavorProfile: [],
-                allergens: [],
-                notes: '',
-              },
-      };
-      if (editing === 'new') {
-        return unwrap(await api.post('/admin/products', payload));
-      }
       if (!editing) throw new Error('no product');
+      const payload = buildProductPayload(form, editing === 'new' ? null : editing);
+      if (editing === 'new') return unwrap(await api.post('/admin/products', payload));
       return unwrap(await api.patch(`/admin/products/${editing._id}`, payload));
     },
     onSuccess: () => {
@@ -202,12 +89,9 @@ export function AdminProducts(): JSX.Element {
   });
 
   const addSuggestedTags = (tags: string[]) => {
-    const current = parseTags(form.tagInput);
-    const next = [...current, ...tags.filter((tag) => !current.includes(tag))];
-    setForm({ ...form, tagInput: next.join(', ') });
-    setTagSuggestions((prev) =>
-      prev ? { ...prev, tags: prev.tags.filter((tag) => !tags.includes(tag)) } : prev,
-    );
+    const merged = mergeSuggestedTags(form, tagSuggestions, tags);
+    setForm(merged.form);
+    setTagSuggestions(merged.suggestions);
   };
 
   const archive = useMutation({
@@ -396,246 +280,19 @@ export function AdminProducts(): JSX.Element {
         title={editing === 'new' ? 'Thêm món mới' : editing ? `Sửa: ${editing.name}` : ''}
         className="max-w-2xl"
       >
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            save.mutate();
-          }}
-        >
-          <Field label="Tên món">
-            <input
-              className={inputCls}
-              required
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-          <Field label="Mô tả">
-            <textarea
-              className={inputCls + ' min-h-20'}
-              required
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </Field>
-          <Field label="URL ảnh">
-            <input
-              className={inputCls}
-              required
-              value={form.image}
-              onChange={(e) => setForm({ ...form, image: e.target.value })}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Giá cơ bản (VND)">
-              <input
-                className={inputCls}
-                type="number"
-                min={0}
-                required
-                value={form.basePrice}
-                onChange={(e) => setForm({ ...form, basePrice: e.target.value })}
-              />
-            </Field>
-            <Field label="Danh mục">
-              <select
-                className={inputCls}
-                aria-label="Danh mục"
-                required
-                value={form.categoryId}
-                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-              >
-                <option value="">-- chọn --</option>
-                {categoriesQuery.data?.categories.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name}
-                    {!c.isActive ? ' (đã ẩn)' : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field label="Tags (phân cách dấu phẩy)">
-            <input
-              className={inputCls}
-              placeholder="best-seller, signature"
-              value={form.tagInput}
-              onChange={(e) => setForm({ ...form, tagInput: e.target.value })}
-            />
-          </Field>
-          <div className="space-y-2 rounded-md border border-border p-3" data-testid="ai-tag-panel">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
-                Tag giúp AI và tìm kiếm hiểu món (mát lạnh, tỉnh táo…). Chọn rồi bấm Lưu.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                type="button"
-                disabled={suggestTags.isPending || !form.name.trim()}
-                onClick={() => suggestTags.mutate()}
-              >
-                <Sparkles className="h-3 w-3" />
-                {suggestTags.isPending ? 'Đang gợi ý…' : 'AI gợi ý tag'}
-              </Button>
-            </div>
-            {tagSuggestions ? (
-              tagSuggestions.tags.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={tagSuggestions.mode === 'llm' ? 'success' : 'warning'}>
-                    {tagSuggestions.mode === 'llm' ? 'AI' : 'Theo mô tả'}
-                  </Badge>
-                  {tagSuggestions.tags.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
-                      aria-label={`Thêm tag ${tag}`}
-                      onClick={() => addSuggestedTags([tag])}
-                    >
-                      + {tag}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary underline"
-                    onClick={() => addSuggestedTags(tagSuggestions.tags)}
-                  >
-                    Thêm tất cả
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">Không có tag mới để gợi ý.</p>
-              )
-            ) : null}
-          </div>
-          <div>
-            <p className="text-sm font-medium mb-1">Size / giá</p>
-            <div className="space-y-1">
-              {form.variants.map((v, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    className={inputCls + ' w-20'}
-                    placeholder="Tên"
-                    value={v.name}
-                    onChange={(e) => {
-                      const next = [...form.variants];
-                      next[i] = { ...v, name: e.target.value };
-                      setForm({ ...form, variants: next });
-                    }}
-                  />
-                  <input
-                    className={inputCls + ' flex-1'}
-                    type="number"
-                    min={0}
-                    placeholder="Giá"
-                    value={v.price}
-                    onChange={(e) => {
-                      const next = [...form.variants];
-                      next[i] = { ...v, price: Number(e.target.value) };
-                      setForm({ ...form, variants: next });
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-danger"
-                    onClick={() =>
-                      setForm({ ...form, variants: form.variants.filter((_, idx) => idx !== i) })
-                    }
-                  >
-                    Xoá
-                  </button>
-                </div>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                type="button"
-                onClick={() =>
-                  setForm({
-                    ...form,
-                    variants: [
-                      ...form.variants,
-                      { name: 'L', price: Number(form.basePrice) + 5000, isAvailable: true },
-                    ],
-                  })
-                }
-              >
-                <Plus className="h-3 w-3" /> Thêm size
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.isAvailable}
-                onChange={(e) => setForm({ ...form, isAvailable: e.target.checked })}
-              />
-              Đang bán
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.isFeatured}
-                onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
-              />
-              Nổi bật
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.isArchived}
-                onChange={(e) => setForm({ ...form, isArchived: e.target.checked })}
-              />
-              Đã xóa mềm
-            </label>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setEditing(null)}>
-              Huỷ
-            </Button>
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? 'Đang lưu...' : 'Lưu'}
-            </Button>
-          </div>
-        </form>
+        <ProductForm
+          form={form}
+          onChange={setForm}
+          categories={categoriesQuery.data?.categories ?? []}
+          saving={save.isPending}
+          onSubmit={() => save.mutate()}
+          onCancel={() => setEditing(null)}
+          tagSuggestions={tagSuggestions}
+          suggesting={suggestTags.isPending}
+          onSuggestTags={() => suggestTags.mutate()}
+          onAddTags={addSuggestedTags}
+        />{' '}
       </Modal>
     </div>
-  );
-}
-
-interface TagSuggestions {
-  mode: 'llm' | 'fallback';
-  tags: string[];
-}
-
-function parseTags(value: string): string[] {
-  return value
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-function normalizeProductName(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-const inputCls =
-  'w-full rounded-md border border-control bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary';
-
-function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
   );
 }

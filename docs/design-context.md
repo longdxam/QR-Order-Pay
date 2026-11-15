@@ -62,7 +62,7 @@ Trang Admin Vận hành mở bằng trạng thái kết nối,4số liệu bàn/
 | [client/src/styles/index.css](../client/src/styles/index.css), [tailwind.config.js](../client/tailwind.config.js)                                                                                         | Token màu/chữ, phiếu gọi món, sheet, spacing và component styles   |
 | [client/src/layouts](../client/src/layouts)                                                                                                                                                               | Điều hướng và trạng thái phiên/kết nối theo vai trò                |
 | [client/src/features/guest/MenuPage.tsx](../client/src/features/guest/MenuPage.tsx), [ProductDetailModal.tsx](../client/src/features/guest/ProductDetailModal.tsx)                                        | Catalog theo danh mục và tùy chọn món từ dữ liệu thật              |
-| [client/src/features/guest/TableDisplayPage.tsx](../client/src/features/guest/TableDisplayPage.tsx), [JoinPage.tsx](../client/src/features/guest/JoinPage.tsx)                                            | QR có hạn, link vào bàn và lỗi tham gia phiên                      |
+| [client/src/features/guest/TableDisplayPage.tsx](../client/src/features/guest/TableDisplayPage.tsx), [JoinPage.tsx](../client/src/features/guest/JoinPage.tsx)                                            | QR cố định, link vào bàn và lỗi tham gia phiên                      |
 | [client/src/features/staff/KDS.tsx](../client/src/features/staff/KDS.tsx), [AwaitingPayments.tsx](../client/src/features/staff/AwaitingPayments.tsx)                                                      | Các công đoạn và nhận tiền từng đơn                                |
 | [client/src/features/admin](../client/src/features/admin)                                                                                                                                                 | Quản lý catalog/bàn/nhân viên, hóa đơn và số liệu thực             |
 | [packages/contracts/src/schemas.ts](../packages/contracts/src/schemas.ts)                                                                                                                                 | Trạng thái, quyền, phương thức thanh toán và DTO dùng chung        |
@@ -99,7 +99,7 @@ Theo yêu cầu đổi tên và kiểu chữ ngày 13/10/2026, tên hiển thị
 - Staff ưu tiên **Bàn & phiên**, **KDS**, **Yêu cầu**, **Ca thu ngân**, **Khoản thu**, **Hết món**.
 - Admin: **Dashboard**, **Vận hành**, **Hóa đơn**, **Món**, **Danh mục**, **Topping**, **Bàn & QR**, **Nhân viên**, **Đánh giá**.
 - Menu public thực tế đọc ngày 13/10/2026 có **Espresso Mây**, **Bạc Xỉu Đá**, **Cà phê Dừa**, **Americano**, **Cappuccino**; tên/giá/ảnh hiển thị vẫn lấy API ở thời điểm dùng, không hardcode từ bản ghi này.
-- Thông báo QR: **QR đã hết hạn hoặc bị thu hồi. Vui lòng quét mã mới trên màn hình tại bàn.** Hiển thị đúng lỗi server thay vì dẫn khách dùng QR tĩnh cũ.
+- Thông báo QR: **QR không hợp lệ hoặc đã bị thu hồi. Vui lòng quét mã tại bàn.** Mã cấp mới là QR cố định `qrs1`; không hiển thị đếm ngược 60 giây. Hiển thị đúng lỗi server.
 
 ## Mục tiêu triển khai
 

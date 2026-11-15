@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { MenuProduct, MenuTopping } from '@may-cafe/contracts';
 import { useGuestContext } from './guestContext';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -12,37 +13,22 @@ import { useToast } from '../../components/ui/useToast';
 import { QtyStepper } from './QtyStepper';
 import { MenuPhoto } from './MenuPhoto';
 
-interface Variant {
-  _id: string;
-  name: string;
-  price: number;
-  isAvailable?: boolean;
-}
+/** Phần của món mà modal cần; mọi món từ `usePublicMenu()` đều thỏa. */
+export type Product = Pick<
+  MenuProduct,
+  | '_id'
+  | 'name'
+  | 'description'
+  | 'image'
+  | 'basePrice'
+  | 'variants'
+  | 'allowedOptions'
+  | 'toppingIds'
+  | 'tags'
+  | 'isAvailable'
+>;
 
-export interface Product {
-  _id: string;
-  name: string;
-  description: string;
-  image: string;
-  basePrice: number;
-  variants: Variant[];
-  allowedOptions: {
-    sizes: string[];
-    sugarLevels: string[];
-    iceLevels: string[];
-    toppingIds: string[];
-  };
-  toppingIds: string[];
-  tags: string[];
-  isAvailable: boolean;
-}
-
-export interface Topping {
-  _id: string;
-  name: string;
-  price: number;
-  isAvailable?: boolean;
-}
+export type Topping = Pick<MenuTopping, '_id' | 'name' | 'price'> & { isAvailable?: boolean };
 
 interface Props {
   product: Product | null;
@@ -147,6 +133,7 @@ export function ProductDetailModal({
 
   async function handleAdd(): Promise<void> {
     if (needsTable) {
+      onClose();
       navigate('/t');
       return;
     }
@@ -316,10 +303,8 @@ export function ProductDetailModal({
           onClick={() => void handleAdd()}
           disabled={
             validating ||
-            !product.isAvailable ||
-            !sugar ||
-            !ice ||
-            (product.variants.length > 0 && !variant)
+            (!needsTable &&
+              (!product.isAvailable || !sugar || !ice || (product.variants.length > 0 && !variant)))
           }
         >
           {validating ? (

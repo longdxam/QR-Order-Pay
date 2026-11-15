@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap, vnd, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../auth/useAuth';
@@ -92,10 +93,12 @@ function ReceiptDetails({ receipt }: { receipt: Receipt }): JSX.Element {
 export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.Element {
   useDocumentTitle('Khoản thu');
   const [page, setPage] = useState(1);
+  const [scope, setScope] = useState<'current' | 'retired'>('current');
   const prefix = admin ? '/admin' : '/staff';
   const query = useQuery({
-    queryKey: ['payment-accounting', prefix, page],
-    queryFn: async () => unwrap<Accounting>(await api.get(`${prefix}/payments?page=${page}`)),
+    queryKey: ['payment-accounting', prefix, page, scope],
+    queryFn: async () =>
+      unwrap<Accounting>(await api.get(`${prefix}/payments?page=${page}&scope=${scope}`)),
     refetchInterval: 5_000,
   });
   const [selected, setSelected] = useState<Receipt | null>(null);
@@ -169,6 +172,17 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold">Khoản thu</h1>
+        {!admin ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Tra cứu và điều chỉnh tiền đã nhận.{' '}
+            <Link
+              to="/staff/tables#awaiting-payments"
+              className="font-semibold text-primary underline"
+            >
+              Nhận tiền tại Bàn & phiên
+            </Link>
+          </p>
+        ) : null}
 
         <details className="mt-2 text-sm text-muted-foreground">
           <summary className="cursor-pointer">Quy định điều chỉnh</summary>
@@ -179,6 +193,32 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
           </p>
         </details>
       </div>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Phạm vi khoản thu">
+        {(
+          [
+            ['current', 'Khoản thu tại bàn'],
+            ['retired', 'Lịch sử đã lưu trữ'],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            role="tab"
+            aria-selected={scope === value}
+            variant={scope === value ? 'primary' : 'outline'}
+            onClick={() => {
+              setScope(value);
+              setPage(1);
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      {scope === 'retired' ? (
+        <p className="text-sm text-muted-foreground">
+          Khoản thu từ các chức năng đã ngừng, được giữ để đối soát lịch sử.
+        </p>
+      ) : null}
       <section className="space-y-3">
         <h2 className="font-semibold">Chờ duyệt ({pending.length})</h2>
         {!pending.length ? (

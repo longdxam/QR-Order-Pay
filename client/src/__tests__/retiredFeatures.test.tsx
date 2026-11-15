@@ -85,6 +85,11 @@ describe('removed features in the client', () => {
     );
     mount(<AISheet open onOpenChange={() => {}} products={[]} onAdd={() => {}} />);
     expect(screen.queryByRole('tab', { name: 'Freestyle' })).toBeNull();
+    expect((screen.getByLabelText('Mô tả khẩu vị') as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByRole('button', { name: 'Hỏi AI' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Chua nhẹ' }));
     fireEvent.click(screen.getByRole('button', { name: 'Hỏi AI' }));
     await screen.findByText('Chọn từ thực đơn');
     expect(mock.post).toHaveBeenCalledExactlyOnceWith(

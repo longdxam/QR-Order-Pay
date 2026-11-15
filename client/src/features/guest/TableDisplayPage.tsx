@@ -9,12 +9,10 @@ export function TableDisplayPage(): JSX.Element {
   const [qr, setQr] = useState<{
     image: string;
     tableName: string;
-    deadline: number;
     url: string;
   } | null>(null);
   const linkInput = useRef<HTMLInputElement>(null);
   const [copyMessage, setCopyMessage] = useState('');
-  const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -27,32 +25,24 @@ export function TableDisplayPage(): JSX.Element {
     const refresh = async () => {
       // Hide old QR while refreshing, including when a request fails/offline.
       setQr(null);
-      setSeconds(0);
       setCopyMessage('');
       try {
-        const started = performance.now();
         const response = await api.get('/table-displays/qr', {
           headers: { 'X-Table-Display-Token': token },
         });
         const data = dynamicQrResponseSchema.parse(unwrap(response));
-        const deadline =
-          data.expiresAt === null ? Infinity : started + data.expiresAt - data.serverTime;
+        if (data.expiresAt !== null)
+          throw new Error(
+            'Màn hình hiện tại chỉ dùng QR cố định. Vui lòng lấy lại QR từ Bàn & phiên.',
+          );
         const image = await QRCode.toDataURL(data.url, {
           width: 480,
           margin: 3,
           errorCorrectionLevel: 'M',
         });
         if (stopped) return;
-        const remaining = deadline - performance.now();
-        if (remaining <= 0) {
-          refreshTimer = window.setTimeout(() => void refresh(), 100);
-          return;
-        }
         setError('');
-        setQr({ image, tableName: data.tableName, deadline, url: data.url });
-        setSeconds(Math.ceil(remaining / 1000));
-        if (Number.isFinite(remaining))
-          refreshTimer = window.setTimeout(() => void refresh(), remaining);
+        setQr({ image, tableName: data.tableName, url: data.url });
       } catch (cause) {
         if (stopped) return;
         setError(getErrorMessage(cause));
@@ -65,15 +55,8 @@ export function TableDisplayPage(): JSX.Element {
       window.clearTimeout(refreshTimer);
     };
   }, [token, reload]);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const remaining = qr ? Math.max(0, Math.ceil((qr.deadline - performance.now()) / 1000)) : 0;
-      setSeconds(remaining);
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [qr]);
   async function copyLink(): Promise<void> {
-    if (!qr || qr.deadline <= performance.now()) {
+    if (!qr) {
       setReload((value) => value + 1);
       return;
     }
@@ -91,7 +74,7 @@ export function TableDisplayPage(): JSX.Element {
       <div className="w-full max-w-lg space-y-4">
         <p className="font-display text-3xl font-semibold">Fantastic Cafe</p>
         <h1 className="text-2xl font-semibold">{qr?.tableName ?? 'Màn hình bàn'}</h1>
-        {qr && seconds > 0 ? (
+        {qr ? (
           <>
             <img
               src={qr.image}
@@ -99,11 +82,7 @@ export function TableDisplayPage(): JSX.Element {
               className="mx-auto w-full max-w-96 rounded-2xl"
             />
             <p className="text-lg">Quét để gọi món · Wi-Fi hoặc 4G</p>
-            <p role="status">
-              {Number.isFinite(seconds)
-                ? `Mã đổi sau ${seconds} giây`
-                : 'QR cố định · Có thể tải ảnh để in tại bàn'}
-            </p>
+            <p role="status">QR cố định · Dùng lại qua các phiên · Có thể in tại bàn</p>
             <div className="space-y-2">
               <div className="flex flex-wrap justify-center gap-2">
                 <a

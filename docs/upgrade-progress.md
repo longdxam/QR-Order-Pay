@@ -1,5 +1,7 @@
 # Tiến độ nâng cấp có kiểm soát
 
+> Nhật ký lịch sử theo ngày, không phải danh sách tính năng hiện hành. Xem [tính năng đã gỡ](retired-features.md), [QR cố định](qr-prepayment.md) và [bộ nhớ dự án](../PROJECT_MEMORY.md).
+
 Ngày bắt đầu: 20/09/2026. Điều phối CoDev theo `HUONG_DAN_DIEU_PHOI_CODEV.md` và nghiệm thu theo `HUONG_DAN_AGENT_NANG_CAP_KIEN_TRUC.md`.
 
 ## Baseline do AI điều phối chạy

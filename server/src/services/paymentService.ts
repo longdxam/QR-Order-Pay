@@ -15,14 +15,12 @@ import {
 } from '../errors/AppError.js';
 import type { OrderDoc } from '../models/Order.js';
 import type { TableSessionDoc } from '../models/TableSession.js';
-import { OrderModel } from '../models/Order.js';
-import { ServiceRequestModel } from '../models/ServiceRequest.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
-import { UserModel } from '../models/User.js';
+import { userRepository } from '../repositories/userRepository.js';
+import { cancelRequestRepository } from '../repositories/cancelRequestRepository.js';
+import { serviceRequestRepository } from '../repositories/serviceRequestRepository.js';
 import { ensureOpenShift } from './cashShiftService.js';
-import { CancelRequestModel } from '../models/CancelRequest.js';
-import type { ClientSession } from 'mongoose';
-import mongoose from 'mongoose';
+import { Types, type ClientSession } from 'mongoose';
 import { orderRealtimeEvents } from './orderService.js';
 import { guardPaymentClaim, clearCommittedPaymentClaim } from './paymentClaimService.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
@@ -65,11 +63,7 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
       if (order.pickup && order.pickup.outcome !== 'ACTIVE')
         throw new ConflictError('CONFLICT', 'Đơn mang đi đã kết thúc.');
       await assertNoPaymentCorrection(order.id, session);
-      if (
-        await CancelRequestModel.exists({ orderId: order._id, status: 'REQUESTED' }).session(
-          session,
-        )
-      )
+      if (await cancelRequestRepository.hasPending({ orderId: order._id }, session))
         throw new ConflictError(
           'CANCEL_REQUEST_PENDING',
           'Cần xử lý yêu cầu hủy trước khi thu thêm tiền.',
@@ -102,36 +96,18 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
           amount: input.amount,
           method: input.method,
           status: 'SUCCESS',
-          confirmedBy: new mongoose.Types.ObjectId(input.staffId),
+          confirmedBy: new Types.ObjectId(input.staffId),
           paidAt: new Date(),
           idempotencyKey: input.idempotencyKey,
           note: input.note ?? '',
         },
         session,
       );
-      const paidAmount = collected + input.amount;
-      const paid = paidAmount === order.total;
-      const nextStatus = paid && order.status === 'AWAITING_PAYMENT' ? 'PENDING' : order.status;
-      const updated = await OrderModel.findOneAndUpdate(
-        { _id: order._id, version: order.version, paymentStatus: 'UNPAID' },
-        {
-          $set: { paidAmount, paymentStatus: paid ? 'PAID' : 'UNPAID', status: nextStatus },
-          $inc: { version: 1 },
-          ...(nextStatus !== order.status
-            ? {
-                $push: {
-                  statusHistory: {
-                    from: order.status,
-                    to: nextStatus,
-                    at: new Date(),
-                    by: input.staffId,
-                    reason: 'Đã nhận đủ tiền',
-                  },
-                },
-              }
-            : {}),
-        },
-        { new: true, session },
+      const updated = await orderRepository.recordPayment(
+        order,
+        collected + input.amount,
+        input.staffId,
+        session,
       );
       if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
       if (updated.status === 'SERVED') await settleOrderBenefits(updated, 'SERVED', session);
@@ -163,11 +139,7 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
 
 export async function listAwaitingPayments() {
   const sessions = await tableSessionRepository.listOpen();
-  return OrderModel.find({
-    tableSessionId: { $in: sessions.map((s) => s._id) },
-    status: { $ne: 'CANCELLED' },
-    paymentStatus: 'UNPAID',
-  }).sort({ createdAt: 1 });
+  return orderRepository.listUnpaidInSessions(sessions.map((s) => s._id));
 }
 
 export async function finalizeSessionBill(
@@ -176,22 +148,15 @@ export async function finalizeSessionBill(
   session: ClientSession,
 ) {
   await assertNoIncomingGiftOrders(tableSession.id, session);
-  if (
-    await CancelRequestModel.exists({
-      tableSessionId: tableSession._id,
-      status: 'REQUESTED',
-    }).session(session)
-  )
+  if (await cancelRequestRepository.hasPending({ tableSessionId: tableSession._id }, session))
     throw new ConflictError(
       'CANCEL_REQUEST_PENDING',
       'Cần xử lý yêu cầu hủy trước khi đóng phiên.',
     );
   const table = await tableRepository.findById(tableSession.tableId.toString(), session);
   if (!table) throw new NotFoundError('Bàn không tồn tại.');
-  const cashier = staffId ? await UserModel.findById(staffId).session(session) : null;
-  const orders = await OrderModel.find({ tableSessionId: tableSession._id })
-    .sort({ createdAt: 1 })
-    .session(session);
+  const cashier = staffId ? await userRepository.findById(staffId, session) : null;
+  const orders = await orderRepository.listBySession(tableSession.id, session);
   for (const order of orders) await assertNoPaymentCorrection(order.id, session);
   const payments = await paymentRepository.listBySession(tableSession.id, session);
   const { bill } = await billRepository.finalize(
@@ -267,19 +232,14 @@ async function settleSession(input: ConfirmPaymentInput) {
     if (tableSession.version !== input.expectedVersion) {
       throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng tải lại.');
     }
-    if (
-      await CancelRequestModel.exists({
-        tableSessionId: tableSession._id,
-        status: 'REQUESTED',
-      }).session(session)
-    ) {
+    if (await cancelRequestRepository.hasPending({ tableSessionId: tableSession._id }, session)) {
       throw new ConflictError(
         'CANCEL_REQUEST_PENDING',
         'Còn yêu cầu hủy đang chờ xử lý. Hãy duyệt hoặc từ chối trước khi thu tiền.',
       );
     }
 
-    const allOrders = await OrderModel.find({ tableSessionId: tableSession._id }).session(session);
+    const allOrders = await orderRepository.listBySession(input.tableSessionId, session);
     for (const order of allOrders) await assertNoPaymentCorrection(order.id, session);
     if (allOrders.some((o) => !['SERVED', 'CANCELLED'].includes(o.status))) {
       throw new ValidationError(
@@ -303,7 +263,7 @@ async function settleSession(input: ConfirmPaymentInput) {
 
     const table = await tableRepository.findById(tableSession.tableId.toString(), session);
     if (!table) throw new NotFoundError('Bàn không tồn tại.');
-    const cashier = await UserModel.findById(input.staffId).session(session);
+    const cashier = await userRepository.findById(input.staffId, session);
     const shift = await ensureOpenShift(input.staffId, session);
 
     const payment = await paymentRepository.create(
@@ -314,30 +274,18 @@ async function settleSession(input: ConfirmPaymentInput) {
         amount: input.amount,
         method: input.method,
         status: 'SUCCESS',
-        confirmedBy: new (await import('mongoose')).default.Types.ObjectId(input.staffId),
+        confirmedBy: new Types.ObjectId(input.staffId),
         paidAt: new Date(),
         idempotencyKey: input.idempotencyKey,
         note: input.note ?? '',
       },
       session,
     );
-    await orderRepository.setPaymentStatus(
-      orders.map((o) => o._id.toString()),
-      'PAID',
-      session,
-    );
-    for (const order of orders)
-      await OrderModel.updateOne(
-        { _id: order._id },
-        { $set: { paidAmount: order.total }, $inc: { version: 1 } },
-        { session },
-      );
+    await orderRepository.markFullyPaid(orders, session);
 
     // Snapshot bất biến của phiên: chốt ngay trong cùng transaction với payment.
     // Đọc lại đơn sau khi cập nhật paymentStatus để snapshot không giữ trạng thái cũ trong bộ nhớ.
-    const settledOrders = await OrderModel.find({ tableSessionId: tableSession._id })
-      .sort({ createdAt: 1 })
-      .session(session);
+    const settledOrders = await orderRepository.listBySession(input.tableSessionId, session);
     for (const order of settledOrders)
       if (order.status === 'SERVED') await settleOrderBenefits(order, 'SERVED', session);
     const sessionPayments = await paymentRepository.listBySession(
@@ -377,10 +325,10 @@ async function settleSession(input: ConfirmPaymentInput) {
     // revoke all guest sessions of this table session
     await guestSessionRepository.revokeByTableSession(tableSession._id.toString(), session);
     await tableRepository.invalidateQr(tableSession.tableId.toString(), session);
-    await ServiceRequestModel.updateMany(
-      { tableSessionId: tableSession._id, status: 'OPEN' },
-      { $set: { status: 'RESOLVED', resolvedBy: input.staffId, resolvedAt: new Date() } },
-      { session },
+    await serviceRequestRepository.resolveOpenBySession(
+      input.tableSessionId,
+      input.staffId,
+      session,
     );
 
     await auditRepository.log(
@@ -462,6 +410,61 @@ export interface BillSummary {
   >;
 }
 
+interface BillOrderSource {
+  code: unknown;
+  total: number;
+  subtotal?: number | null;
+  gift?: unknown;
+  voucherCode?: unknown;
+  voucherDiscount?: unknown;
+  pointsDiscount?: unknown;
+  redeemedPoints?: unknown;
+  earnedPoints?: unknown;
+  status: unknown;
+  paymentStatus: unknown;
+  items: unknown;
+  createdAt: unknown;
+  participantId?: unknown;
+}
+
+/** Cùng một dạng dòng đơn cho hóa đơn, dù đọc từ snapshot Bill hay từ Order đang sống. */
+function toBillOrder<Id, O extends BillOrderSource>(
+  id: Id,
+  order: O,
+): { _id: Id; gift: NonNullable<O['gift']> | null; subtotal: number } & Pick<
+  O,
+  | 'code'
+  | 'total'
+  | 'voucherCode'
+  | 'voucherDiscount'
+  | 'pointsDiscount'
+  | 'redeemedPoints'
+  | 'earnedPoints'
+  | 'status'
+  | 'paymentStatus'
+  | 'items'
+  | 'createdAt'
+  | 'participantId'
+> {
+  return {
+    _id: id,
+    code: order.code,
+    gift: order.gift ?? null,
+    total: order.total,
+    subtotal: order.subtotal ?? order.total,
+    voucherCode: order.voucherCode,
+    voucherDiscount: order.voucherDiscount,
+    pointsDiscount: order.pointsDiscount,
+    redeemedPoints: order.redeemedPoints,
+    earnedPoints: order.earnedPoints,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    items: order.items,
+    createdAt: order.createdAt,
+    participantId: order.participantId,
+  };
+}
+
 export async function buildBill(tableSessionId: string): Promise<BillSummary> {
   const session: TableSessionDoc | null = await tableSessionRepository.findById(tableSessionId);
   if (!session) throw new NotFoundError('Phiên không tồn tại.');
@@ -479,30 +482,14 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
         subtotal: snapshot.subtotal,
         total: snapshot.total,
         paidAmount: snapshot.paidAmount,
-        orders: snapshot.orders.map((o) => ({
-          _id: o.orderId,
-          code: o.code,
-          gift: o.gift ?? null,
-          total: o.total,
-          subtotal: o.subtotal ?? o.total,
-          voucherCode: o.voucherCode,
-          voucherDiscount: o.voucherDiscount,
-          pointsDiscount: o.pointsDiscount,
-          redeemedPoints: o.redeemedPoints,
-          earnedPoints: o.earnedPoints,
-          status: o.status,
-          paymentStatus: o.paymentStatus,
-          items: o.items,
-          createdAt: o.createdAt,
-          participantId: o.participantId,
-        })) as BillSummary['orders'],
+        orders: snapshot.orders.map((o) => toBillOrder(o.orderId, o)) as BillSummary['orders'],
       };
     }
   }
 
   const table = await tableRepository.findById(session.tableId.toString());
   if (!table) throw new NotFoundError('Bàn không tồn tại.');
-  const orders = await OrderModel.find({ tableSessionId }).sort({ createdAt: 1 });
+  const orders = await orderRepository.listBySession(tableSessionId);
   const unpaid = orders.filter((o) => o.status !== 'CANCELLED' && o.paymentStatus === 'UNPAID');
   const total = unpaid.reduce((s, o) => s + o.total - (o.paidAmount ?? 0), 0);
   const paidAmount = orders
@@ -519,24 +506,6 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
       .reduce((s, o) => s + (o.subtotal ?? o.total), 0),
     total,
     paidAmount,
-    orders: orders
-      .filter((o) => o.status !== 'CANCELLED')
-      .map((o) => ({
-        _id: o._id,
-        code: o.code,
-        gift: o.gift ?? null,
-        total: o.total,
-        subtotal: o.subtotal ?? o.total,
-        voucherCode: o.voucherCode,
-        voucherDiscount: o.voucherDiscount,
-        pointsDiscount: o.pointsDiscount,
-        redeemedPoints: o.redeemedPoints,
-        earnedPoints: o.earnedPoints,
-        status: o.status,
-        paymentStatus: o.paymentStatus,
-        items: o.items,
-        createdAt: o.createdAt,
-        participantId: o.participantId,
-      })),
+    orders: orders.filter((o) => o.status !== 'CANCELLED').map((o) => toBillOrder(o._id, o)),
   };
 }

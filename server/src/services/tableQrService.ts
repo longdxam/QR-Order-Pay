@@ -6,6 +6,7 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { randomToken, sha256 } from '../utils/crypto.js';
 
+// Legacy qr1 verification only. Staff/Admin/display now issue fixed qrs1 tickets.
 export const QR_PERIOD_MS = 60_000;
 const invalidQr = () =>
   new ForbiddenError('QR không hợp lệ hoặc đã bị thu hồi. Vui lòng quét mã tại bàn.');
@@ -16,6 +17,7 @@ function sign(body: string): string {
     .digest('base64url');
 }
 
+/** @deprecated Legacy qr1 compatibility/test helper; never used by current QR issuance endpoints. */
 export function createAdmissionTicket(tableId: string, epoch: number, now = Date.now()) {
   const expiresAt = (Math.floor(now / QR_PERIOD_MS) + 1) * QR_PERIOD_MS;
   const body = Buffer.from(JSON.stringify({ tableId, epoch, expiresAt })).toString('base64url');
