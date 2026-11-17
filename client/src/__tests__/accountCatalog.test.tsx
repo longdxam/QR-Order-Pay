@@ -16,7 +16,7 @@ const mock = vi.hoisted(() => ({
   delete: vi.fn(),
   setState: vi.fn(),
   clearSession: vi.fn(),
-  user: { id: 'self', name: 'Quản lý', email: 'admin@test.vn', role: 'ADMIN' as const },
+  user: { id: 'self', name: 'Quản lý', email: 'admin@test.vn', role: 'ADMIN' as 'ADMIN' | 'STAFF' },
 }));
 vi.mock('../lib/api', async (original) => ({
   ...(await original<typeof import('../lib/api')>()),
@@ -47,10 +47,125 @@ afterEach(() => {
   cleanup();
   for (const qc of clients.splice(0)) qc.clear();
   vi.resetAllMocks();
+  mock.user.role = 'ADMIN';
 });
 
 describe('accounts, toppings and compact receipts', () => {
+  it('requires an explicit admin confirmation and reason, then applies directly instead of queuing', async () => {
+    mock.get.mockResolvedValue(
+      response({
+        items: [
+          {
+            id: 'receipt-original',
+            amount: 35000,
+            method: 'CASH',
+            status: 'SUCCESS',
+            paidAt: '2026-11-17T02:00:00Z',
+            orders: [{ tableName: 'Bàn 01', code: 'hidden' }],
+          },
+        ],
+        total: 1,
+        corrections: [],
+        targets: [],
+      }),
+    );
+    mock.post.mockResolvedValue(response({ status: 'APPROVED' }));
+    mount(<PaymentAccounting admin />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Điều chỉnh' }));
+    const confirm = screen.getByRole('button', {
+      name: 'Lưu điều chỉnh',
+    }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Gửi quản lý duyệt' })).toBeNull();
+    expect(mock.post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Lý do'), {
+      target: { value: 'Đã kiểm tra chuyển khoản' },
+    });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledExactlyOnceWith(
+        '/admin/payments/receipt-original/corrections/apply',
+        { kind: 'METHOD', reason: 'Đã kiểm tra chuyển khoản', method: 'BANK_TRANSFER' },
+      ),
+    );
+    await screen.findByText('Đã điều chỉnh khoản thu');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('applies an admins old pending adjustment in one click without another review dialog', async () => {
+    mock.get.mockResolvedValue(
+      response({
+        items: [],
+        total: 0,
+        targets: [],
+        corrections: [
+          {
+            _id: 'own-pending',
+            paymentId: 'receipt',
+            requestedBy: 'self',
+            requestedByName: 'Quản lý',
+            status: 'REQUESTED',
+            kind: 'METHOD',
+            method: 'BANK_TRANSFER',
+            reason: 'Ghi nhầm phương thức',
+            version: 0,
+          },
+        ],
+      }),
+    );
+    mock.post.mockResolvedValue(response({ status: 'APPROVED' }));
+    mount(<PaymentAccounting admin />);
+    const apply = await screen.findByRole('button', { name: 'Áp dụng điều chỉnh' });
+    expect(mock.post).not.toHaveBeenCalled();
+    fireEvent.click(apply);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledExactlyOnceWith(
+        '/admin/payment-corrections/own-pending/decision',
+        { approve: true, expectedVersion: 0, note: 'Ghi nhầm phương thức' },
+      ),
+    );
+  });
+
+  it('still requires an admin review before applying a staff request', async () => {
+    mock.get.mockResolvedValue(
+      response({
+        items: [],
+        total: 0,
+        targets: [],
+        corrections: [
+          {
+            _id: 'staff-pending',
+            requestedBy: 'staff-other',
+            requestedByName: 'Nhân viên',
+            status: 'REQUESTED',
+            kind: 'VOID',
+            reason: 'Thu nhầm đơn',
+            version: 0,
+          },
+        ],
+      }),
+    );
+    mock.post.mockResolvedValue(response({ status: 'APPROVED' }));
+    mount(<PaymentAccounting admin />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Kiểm tra & duyệt' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(mock.post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Ghi chú kiểm tra'), {
+      target: { value: 'Đã kiểm tra' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận duyệt' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledExactlyOnceWith(
+        '/admin/payment-corrections/staff-pending/decision',
+        { approve: true, expectedVersion: 0, note: 'Đã kiểm tra' },
+      ),
+    );
+  });
+
   it('uses table and time to distinguish transfer targets while submitting the original order ID', async () => {
+    mock.user.role = 'STAFF';
     mock.get.mockResolvedValue(
       response({
         items: [

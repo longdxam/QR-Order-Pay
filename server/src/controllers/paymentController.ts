@@ -66,6 +66,18 @@ export async function decideCorrection(req: Request, res: Response, next: NextFu
   }
 }
 
+export async function applyCorrection(req: Request, res: Response, next: NextFunction) {
+  try {
+    const input = paymentCorrectionRequestSchema.parse(req.body);
+    res.status(201).json({
+      success: true,
+      data: await requestPaymentCorrection(String(req.params['id']), req.user!.id, input, 'apply'),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function claim(req: Request, res: Response, next: NextFunction) {
   try {
     const { token } = paymentClaimRequestSchema.parse(req.body);

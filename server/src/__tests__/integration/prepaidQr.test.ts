@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, beforeEach, afterAll, describe, it, expect, vi } from 'vitest';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
@@ -17,7 +17,11 @@ import { AuditLogModel } from '../../models/AuditLog.js';
 import { ReviewModel } from '../../models/Review.js';
 import { PaymentCorrectionModel } from '../../models/PaymentCorrection.js';
 import { paymentAnalytics } from '../../services/paymentAnalyticsService.js';
-import { listPaymentAccounting } from '../../services/paymentCorrectionService.js';
+import {
+  decidePaymentCorrection,
+  listPaymentAccounting,
+} from '../../services/paymentCorrectionService.js';
+import { paymentCorrectionRepository } from '../../repositories/paymentCorrectionRepository.js';
 import { createAdmissionTicket } from '../../services/tableQrService.js';
 import { registerMember, resolveMember } from '../../services/memberService.js';
 import { hashPassword, randomToken, sha256 } from '../../utils/crypto.js';
@@ -595,18 +599,276 @@ describe('payment safeguards', () => {
     ).toBe(35000);
   });
 
-  it('rejects self approval and rejection restores operations without changing receipts', async () => {
+  it.each(['VOID', 'METHOD', 'TRANSFER'] as const)(
+    'applies an admin %s confirmation immediately with its audit and ledger changes',
+    async (kind) => {
+      const visit = await join();
+      const cookie = cookieOf(visit);
+      const source = (await place(cookie)).body.data.order._id;
+      const target = kind === 'TRANSFER' ? (await place(cookie)).body.data.order._id : null;
+      const payment = (await receive(source)).body.data.payment;
+      let billSnapshot: string | undefined;
+      if (kind === 'METHOD') {
+        await serve(source);
+        expect((await close(visit.body.data.tableSessionId)).status).toBe(200);
+        billSnapshot = JSON.stringify((await BillModel.findOne())!.toObject());
+      }
+      const admin = await person('ADMIN');
+      const reason = 'Admin xác nhận ghi nhầm khoản thu';
+      const response = await request(app)
+        .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+        .set(admin.headers)
+        .send({
+          kind,
+          reason,
+          ...(kind === 'METHOD' ? { method: 'BANK_TRANSFER' } : {}),
+          ...(target ? { targetOrderId: target } : {}),
+        });
+      expect(response.status).toBe(201);
+      expect(response.body.data).toMatchObject({
+        status: 'APPROVED',
+        requestedBy: admin.id,
+        decidedBy: admin.id,
+        decisionNote: reason,
+        version: 1,
+      });
+      expect(await PaymentCorrectionModel.countDocuments({ status: 'REQUESTED' })).toBe(0);
+      const original = (await PaymentModel.findById(payment._id))!;
+      expect(original.toObject()).toMatchObject({
+        amount: 35000,
+        method: 'CASH',
+        status: 'REFUNDED',
+        reversalKind: kind,
+      });
+      expect(original.confirmedBy.toString()).toBe(payment.confirmedBy);
+      expect(original.paidAt.toISOString()).toBe(payment.paidAt);
+      if (kind !== 'METHOD')
+        expect((await OrderModel.findById(source))!.toObject()).toMatchObject({
+          paidAmount: 0,
+          paymentStatus: 'UNPAID',
+          status: 'AWAITING_PAYMENT',
+        });
+      if (target)
+        expect((await OrderModel.findById(target))!.toObject()).toMatchObject({
+          paidAmount: 35000,
+          paymentStatus: 'PAID',
+          status: 'PENDING',
+        });
+      expect(await PaymentModel.countDocuments({ replacesPaymentId: payment._id })).toBe(
+        kind === 'VOID' ? 0 : 1,
+      );
+      if (kind !== 'VOID') {
+        const replacement = (await PaymentModel.findOne({ replacesPaymentId: payment._id }))!;
+        expect(replacement.amount).toBe(35000);
+        expect(replacement.method).toBe(kind === 'METHOD' ? 'BANK_TRANSFER' : 'CASH');
+        expect(replacement.orderIds.map(String)).toEqual([target ?? source]);
+      }
+      if (billSnapshot)
+        expect(JSON.stringify((await BillModel.findOne())!.toObject())).toBe(billSnapshot);
+      expect(
+        (await paymentAnalytics(new Date(Date.now() - 86400000), new Date(Date.now() + 86400000)))
+          .totalRevenue,
+      ).toBe(kind === 'VOID' ? 0 : 35000);
+      expect(
+        await AuditLogModel.countDocuments({
+          entityId: response.body.data._id,
+          actorId: admin.id,
+          action: { $in: ['payment.correctionRequested', 'payment.correctionApproved'] },
+        }),
+      ).toBe(2);
+      expect(
+        (
+          await request(app)
+            .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+            .set(admin.headers)
+            .send({
+              kind,
+              reason,
+              ...(kind === 'METHOD' ? { method: 'BANK_TRANSFER' } : {}),
+              ...(target ? { targetOrderId: target } : {}),
+            })
+        ).status,
+      ).toBe(409);
+      expect(await PaymentCorrectionModel.countDocuments()).toBe(1);
+    },
+  );
+
+  it('applies a receipt correction only once when two admin confirmations race', async () => {
+    const source = (await place(cookieOf(await join()))).body.data.order._id;
+    const payment = (await receive(source)).body.data.payment;
+    const admins = [await person('ADMIN'), await person('ADMIN')];
+    const responses = await Promise.all(
+      admins.map((admin) =>
+        request(app)
+          .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+          .set(admin.headers)
+          .send({
+            kind: 'METHOD',
+            method: 'BANK_TRANSFER',
+            reason: 'Hai cửa sổ xác nhận cùng lúc',
+          }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await PaymentCorrectionModel.countDocuments({ status: 'APPROVED' })).toBe(1);
+    expect(await PaymentCorrectionModel.countDocuments({ status: 'REQUESTED' })).toBe(0);
+    expect(await PaymentModel.countDocuments({ replacesPaymentId: payment._id })).toBe(1);
+    expect(
+      (await paymentAnalytics(new Date(Date.now() - 86400000), new Date(Date.now() + 86400000)))
+        .totalRevenue,
+    ).toBe(35000);
+  });
+
+  it('rolls back the request, audit and order guards if direct admin confirmation fails after creating the request', async () => {
+    const source = (await place(cookieOf(await join()))).body.data.order._id;
+    const payment = (await receive(source)).body.data.payment;
+    const admin = await person('ADMIN');
+    const beforeOrder = JSON.stringify((await OrderModel.findById(source))!.toObject());
+    const beforeAudit = await AuditLogModel.countDocuments();
+    const failure = vi
+      .spyOn(paymentCorrectionRepository, 'findById')
+      .mockRejectedValueOnce(new Error('isolated direct adjustment failure'));
+    try {
+      const response = await request(app)
+        .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+        .set(admin.headers)
+        .send({ kind: 'VOID', reason: 'Kiểm tra rollback' });
+      expect(response.status).toBe(500);
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await PaymentCorrectionModel.countDocuments()).toBe(0);
+    expect(await AuditLogModel.countDocuments()).toBe(beforeAudit);
+    expect(JSON.stringify((await OrderModel.findById(source))!.toObject())).toBe(beforeOrder);
+    expect((await PaymentModel.findById(payment._id))!.status).toBe('SUCCESS');
+    expect(await PaymentModel.countDocuments({ replacesPaymentId: payment._id })).toBe(0);
+  });
+
+  it('requires a reason and retains direct-admin preparation, target-balance and pending-correction guards', async () => {
+    const cookie = cookieOf(await join());
+    const source = (await place(cookie)).body.data.order._id;
+    const target = (await place(cookie)).body.data.order._id;
+    const payment = (await receive(source)).body.data.payment;
+    const admin = await person('ADMIN');
+    const apply = (body: object) =>
+      request(app)
+        .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+        .set(admin.headers)
+        .send(body);
+    expect((await apply({ kind: 'VOID', reason: '' })).status).toBe(422);
+    expect((await receive(target, randomToken(16), { amount: 10000 })).status).toBe(201);
+    expect(
+      (
+        await apply({
+          kind: 'TRANSFER',
+          targetOrderId: target,
+          reason: 'Chuyển vượt số tiền thiếu',
+        })
+      ).status,
+    ).toBe(422);
+    const pending = await correction(payment._id, 'VOID');
+    expect(
+      (await apply({ kind: 'METHOD', method: 'BANK_TRANSFER', reason: 'Đang có yêu cầu' })).status,
+    ).toBe(409);
+    expect((await decision(pending.body.data._id, admin.headers, false)).status).toBe(200);
+    for (const status of ['CONFIRMED', 'PREPARING'])
+      expect(
+        (
+          await request(app)
+            .patch(`/api/v1/staff/orders/${source}/status`)
+            .set(auth())
+            .send({ status })
+        ).status,
+      ).toBe(200);
+    expect((await apply({ kind: 'VOID', reason: 'Đơn đã pha chế' })).status).toBe(403);
+    expect(await PaymentModel.countDocuments({ replacesPaymentId: payment._id })).toBe(0);
+    expect((await PaymentModel.findById(payment._id))!.status).toBe('SUCCESS');
+  });
+
+  it('lets an admin confirm their own pending request from the legacy workflow', async () => {
     const id = (await place(cookieOf(await join()))).body.data.order._id;
     const payment = (await receive(id)).body.data.payment;
     const admin = await person('ADMIN');
-    const created = await request(app)
-      .post(`/api/v1/admin/payments/${payment._id}/corrections`)
-      .set(admin.headers)
-      .send({ kind: 'VOID', reason: 'Cần kiểm tra khoản thu' });
+    // Reconstruct a request created before admins could save directly.
+    const original = (await PaymentModel.findById(payment._id))!;
+    const created = await PaymentCorrectionModel.create({
+      paymentId: original._id,
+      paymentVersion: original.version,
+      kind: 'VOID',
+      reason: 'Cần kiểm tra khoản thu',
+      requestedBy: admin.id,
+      requestedByName: 'Admin',
+    });
+    expect(created.status).toBe('REQUESTED');
+    expect((await decision(created.id, admin.headers)).status).toBe(200);
+    expect((await PaymentModel.findById(payment._id))!.reversalKind).toBe('VOID');
+    expect((await PaymentCorrectionModel.findById(created.id))!.decidedBy?.toString()).toBe(
+      admin.id,
+    );
+    expect((await decision(created.id, admin.headers)).status).toBe(409);
+  });
+
+  it.each(['admin', 'staff'])(
+    'saves immediately for an admin even through the existing %s request endpoint',
+    async (portal) => {
+      const id = (await place(cookieOf(await join()))).body.data.order._id;
+      const payment = (await receive(id)).body.data.payment;
+      const admin = await person('ADMIN');
+      const result = await request(app)
+        .post(`/api/v1/${portal}/payments/${payment._id}/corrections`)
+        .set(admin.headers)
+        .send({ kind: 'METHOD', method: 'BANK_TRANSFER', reason: 'Admin lưu trực tiếp' });
+      expect(result.status).toBe(201);
+      expect(result.body.data).toMatchObject({
+        status: 'APPROVED',
+        requestedBy: admin.id,
+        decidedBy: admin.id,
+      });
+      expect(await PaymentCorrectionModel.countDocuments({ status: 'REQUESTED' })).toBe(0);
+      expect(
+        await PaymentModel.countDocuments({
+          replacesPaymentId: payment._id,
+          method: 'BANK_TRANSFER',
+          status: 'SUCCESS',
+        }),
+      ).toBe(1);
+      expect(
+        (await paymentAnalytics(new Date(Date.now() - 86400000), new Date(Date.now() + 86400000)))
+          .totalRevenue,
+      ).toBe(35000);
+    },
+  );
+
+  it('keeps staff requests pending despite forged approval flags and rejection restores operations', async () => {
+    const id = (await place(cookieOf(await join()))).body.data.order._id;
+    const payment = (await receive(id)).body.data.payment;
+    const created = await correction(payment._id, 'VOID', {
+      direct: true,
+      approve: true,
+      role: 'ADMIN',
+    });
     expect(created.status).toBe(201);
-    expect((await decision(created.body.data._id, admin.headers)).status).toBe(403);
-    const secondAdmin = await person('ADMIN');
-    expect((await decision(created.body.data._id, secondAdmin.headers, false)).status).toBe(200);
+    expect(created.body.data.status).toBe('REQUESTED');
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/admin/payments/${payment._id}/corrections/apply`)
+          .set(auth())
+          .send({ kind: 'VOID', reason: 'Giả quyền Admin' })
+      ).status,
+    ).toBe(403);
+    const requester = (await PaymentCorrectionModel.findById(
+      created.body.data._id,
+    ))!.requestedBy.toString();
+    await expect(
+      decidePaymentCorrection(created.body.data._id, requester, {
+        expectedVersion: 0,
+        approve: true,
+        note: 'Không có quyền',
+      }),
+    ).rejects.toThrow('Chỉ quản trị');
+    const admin = await person('ADMIN');
+    expect((await decision(created.body.data._id, admin.headers, false)).status).toBe(200);
     expect((await PaymentModel.findById(payment._id))!.status).toBe('SUCCESS');
     expect(
       (

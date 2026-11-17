@@ -36,10 +36,7 @@ import { unitOfWork } from '../../infrastructure/unitOfWork.js';
 import { hashPassword, randomToken, sha256 } from '../../utils/crypto.js';
 import type { BenefitSelection } from '../../services/promotionService.js';
 import { orderRepository } from '../../repositories/orderRepository.js';
-import {
-  requestPaymentCorrection,
-  decidePaymentCorrection,
-} from '../../services/paymentCorrectionService.js';
+import { requestPaymentCorrection } from '../../services/paymentCorrectionService.js';
 
 let repl: MongoMemoryReplSet;
 let app: ReturnType<typeof buildApp>;
@@ -414,17 +411,8 @@ describe('Voucher, quote, money and points lifecycle', () => {
       kind: 'VOID',
       reason: 'Thu nhầm đơn thử nghiệm',
     });
-    const reviewer = await UserModel.create({
-      name: 'Admin duyệt',
-      email: 'reviewer@promotion.test',
-      role: 'ADMIN',
-      passwordHash: await hashPassword(pass),
-    });
-    await decidePaymentCorrection(correction.id, reviewer.id, {
-      expectedVersion: correction.version,
-      approve: true,
-      note: 'Đã kiểm tra',
-    });
+    expect(correction.status).toBe('APPROVED');
+    expect(correction.decidedBy?.toString()).toBe(actor);
     expect((await OrderModel.findById(placed.id).orFail()).paymentStatus).toBe('UNPAID');
     expect((await MemberModel.findById(memberId).orFail()).points).toBe(0);
     expect(await PointEntryModel.countDocuments({ type: 'EARN' })).toBe(0);

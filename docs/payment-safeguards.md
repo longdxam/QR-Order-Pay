@@ -7,21 +7,22 @@
 1. **Staff → Bàn & phiên → Kiểm tra & nhận tiền**: server cấp quyền thu tiền của phiên bàn cho đúng tài khoản và cửa sổ đang thao tác. Quyền có hạn 120 giây, giao diện gia hạn mỗi 30 giây khi hộp thoại mở. Nhân viên khác nhận thông báo bàn đang được thu. Đóng hộp thoại trả quyền; server cũng trả quyền trong transaction khi ghi nhận thu/hoàn thành công. Mất kết nối/đóng trình duyệt trước xác nhận thì quyền tự hết hạn.
 2. Nhập **Số tiền thực nhận (VND)**, chọn phương thức đã kiểm tra. Server không nhận số tiền âm, lẻ hoặc vượt số còn thiếu. Khoản thu một phần được lưu ngay; `paidAmount` và `balanceDue` hiển thị cho khách và nhân viên. Đơn giữ `AWAITING_PAYMENT / UNPAID` đến khi đủ tổng tiền, rồi chuyển `PENDING / PAID` vào KDS. Một đơn có thể có nhiều khoản thu/phương thức.
 3. Hủy đơn chưa nhận tiền dùng thao tác hủy thông thường. Đơn đã nhận một phần không được hủy trực tiếp: khách gửi yêu cầu nhân viên hủy; nhân viên xác nhận đã hoàn lại số tiền thực nhận. Tất cả khoản thu còn hiệu lực của đơn được hoàn trong cùng transaction, đơn chuyển `CANCELLED / REFUNDED`. Chỉ áp dụng khi chưa pha chế. Việc hoàn tiền ngân hàng/tiền mặt do nhân viên thực hiện; phần mềm ghi nhận sau khi kiểm tra.
-4. Nếu ghi nhận nhầm, vào **Staff → Khoản thu → Yêu cầu điều chỉnh**, chọn khoản thu và nhập lý do:
+4. Nếu ghi nhận nhầm, vào **Khoản thu → Điều chỉnh**, chọn khoản thu và nhập lý do. **Nhân viên** bấm **Gửi quản lý duyệt**; **Admin** bấm **Lưu điều chỉnh** để áp dụng ngay, không tạo bước chờ duyệt.
 
-   | Loại | Kết quả khi quản lý duyệt |
-   | --- | --- |
-   | Hủy ghi nhận thu | Đảo khoản đã ghi nhầm, khôi phục số còn thiếu của đơn nguồn. Không tự chuyển tiền. |
-   | Sửa phương thức | Đảo khoản cũ và tạo khoản thay thế cùng số tiền, liên kết `replacesPaymentId`, dùng phương thức đúng. |
+   | Loại                 | Kết quả sau xác nhận của Admin                                                                          |
+   | -------------------- | ------------------------------------------------------------------------------------------------------- |
+   | Hủy ghi nhận thu     | Đảo khoản đã ghi nhầm, khôi phục số còn thiếu của đơn nguồn. Không tự chuyển tiền.                      |
+   | Sửa phương thức      | Đảo khoản cũ và tạo khoản thay thế cùng số tiền, liên kết `replacesPaymentId`, dùng phương thức đúng.   |
    | Chuyển sang đúng đơn | Đảo khoản ở đơn nguồn, tạo khoản thay thế ở đơn đích đang chờ thanh toán; không vượt số đích còn thiếu. |
 
-5. **Admin → Khoản thu → Chờ duyệt**: đối chiếu bàn, mã đơn, số tiền, phương thức cũ/mới, lý do và nhập ghi chú duyệt/từ chối. Người lập yêu cầu không tự duyệt. Hai quản lý cùng duyệt chỉ một người thành công. Khi chờ duyệt, đơn nguồn/đích bị giữ các thao tác thu, hủy, chuyển KDS và đóng phiên liên quan.
+5. **Admin → Khoản thu → Yêu cầu cần xử lý**: đối chiếu bàn, thời gian, số tiền, phương thức cũ/mới, lý do và nhập ghi chú duyệt/từ chối yêu cầu của nhân viên. Với điều chỉnh chính mình đã tạo theo luồng cũ, Admin bấm **Áp dụng điều chỉnh** ngay trên thẻ; dùng lý do đã lưu, không mở thêm hộp thoại duyệt. **Bỏ điều chỉnh** đóng yêu cầu đó mà không thay đổi khoản thu. Nhân viên không có quyền duyệt. Hai người/cửa sổ cùng xác nhận chỉ một thao tác thành công. Khi chờ xử lý, đơn nguồn/đích vẫn bị giữ các thao tác thu, hủy, chuyển KDS và đóng phiên liên quan.
 6. **Ca thu ngân**: tiền dự kiến tính các khoản vào, hoàn thực tế và đảo ghi nhận theo ca phát sinh. Không chốt ca khi có bàn đang giữ quyền thu tiền. Có chênh lệch kiểm đếm thì bắt buộc nhập lý do; hệ thống lưu người chốt, số dự kiến, số đếm, chênh lệch và ghi chú.
 
 ## Quy tắc và giới hạn
 
 - Quyền thu áp dụng cho toàn phiên bàn, bao gồm luồng thanh toán gộp dữ liệu cũ. API nhận tiền bắt buộc có `X-Payment-Claim` của đúng người, đúng cửa sổ, còn hạn. Token lưu dưới dạng hash và bị che trong log.
 - Payment, Order, phiên bàn, ca, audit và outbox được ghi trong transaction MongoDB replica set. `expectedVersion` ngăn ghi lên trạng thái cũ; `Idempotency-Key` ngăn thu lặp. Gửi lại cùng key/payload/người thu trả khoản cũ, kể cả quyền thu đã hết hạn. Đổi payload/người thu với key cũ trả 409.
+- Điều chỉnh trực tiếp của Admin tạo hồ sơ và áp dụng thay đổi trong cùng transaction: lỗi không để lại yêu cầu chờ, thay đổi tiền hay audit dở. Quyền Admin kiểm từ tài khoản trong DB; mọi endpoint `/corrections` đều áp dụng ngay khi người thao tác là Admin, kể cả qua cổng Staff hoặc cửa sổ cũ. Endpoint riêng `POST /admin/payments/:id/corrections/apply` vẫn được hỗ trợ. Tài khoản Staff vẫn chỉ tạo yêu cầu; body giả `role`, `direct`, `approve` không cấp quyền duyệt.
 - Khi chưa rõ kết quả do mất kết nối, giao diện giữ payload và key để thử lại, khóa đổi số tiền/phương thức. Không nhận thêm tiền chỉ vì chưa thấy phản hồi.
 - Hủy ghi nhận/chuyển khoản thu sang đơn khác chỉ áp dụng khi đơn nguồn chưa pha chế và phiên còn hoạt động. Khoản thu cũ gộp nhiều đơn cần đối soát riêng; API không tự chia tiền.
 - Sửa phương thức được phép sau đóng phiên. `Bill` đã chốt không sửa; lịch sử điều chỉnh liên kết khoản thu gốc dùng để đối soát. Chưa có hoàn sau pha chế/đóng phiên, hoàn một phần một khoản thu, hay giảm giá sau bán.

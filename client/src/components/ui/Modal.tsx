@@ -10,6 +10,7 @@ interface ModalProps {
   description?: string;
   titleIcon?: ReactNode;
   children: ReactNode;
+  footer?: ReactNode;
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export function Modal({
   description,
   titleIcon,
   children,
+  footer,
   className,
 }: ModalProps): JSX.Element {
   const descriptionId = useId();
@@ -61,6 +63,7 @@ export function Modal({
             </Dialog.Close>
           </div>
           <div className="modal-body mt-4">{children}</div>
+          {footer}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

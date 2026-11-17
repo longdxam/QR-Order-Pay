@@ -112,6 +112,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
   const [decision, setDecision] = useState<{ request: Correction; approve: boolean } | null>(null);
   const [note, setNote] = useState('');
   const user = useAuth((state) => state.user);
+  const directAdjustment = user?.role === 'ADMIN';
   const qc = useQueryClient();
   const { toast } = useToast();
   const refresh = () => {
@@ -143,28 +144,41 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
         ...(kind === 'METHOD' ? { method } : {}),
         ...(kind === 'TRANSFER' ? { targetOrderId } : {}),
       });
-      return api.post(`${prefix}/payments/${selected.id}/corrections`, payload);
+      return api.post(
+        directAdjustment
+          ? `/admin/payments/${selected.id}/corrections/apply`
+          : `${prefix}/payments/${selected.id}/corrections`,
+        payload,
+      );
     },
     onSuccess: () => {
       setSelected(null);
       refresh();
-      toast({ title: 'Đã gửi yêu cầu; chờ quản lý khác duyệt', tone: 'success' });
+      toast({
+        title: directAdjustment ? 'Đã điều chỉnh khoản thu' : 'Đã gửi yêu cầu; chờ quản lý duyệt',
+        tone: 'success',
+      });
     },
     onError: fail,
   });
   const review = useMutation({
-    mutationFn: async () => {
-      if (!decision) throw new Error('Chưa chọn yêu cầu.');
-      return api.post(`/admin/payment-corrections/${decision.request._id}/decision`, {
-        approve: decision.approve,
-        expectedVersion: decision.request.version,
-        note,
+    mutationFn: async (action: { request: Correction; approve: boolean; note: string }) => {
+      return api.post(`/admin/payment-corrections/${action.request._id}/decision`, {
+        approve: action.approve,
+        expectedVersion: action.request.version,
+        note: action.note,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_response, action) => {
       setDecision(null);
       refresh();
-      toast({ title: 'Đã xử lý yêu cầu điều chỉnh', tone: 'success' });
+      toast({
+        title:
+          action.approve && action.request.requestedBy === user?.id
+            ? 'Đã điều chỉnh khoản thu'
+            : 'Đã xử lý yêu cầu điều chỉnh',
+        tone: 'success',
+      });
     },
     onError: fail,
   });
@@ -190,9 +204,9 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
         <details className="mt-2 text-sm text-muted-foreground">
           <summary className="cursor-pointer">Quy định điều chỉnh</summary>
           <p className="mt-2">
-            Điều chỉnh cần quản lý khác duyệt. Hủy ghi nhận khi thu nhầm; hoàn tiền thực tế tại đơn.
-            Hủy thu hoặc chuyển đơn chỉ trước pha chế. Sửa phương thức sau đóng phiên được lưu vào
-            lịch sử, giữ nguyên hóa đơn đã chốt.
+            Nhân viên gửi yêu cầu để Admin duyệt; Admin lưu điều chỉnh trực tiếp. Hủy ghi nhận khi
+            thu nhầm; hoàn tiền thực tế tại đơn. Hủy thu hoặc chuyển đơn chỉ trước pha chế. Sửa
+            phương thức sau đóng phiên được lưu vào lịch sử, giữ nguyên hóa đơn đã chốt.
           </p>
         </details>
       </div>
@@ -223,9 +237,13 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
         </p>
       ) : null}
       <section className="space-y-3">
-        <h2 className="font-semibold">Chờ duyệt ({pending.length})</h2>
+        <h2 className="font-semibold">
+          {admin ? 'Yêu cầu cần xử lý' : 'Chờ duyệt'} ({pending.length})
+        </h2>
         {!pending.length ? (
-          <p className="text-sm text-muted-foreground">Không có yêu cầu chờ duyệt.</p>
+          <p className="text-sm text-muted-foreground">
+            {admin ? 'Không có yêu cầu cần xử lý.' : 'Không có yêu cầu chờ duyệt.'}
+          </p>
         ) : (
           pending.map((item) => (
             <Card key={item._id} className="space-y-2 p-4">
@@ -255,25 +273,40 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                   Đơn nhận: {item.targetOrder ? orderLabel(item.targetOrder) : 'Đơn đã lưu trữ'}
                 </p>
               ) : null}
-              {admin && item.requestedBy !== user?.id ? (
+              {admin ? (
                 <div className="flex gap-2">
                   {[true, false].map((approve) => (
                     <Button
                       key={String(approve)}
                       size="sm"
                       variant={approve ? 'primary' : 'outline'}
+                      disabled={review.isPending}
                       onClick={() => {
+                        if (item.requestedBy === user?.id) {
+                          review.mutate({
+                            request: item,
+                            approve,
+                            note: approve ? item.reason : 'Admin bỏ điều chỉnh chưa áp dụng',
+                          });
+                          return;
+                        }
                         setNote('');
                         setDecision({ request: item, approve });
                       }}
                     >
-                      {approve ? 'Kiểm tra & duyệt' : 'Từ chối'}
+                      {approve
+                        ? item.requestedBy === user?.id
+                          ? 'Áp dụng điều chỉnh'
+                          : 'Kiểm tra & duyệt'
+                        : item.requestedBy === user?.id
+                          ? 'Bỏ điều chỉnh'
+                          : 'Từ chối'}
                     </Button>
                   ))}
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Cần quản lý khác duyệt trong cổng quản trị.
+                  Chờ Admin duyệt trong cổng quản trị.
                 </p>
               )}
             </Card>
@@ -346,7 +379,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
           .map((item) => (
             <Card key={item._id} className="p-4 text-sm">
               <p className="font-semibold">
-                {KINDS[item.kind]} · {item.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}
+                {KINDS[item.kind]} · {item.status === 'APPROVED' ? 'Đã áp dụng' : 'Từ chối'}
               </p>
               {item.receipt ? (
                 <p className="text-muted-foreground">
@@ -355,7 +388,10 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               ) : null}
               <p>{item.reason}</p>
               <p>
-                {item.decidedByName}: {item.decisionNote}
+                {item.decidedByName}
+                {item.decisionNote && item.decisionNote !== item.reason
+                  ? `: ${item.decisionNote}`
+                  : ''}
               </p>
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">Chi tiết</summary>
@@ -373,7 +409,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
         onOpenChange={(open) => {
           if (!open && !request.isPending) setSelected(null);
         }}
-        title="Yêu cầu điều chỉnh khoản thu"
+        title={directAdjustment ? 'Điều chỉnh khoản thu' : 'Yêu cầu điều chỉnh khoản thu'}
       >
         <div className="space-y-4">
           <p>
@@ -449,7 +485,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
             }
             onClick={() => request.mutate()}
           >
-            Gửi quản lý duyệt
+            {directAdjustment ? 'Lưu điều chỉnh' : 'Gửi quản lý duyệt'}
           </Button>
         </div>
       </Modal>
@@ -484,7 +520,9 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
           </label>
           <Button
             disabled={review.isPending || note.trim().length < 3}
-            onClick={() => review.mutate()}
+            onClick={() => {
+              if (decision) review.mutate({ ...decision, note });
+            }}
           >
             {decision?.approve ? 'Xác nhận duyệt' : 'Xác nhận từ chối'}
           </Button>

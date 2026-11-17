@@ -10,6 +10,7 @@ paymentRoutes.get('/staff/payments', ...staffOnly, payment.accounting);
 paymentRoutes.post('/staff/payments/:id/corrections', ...staffOnly, payment.requestCorrection);
 paymentRoutes.get('/admin/payments', ...adminOnly, payment.accounting);
 paymentRoutes.post('/admin/payments/:id/corrections', ...adminOnly, payment.requestCorrection);
+paymentRoutes.post('/admin/payments/:id/corrections/apply', ...adminOnly, payment.applyCorrection);
 paymentRoutes.post(
   '/admin/payment-corrections/:id/decision',
   ...adminOnly,

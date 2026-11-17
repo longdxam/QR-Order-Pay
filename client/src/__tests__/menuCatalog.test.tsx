@@ -149,6 +149,33 @@ function submitSearch(text: string) {
   fireEvent.submit(screen.getByRole('search', { name: 'Tìm món trong thực đơn' }));
 }
 
+it('keeps the same focused input while typing, receiving results, clearing and starting another search', async () => {
+  mock.post.mockResolvedValue(searchResponse(['coffee']));
+  mount();
+  await screen.findByRole('button', { name: 'Chọn món Bánh Croissant' });
+  const input = screen.getByRole('searchbox', { name: 'Tìm món' }) as HTMLInputElement;
+  input.focus();
+  for (const value of ['c', 'ca', 'cà', 'cà p', 'cà phê']) {
+    fireEvent.change(input, { target: { value } });
+    expect(screen.getByRole('searchbox', { name: 'Tìm món' })).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe(value);
+  }
+  await waitFor(() =>
+    expect(mock.post).toHaveBeenCalledWith('/menu/search', { query: 'cà phê' }, expect.anything()),
+  );
+  const results = screen.getByRole('region', { name: 'Kết quả tìm kiếm' });
+  await within(results).findByRole('button', { name: 'Chọn món Cà phê sữa' });
+  expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: '' } });
+  expect(screen.getByRole('region', { name: 'Thực đơn đầy đủ' })).toBeTruthy();
+  expect(screen.getByRole('searchbox', { name: 'Tìm món' })).toBe(input);
+  expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: 'b' } });
+  expect(document.activeElement).toBe(input);
+  expect(input.value).toBe('b');
+});
+
 it('submits to the catalog, displays matching products across categories, and restores the full menu', async () => {
   mock.post.mockResolvedValue(searchResponse(['cake', 'archived']));
   mount();

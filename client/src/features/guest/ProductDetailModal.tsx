@@ -201,6 +201,33 @@ export function ProductDetailModal({
       title={product.name}
       description={product.description}
       className="g-sheet product-sheet"
+      footer={
+        <div className="product-sheet-footer flex shrink-0 items-center gap-3 border-t border-border bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+          <QtyStepper value={quantity} onChange={setQuantity} />
+          <Button
+            size="lg"
+            className="h-auto min-h-12 min-w-0 flex-1 flex-wrap justify-between gap-x-2 gap-y-0 whitespace-nowrap px-4 py-2 text-[0.9375rem]"
+            onClick={() => void handleAdd()}
+            disabled={
+              validating ||
+              (!needsTable &&
+                (!product.isAvailable ||
+                  !sugar ||
+                  !ice ||
+                  (product.variants.length > 0 && !variant)))
+            }
+          >
+            {validating ? (
+              'Đang kiểm tra cấu hình…'
+            ) : (
+              <>
+                <span>{needsTable ? 'Quét QR để đặt' : 'Thêm vào giỏ'}</span>
+                <span className="tabular-nums">{vnd(unitPrice * quantity)}</span>
+              </>
+            )}
+          </Button>
+        </div>
+      }
     >
       <MenuPhoto
         source={product.image}
@@ -294,29 +321,6 @@ export function ProductDetailModal({
           className="w-full rounded-2xl border border-control bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </Section>
-
-      <div className="product-sheet-footer sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-border bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
-        <QtyStepper value={quantity} onChange={setQuantity} />
-        <Button
-          size="lg"
-          className="flex-1 justify-between whitespace-nowrap px-4 text-[0.9375rem]"
-          onClick={() => void handleAdd()}
-          disabled={
-            validating ||
-            (!needsTable &&
-              (!product.isAvailable || !sugar || !ice || (product.variants.length > 0 && !variant)))
-          }
-        >
-          {validating ? (
-            'Đang kiểm tra cấu hình…'
-          ) : (
-            <>
-              <span>{needsTable ? 'Quét QR để đặt' : 'Thêm vào giỏ'}</span>
-              <span className="tabular-nums">{vnd(unitPrice * quantity)}</span>
-            </>
-          )}
-        </Button>
-      </div>
     </Modal>
   );
 }

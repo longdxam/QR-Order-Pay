@@ -68,6 +68,7 @@ export async function requestPaymentCorrection(
     method?: 'CASH' | 'BANK_TRANSFER' | 'OTHER';
     targetOrderId?: string;
   },
+  execution: 'request' | 'apply' = 'request',
 ) {
   try {
     return await unitOfWork.withTransaction(async (session) => {
@@ -123,6 +124,18 @@ export async function requestPaymentCorrection(
         },
         session,
       );
+      // Admin confirmation and its audit/ledger updates commit together with the request.
+      if (execution === 'apply' || actor?.role === 'ADMIN')
+        return applyPaymentCorrection(
+          correction.id,
+          actorId,
+          {
+            expectedVersion: correction.version,
+            approve: true,
+            note: input.reason,
+          },
+          session,
+        );
       return correction;
     });
   } catch (error) {
@@ -139,137 +152,144 @@ async function publish(order: OrderDoc, session: ClientSession) {
   );
 }
 
+type CorrectionDecision = { expectedVersion: number; approve: boolean; note: string };
+
 export async function decidePaymentCorrection(
   id: string,
   actorId: string,
-  input: {
-    expectedVersion: number;
-    approve: boolean;
-    note: string;
-  },
+  input: CorrectionDecision,
 ) {
-  return unitOfWork.withTransaction(async (session) => {
-    const correction = await paymentCorrectionRepository.findById(id, session);
-    if (!correction) throw new NotFoundError('Yêu cầu không tồn tại.');
-    if (correction.status !== 'REQUESTED' || correction.version !== input.expectedVersion)
-      throw new ConflictError('CONFLICT', 'Yêu cầu đã được xử lý.');
-    if (correction.requestedBy.toString() === actorId)
-      throw new ForbiddenError('Người lập yêu cầu không được tự duyệt; cần quản lý khác kiểm tra.');
-    const payment = await paymentRepository.findById(correction.paymentId, session);
-    if (!payment) throw new NotFoundError('Khoản thu không tồn tại.');
-    if (input.approve) {
-      if (payment.status !== 'SUCCESS' || payment.version !== correction.paymentVersion)
-        throw new ConflictError(
-          'CONFLICT',
-          'Khoản thu đã thay đổi. Hãy từ chối yêu cầu cũ và lập lại.',
-        );
-      const order = await orderRepository.findById(payment.orderIds[0]!, session);
-      if (!order) throw new NotFoundError('Đơn không tồn tại.');
-      if (correction.kind !== 'METHOD') assertReversible(order);
-      await guardSession(order, session, correction.kind === 'METHOD');
-      const shift = await ensureOpenShift(actorId, session);
-      const now = new Date();
-      // Preserve amount, method, paidAt and collector of the original receipt.
-      payment.status = 'REFUNDED';
-      payment.refundShiftId = shift._id;
-      payment.refundMethod = payment.method;
-      payment.refundedAt = now;
-      payment.refundedBy = (await userRepository.findById(actorId, session))!._id;
-      payment.refundReason = correction.reason;
-      payment.reversalKind = correction.kind;
-      payment.version += 1;
-      await payment.save({ session });
-      if (correction.kind !== 'METHOD') {
-        const paidAmount =
-          (order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0)) - payment.amount;
-        if (paidAmount < 0)
-          throw new ConflictError('CONFLICT', 'Số tiền đã thu không khớp; cần đối soát.');
-        order.paidAmount = paidAmount;
-        order.paymentStatus = 'UNPAID';
-        if (order.status !== 'AWAITING_PAYMENT') {
-          order.statusHistory.push({
-            from: order.status,
-            to: 'AWAITING_PAYMENT',
+  return unitOfWork.withTransaction((session) =>
+    applyPaymentCorrection(id, actorId, input, session),
+  );
+}
+
+async function applyPaymentCorrection(
+  id: string,
+  actorId: string,
+  input: CorrectionDecision,
+  session: ClientSession,
+) {
+  const actor = await userRepository.findById(actorId, session);
+  if (!actor || actor.role !== 'ADMIN' || !actor.isActive || actor.isDeleted)
+    throw new ForbiddenError('Chỉ quản trị được xác nhận điều chỉnh khoản thu.');
+  const correction = await paymentCorrectionRepository.findById(id, session);
+  if (!correction) throw new NotFoundError('Yêu cầu không tồn tại.');
+  if (correction.status !== 'REQUESTED' || correction.version !== input.expectedVersion)
+    throw new ConflictError('CONFLICT', 'Yêu cầu đã được xử lý.');
+  const payment = await paymentRepository.findById(correction.paymentId, session);
+  if (!payment) throw new NotFoundError('Khoản thu không tồn tại.');
+  if (input.approve) {
+    if (payment.status !== 'SUCCESS' || payment.version !== correction.paymentVersion)
+      throw new ConflictError(
+        'CONFLICT',
+        'Khoản thu đã thay đổi. Hãy từ chối yêu cầu cũ và lập lại.',
+      );
+    const order = await orderRepository.findById(payment.orderIds[0]!, session);
+    if (!order) throw new NotFoundError('Đơn không tồn tại.');
+    if (correction.kind !== 'METHOD') assertReversible(order);
+    await guardSession(order, session, correction.kind === 'METHOD');
+    const shift = await ensureOpenShift(actorId, session);
+    const now = new Date();
+    // Preserve amount, method, paidAt and collector of the original receipt.
+    payment.status = 'REFUNDED';
+    payment.refundShiftId = shift._id;
+    payment.refundMethod = payment.method;
+    payment.refundedAt = now;
+    payment.refundedBy = (await userRepository.findById(actorId, session))!._id;
+    payment.refundReason = correction.reason;
+    payment.reversalKind = correction.kind;
+    payment.version += 1;
+    await payment.save({ session });
+    if (correction.kind !== 'METHOD') {
+      const paidAmount =
+        (order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0)) - payment.amount;
+      if (paidAmount < 0)
+        throw new ConflictError('CONFLICT', 'Số tiền đã thu không khớp; cần đối soát.');
+      order.paidAmount = paidAmount;
+      order.paymentStatus = 'UNPAID';
+      if (order.status !== 'AWAITING_PAYMENT') {
+        order.statusHistory.push({
+          from: order.status,
+          to: 'AWAITING_PAYMENT',
+          at: now,
+          by: actorId,
+          reason: correction.reason,
+        });
+        order.status = 'AWAITING_PAYMENT';
+      }
+    }
+    order.version += 1;
+    await order.save({ session });
+    await publish(order, session);
+    if (correction.kind === 'METHOD' || correction.kind === 'TRANSFER') {
+      const target =
+        correction.kind === 'METHOD'
+          ? order
+          : await orderRepository.findById(correction.targetOrderId!, session);
+      if (!target) throw new NotFoundError('Đơn nhận không tồn tại.');
+      if (correction.kind === 'TRANSFER') {
+        if (
+          target.status !== 'AWAITING_PAYMENT' ||
+          target.paymentStatus !== 'UNPAID' ||
+          payment.amount > target.total - (target.paidAmount ?? 0)
+        )
+          throw new ConflictError('CONFLICT', 'Đơn nhận đã thay đổi hoặc không còn đủ dư nợ.');
+        await guardSession(target, session);
+        target.paidAmount = (target.paidAmount ?? 0) + payment.amount;
+        if (target.paidAmount === target.total) {
+          target.paymentStatus = 'PAID';
+          target.statusHistory.push({
+            from: target.status,
+            to: 'PENDING',
             at: now,
             by: actorId,
             reason: correction.reason,
           });
-          order.status = 'AWAITING_PAYMENT';
+          target.status = 'PENDING';
         }
+        target.version += 1;
+        await target.save({ session });
+        await publish(target, session);
       }
-      order.version += 1;
-      await order.save({ session });
-      await publish(order, session);
-      if (correction.kind === 'METHOD' || correction.kind === 'TRANSFER') {
-        const target =
-          correction.kind === 'METHOD'
-            ? order
-            : await orderRepository.findById(correction.targetOrderId!, session);
-        if (!target) throw new NotFoundError('Đơn nhận không tồn tại.');
-        if (correction.kind === 'TRANSFER') {
-          if (
-            target.status !== 'AWAITING_PAYMENT' ||
-            target.paymentStatus !== 'UNPAID' ||
-            payment.amount > target.total - (target.paidAmount ?? 0)
-          )
-            throw new ConflictError('CONFLICT', 'Đơn nhận đã thay đổi hoặc không còn đủ dư nợ.');
-          await guardSession(target, session);
-          target.paidAmount = (target.paidAmount ?? 0) + payment.amount;
-          if (target.paidAmount === target.total) {
-            target.paymentStatus = 'PAID';
-            target.statusHistory.push({
-              from: target.status,
-              to: 'PENDING',
-              at: now,
-              by: actorId,
-              reason: correction.reason,
-            });
-            target.status = 'PENDING';
-          }
-          target.version += 1;
-          await target.save({ session });
-          await publish(target, session);
-        }
-        const replacement = await paymentRepository.create(
-          {
-            tableSessionId: target.tableSessionId,
-            orderIds: [target._id],
-            amount: payment.amount,
-            method: correction.kind === 'METHOD' ? correction.method : payment.method,
-            status: 'SUCCESS',
-            shiftId: shift._id,
-            confirmedBy: actorId,
-            paidAt: now,
-            idempotencyKey: `correction:${correction.id}`,
-            note: correction.reason,
-            replacesPaymentId: payment._id,
-          },
-          session,
-        );
-        correction.replacementPaymentId = replacement!._id;
-      }
+      const replacement = await paymentRepository.create(
+        {
+          tableSessionId: target.tableSessionId,
+          orderIds: [target._id],
+          amount: payment.amount,
+          method: correction.kind === 'METHOD' ? correction.method : payment.method,
+          status: 'SUCCESS',
+          shiftId: shift._id,
+          confirmedBy: actorId,
+          paidAt: now,
+          idempotencyKey: `correction:${correction.id}`,
+          note: correction.reason,
+          replacesPaymentId: payment._id,
+        },
+        session,
+      );
+      correction.replacementPaymentId = replacement!._id;
     }
-    const actor = await userRepository.findById(actorId, session);
-    correction.status = input.approve ? 'APPROVED' : 'REJECTED';
-    correction.decidedBy = actor!._id;
-    correction.decidedByName = actor?.name ?? 'Quản lý';
-    correction.decidedAt = new Date();
-    correction.decisionNote = input.note;
-    correction.version += 1;
-    await correction.save({ session });
-    await auditRepository.log(
-      {
-        actorType: 'USER',
-        actorId,
-        action: `payment.correction${input.approve ? 'Approved' : 'Rejected'}`,
-        entityType: 'PaymentCorrection',
-        entityId: id,
-        metadata: { paymentId: payment.id, kind: correction.kind, note: input.note },
-      },
-      session,
-    );
-    return correction;
-  });
+  }
+  correction.status = input.approve ? 'APPROVED' : 'REJECTED';
+  correction.decidedBy = actor!._id;
+  correction.decidedByName = actor?.name ?? 'Quản lý';
+  correction.decidedAt = new Date();
+  correction.decisionNote = input.note;
+  correction.version += 1;
+  await correction.save({ session });
+  await auditRepository.log(
+    {
+      actorType: 'USER',
+      actorId,
+      action: `payment.correction${input.approve ? 'Approved' : 'Rejected'}`,
+      entityType: 'PaymentCorrection',
+      entityId: id,
+      metadata: { paymentId: payment.id, kind: correction.kind, note: input.note },
+    },
+    session,
+  );
+  return correction;
 }
 
 function receiptDto(payment: PaymentDoc) {

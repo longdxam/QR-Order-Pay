@@ -53,28 +53,25 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
       }
     }
   }, [active, index, products, compact]);
-  if (compact)
-    return (
-      <section className="menu-experience menu-experience-search" aria-label="Tìm và lọc món">
-        <div className="menu-experience-inner">
-          <div className="menu-tools">{children}</div>
-        </div>
-      </section>
-    );
   return (
-    <section className="menu-experience" aria-label="Thực đơn">
-      <div className="menu-backdrop" aria-hidden="true" data-product-id={active?._id ?? ''}>
-        {active ? (
-          <MenuPhoto
-            key={active._id}
-            source={active.image}
-            eager
-            className="menu-photo menu-backdrop-photo"
-          />
-        ) : null}
-      </div>
-      <div className="menu-backdrop-shade" aria-hidden="true" />
-      {active && !status ? (
+    <section
+      className={compact ? 'menu-experience menu-experience-search' : 'menu-experience'}
+      aria-label={compact ? 'Tìm và lọc món' : 'Thực đơn'}
+    >
+      {!compact && (
+        <div className="menu-backdrop" aria-hidden="true" data-product-id={active?._id ?? ''}>
+          {active ? (
+            <MenuPhoto
+              key={active._id}
+              source={active.image}
+              eager
+              className="menu-photo menu-backdrop-photo"
+            />
+          ) : null}
+        </div>
+      )}
+      {!compact && <div className="menu-backdrop-shade" aria-hidden="true" />}
+      {!compact && active && !status ? (
         <button
           type="button"
           className="menu-picture-action"
@@ -128,8 +125,9 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
         />
       ) : null}
       <div className="menu-experience-inner">
+        {/* Keep the toolbar mounted so switching search mode preserves focus and composition. */}
         <div className="menu-tools">{children}</div>
-        {status ? (
+        {compact ? null : status ? (
           <div className="menu-status">
             <div className="menu-state-panel">{status}</div>
           </div>
