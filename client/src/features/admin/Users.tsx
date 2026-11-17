@@ -19,6 +19,7 @@ interface AdminUser {
   email: string;
   role: 'ADMIN' | 'STAFF';
   isActive: boolean;
+  isOwner?: boolean;
   createdAt: string;
 }
 
@@ -113,6 +114,10 @@ export function AdminUsers(): JSX.Element {
       toast({ title: 'Chưa lưu được', description: getErrorMessage(err), tone: 'danger' }),
   });
 
+  const iAmOwner = !!query.data?.users.find((u) => u.id === currentUser?.id)?.isOwner;
+  /** Admin thường chỉ quản lý được nhân viên; tài khoản quản trị chỉ chủ quán sửa được. */
+  const canManage = (u: AdminUser) => iAmOwner || u.role === 'STAFF';
+
   if (query.isLoading) return <Skeleton className="h-64" />;
   if (query.isError)
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />;
@@ -150,7 +155,7 @@ export function AdminUsers(): JSX.Element {
                   <p className="break-all text-xs text-muted-foreground">{u.email}</p>
                 </div>
                 <Badge tone={u.role === 'ADMIN' ? 'info' : 'neutral'}>
-                  {u.role === 'ADMIN' ? 'Quản trị' : 'Nhân viên'}
+                  {u.isOwner ? 'Chủ quán' : u.role === 'ADMIN' ? 'Quản trị' : 'Nhân viên'}
                 </Badge>
               </div>
               <p className="text-xs">
@@ -158,7 +163,12 @@ export function AdminUsers(): JSX.Element {
                   {u.isActive ? 'Đang hoạt động' : 'Đã khoá'}
                 </span>
               </p>
-              <div className="flex flex-wrap gap-2">
+              {!canManage(u) ? (
+                <p className="text-xs text-muted-foreground">
+                  Chỉ chủ quán sửa được tài khoản quản trị.
+                </p>
+              ) : null}
+              <div className={canManage(u) ? 'flex flex-wrap gap-2' : 'hidden'}>
                 <Button
                   size="sm"
                   variant="outline"
@@ -242,7 +252,7 @@ export function AdminUsers(): JSX.Element {
               Vai trò
               <select
                 className="mt-1 w-full rounded-md border border-control bg-background px-3 py-2"
-                disabled={editing.id === currentUser?.id}
+                disabled={editing.id === currentUser?.id || !iAmOwner}
                 value={editing.role}
                 onChange={(event) =>
                   setEditing({ ...editing, role: event.target.value as AdminUser['role'] })
@@ -358,7 +368,7 @@ export function AdminUsers(): JSX.Element {
               onChange={(e) => setForm({ ...form, role: e.target.value as 'STAFF' | 'ADMIN' })}
             >
               <option value="STAFF">Nhân viên</option>
-              <option value="ADMIN">Quản trị viên</option>
+              {iAmOwner ? <option value="ADMIN">Quản trị viên</option> : null}
             </select>
           </label>
           <div className="flex justify-end gap-2">

@@ -17,7 +17,10 @@ export async function listTables(_req: Request, res: Response, next: NextFunctio
 
 export async function listUsers(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const users = await userRepository.list({ isDeleted: { $ne: true } });
+    const [users, ownerId] = await Promise.all([
+      userRepository.list({ isDeleted: { $ne: true } }),
+      userRepository.ownerId(),
+    ]);
     res.json({
       success: true,
       data: {
@@ -27,6 +30,7 @@ export async function listUsers(_req: Request, res: Response, next: NextFunction
           email: u.email,
           role: u.role,
           isActive: u.isActive,
+          isOwner: u._id.toString() === ownerId,
           createdAt: u.createdAt,
         })),
       },

@@ -43,8 +43,13 @@ export const publicUser = (user: UserDoc) => ({
   createdAt: user.createdAt,
 });
 
+const OWNER_ONLY =
+  'Chỉ chủ quán mới được tạo, sửa, khóa, đổi mật khẩu hoặc cấp quyền cho tài khoản quản trị.';
+
 export async function createAccount(input: unknown, actorId: string) {
   const data = createSchema.parse(input);
+  if (data.role === 'ADMIN' && (await userRepository.ownerId()) !== actorId)
+    throw new ForbiddenError(OWNER_ONLY);
   if (await userRepository.findByEmail(data.email))
     throw new ConflictError('EMAIL_TAKEN', 'Email đã được sử dụng.');
   const user = await userRepository.create({
@@ -78,6 +83,13 @@ export async function editAccount(id: string, input: unknown, actorId: string) {
     if (!actor) throw new ForbiddenError();
     const user = await userRepository.findById(id, session);
     if (!user || user.isDeleted) throw new NotFoundError('Không tìm thấy tài khoản.');
+    // Admin thường chỉ quản lý STAFF; tài khoản quản trị (kể cả chủ quán) và việc cấp quyền
+    // quản trị chỉ chủ quán làm được, để admin mới không chiếm quyền admin cũ.
+    if (
+      (user.role === 'ADMIN' || data.role === 'ADMIN') &&
+      (await userRepository.ownerId(session)) !== actorId
+    )
+      throw new ForbiddenError(OWNER_ONLY);
     if (
       data.email &&
       data.email !== user.email &&

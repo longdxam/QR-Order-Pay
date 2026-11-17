@@ -24,6 +24,8 @@ export interface IUserRepository {
   /** Danh sách nhân sự chưa xóa cho lịch ca: chỉ tên và trạng thái, sắp theo tên. */
   listRoster(): Promise<Array<{ _id: Types.ObjectId; name: string; isActive: boolean }>>;
   lockAdmin(id: string, session: ClientSession): Promise<UserDoc | null>;
+  /** Id chủ quán: tài khoản ADMIN còn hoạt động được tạo sớm nhất. */
+  ownerId(session?: ClientSession | null): Promise<string | null>;
   emailTaken(email: string, session: ClientSession): Promise<boolean>;
   replacePassword(
     id: string,
@@ -86,6 +88,17 @@ export const userRepository: IUserRepository = {
       { $inc: { __v: 1 } },
       { new: true, session },
     );
+  },
+  async ownerId(session) {
+    const owner = await UserModel.findOne({
+      role: 'ADMIN',
+      isActive: true,
+      isDeleted: { $ne: true },
+    })
+      .sort({ createdAt: 1, _id: 1 })
+      .select('_id')
+      .session(session ?? null);
+    return owner ? owner._id.toString() : null;
   },
   async emailTaken(email: string, session: ClientSession): Promise<boolean> {
     return !!(await UserModel.exists({ email }).session(session));

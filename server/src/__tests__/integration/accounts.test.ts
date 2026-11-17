@@ -224,6 +224,45 @@ describe('account management', () => {
     expect(await UserModel.countDocuments({ role: 'ADMIN', isActive: true })).toBe(1);
   });
 
+  it('chỉ chủ quán (admin tạo sớm nhất) quản lý tài khoản quản trị', async () => {
+    expect((await update(staffId, { role: 'ADMIN' })).status).toBe(200);
+    const second = {
+      Authorization: `Bearer ${(await login('staff@test.vn')).body.data.accessToken}`,
+    };
+    const as = (id: string, data: object) =>
+      request(app).patch(`/api/v1/admin/users/${id}`).set(second).send(data);
+    const createAs = (role: 'ADMIN' | 'STAFF', email: string) =>
+      request(app)
+        .post('/api/v1/admin/users')
+        .set(second)
+        .send({ name: 'Mới', email, password: 'Password@123', role });
+
+    // Admin thường không đụng được chủ quán.
+    for (const data of [{ password: 'Hacked@1234' }, { name: 'X' }, { isActive: false }]) {
+      const res = await as(adminId, data);
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('FORBIDDEN');
+    }
+    expect((await login('admin@test.vn')).status).toBe(200);
+
+    // Không tự tạo hay cấp thêm quyền quản trị, nhưng vẫn quản lý nhân viên.
+    expect((await createAs('ADMIN', 'admin2@test.vn')).status).toBe(403);
+    const created = await createAs('STAFF', 'new@test.vn');
+    expect(created.status).toBe(201);
+    const newId = created.body.data.user.id as string;
+    expect((await as(newId, { role: 'ADMIN' })).status).toBe(403);
+    expect((await as(newId, { name: 'Đổi tên' })).status).toBe(200);
+    expect((await as(newId, { password: 'ResetPassword@123' })).status).toBe(200);
+
+    const users = (await request(app).get('/api/v1/admin/users').set(admin)).body.data
+      .users as Array<{ id: string; isOwner: boolean }>;
+    expect(users.filter((u) => u.isOwner).map((u) => u.id)).toEqual([adminId]);
+
+    // Chủ quán vẫn quản lý được admin khác.
+    expect((await update(staffId, { password: 'ResetPassword@123' })).status).toBe(200);
+    expect((await update(staffId, { role: 'STAFF' })).status).toBe(200);
+  });
+
   it('accepts existing tokens without version before the first security change', async () => {
     const legacy = {
       Authorization: `Bearer ${signAccessToken({ sub: staffId, role: 'STAFF', name: 'Cũ' })}`,
