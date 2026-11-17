@@ -28,6 +28,16 @@ export function TableDisplaySetup({
       setMessage('');
     },
   });
+  const rotate = useMutation({
+    mutationFn: async () => {
+      await api.post(
+        `/${admin ? 'admin' : 'staff'}/tables/${tableId}/${admin ? 'rotate-token' : 'display'}`,
+      );
+      return load.mutateAsync();
+    },
+    onSuccess: () =>
+      setMessage('Đã cấp lại khóa. QR cũ của bàn này không còn dùng được, hãy in QR mới.'),
+  });
   return (
     <>
       <Button size="sm" variant="outline" disabled={load.isPending} onClick={() => load.mutate()}>
@@ -92,6 +102,27 @@ export function TableDisplaySetup({
                 Sao chép link
               </Button>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 text-danger"
+              disabled={rotate.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Cấp lại khóa cho ${tableName}? QR đã in của bàn này sẽ mất hiệu lực ngay và phải in lại QR mới. Khách đang ngồi vẫn dùng được phiên hiện tại.`,
+                  )
+                )
+                  rotate.mutate();
+              }}
+            >
+              {rotate.isPending ? 'Đang cấp lại…' : 'Cấp lại khóa (vô hiệu QR cũ)'}
+            </Button>
+            {rotate.isError && (
+              <p role="alert" className="shrink-0 text-sm text-danger">
+                {getErrorMessage(rotate.error)}
+              </p>
+            )}
             {message && (
               <p role="status" className="shrink-0 text-sm">
                 {message}
