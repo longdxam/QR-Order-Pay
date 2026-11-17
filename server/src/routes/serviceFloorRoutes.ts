@@ -12,7 +12,7 @@ export const serviceFloorRoutes = Router();
 serviceFloorRoutes.get('/staff/tables', ...staffOnly, tableSession.staffTables);
 serviceFloorRoutes.get('/staff/tables/:id/qr', ...staffOnly, tableDisplay.staticQr);
 serviceFloorRoutes.get('/admin/tables/:id/qr', ...adminOnly, tableDisplay.staticQr);
-serviceFloorRoutes.post('/staff/tables/:id/display', ...staffOnly, tableDisplay.provision);
+// Cấp lại khóa (làm QR in mất hiệu lực) chỉ dành cho ADMIN: không còn route /staff tương ứng.
 serviceFloorRoutes.post('/admin/tables/:id/display', ...adminOnly, tableDisplay.provision);
 serviceFloorRoutes.post('/staff/tables/:tableId/sessions', ...staffOnly, tableSession.staffOpen);
 

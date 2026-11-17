@@ -30,9 +30,7 @@ export function TableDisplaySetup({
   });
   const rotate = useMutation({
     mutationFn: async () => {
-      await api.post(
-        `/${admin ? 'admin' : 'staff'}/tables/${tableId}/${admin ? 'rotate-token' : 'display'}`,
-      );
+      await api.post(`/admin/tables/${tableId}/rotate-token`);
       return load.mutateAsync();
     },
     onSuccess: () =>
@@ -102,22 +100,25 @@ export function TableDisplaySetup({
                 Sao chép link
               </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 text-danger"
-              disabled={rotate.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Cấp lại khóa cho ${tableName}? QR đã in của bàn này sẽ mất hiệu lực ngay và phải in lại QR mới. Khách đang ngồi vẫn dùng được phiên hiện tại.`,
+            {/* Chỉ Admin được cấp lại khóa; nhân viên chỉ xem và tải QR. */}
+            {admin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 text-danger"
+                disabled={rotate.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Cấp lại khóa cho ${tableName}? QR đã in của bàn này sẽ mất hiệu lực ngay và phải in lại QR mới. Khách đang ngồi vẫn dùng được phiên hiện tại.`,
+                    )
                   )
-                )
-                  rotate.mutate();
-              }}
-            >
-              {rotate.isPending ? 'Đang cấp lại…' : 'Cấp lại khóa (vô hiệu QR cũ)'}
-            </Button>
+                    rotate.mutate();
+                }}
+              >
+                {rotate.isPending ? 'Đang cấp lại…' : 'Cấp lại khóa (vô hiệu QR cũ)'}
+              </Button>
+            ) : null}
             {rotate.isError && (
               <p role="alert" className="shrink-0 text-sm text-danger">
                 {getErrorMessage(rotate.error)}

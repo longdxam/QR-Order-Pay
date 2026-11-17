@@ -75,7 +75,15 @@ const decision = (id: string, headers: Record<string, string>, approve = true) =
     .send({ expectedVersion: 0, approve, note: 'Đã đối chiếu khoản thu với khách' });
 const collectionToken = randomToken(24);
 async function provision() {
-  const response = await request(app).post(`/api/v1/staff/tables/${tableId}/display`).set(auth());
+  // Nhân viên không được cấp lại khóa QR; chỉ ADMIN.
+  const denied = await request(app)
+    .post(`/api/v1/admin/tables/${tableId}/rotate-token`)
+    .set(auth());
+  expect(denied.status).toBe(403);
+  const admin = await person('ADMIN');
+  const response = await request(app)
+    .post(`/api/v1/admin/tables/${tableId}/rotate-token`)
+    .set(admin.headers);
   expect(response.status).toBe(200);
   return new URL(response.body.data.url).hash.slice(1);
 }
@@ -1079,7 +1087,12 @@ describe('dynamic QR and pay-before-preparation', () => {
     expect(await TableSessionModel.countDocuments()).toBe(0);
     expect(await GuestSessionModel.countDocuments()).toBe(0);
     expect((await request(app).get('/api/v1/table-displays/qr')).status).toBe(422);
-    expect((await request(app).post(`/api/v1/staff/tables/${tableId}/display`)).status).toBe(401);
+    expect((await request(app).post(`/api/v1/admin/tables/${tableId}/rotate-token`)).status).toBe(
+      401,
+    );
+    expect(
+      (await request(app).post(`/api/v1/staff/tables/${tableId}/display`).set(auth())).status,
+    ).toBe(404);
   });
   it('reads static QR without rotation and clears saved members on a new visit or leave, preserving explicit login on same-session rejoin', async () => {
     const member = await registerMember({

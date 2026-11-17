@@ -9,7 +9,7 @@
 - Nhân viên không phải mở bàn trước, nhưng vẫn kiểm soát các bước checkout, xác nhận đã nhận tiền và đóng phiên.
 - Guest session là HttpOnly cookie, có TTL 12h, bị thu hồi khi phiên đóng.
 - Rate limit cho join theo IP.
-- Giới hạn đã biết: người không ngồi tại bàn có thể chụp QR; mã không chứng minh hiện diện. Hệ thống không xoay mã theo lịch; chỉ thao tác cấp lại khóa rõ ràng của Staff/Admin thu hồi mã cũ. Bàn không hoạt động hoặc chữ ký/thế hệ mã sai bị từ chối.
+- Giới hạn đã biết: người không ngồi tại bàn có thể chụp QR; mã không chứng minh hiện diện. Hệ thống không xoay mã theo lịch; chỉ thao tác **Cấp lại khóa** của Admin (nút trong hộp Xem QR tĩnh, có xác nhận) thu hồi mã cũ; nhân viên chỉ xem và tải QR. Bàn không hoạt động hoặc chữ ký/thế hệ mã sai bị từ chối.
 
 ## 2. Làm sao đảm bảo guest không xem/huỷ đơn của guest khác cùng bàn?
 

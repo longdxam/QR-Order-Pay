@@ -55,12 +55,12 @@ describe('Cấp lại khóa QR', () => {
     );
   });
 
-  it('staff: dùng endpoint display của nhân viên', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('nhân viên chỉ xem QR, không có nút cấp lại khóa', async () => {
     mount(false);
     fireEvent.click(screen.getByRole('button', { name: 'Xem QR tĩnh' }));
-    fireEvent.click(await screen.findByRole('button', { name: /Cấp lại khóa/ }));
-    await waitFor(() => expect(mock.post).toHaveBeenCalledWith(`/staff/tables/${tableId}/display`));
+    await screen.findByLabelText('Link vào bàn');
+    expect(screen.queryByRole('button', { name: /Cấp lại khóa/ })).toBeNull();
+    expect(mock.post).not.toHaveBeenCalled();
   });
 
   it('không gọi API khi người dùng bấm Hủy ở hộp xác nhận', async () => {
