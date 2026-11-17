@@ -259,7 +259,7 @@ export function Workforce({ admin = false }: { admin?: boolean }): JSX.Element {
         ) : tab === 'cash' ? (
           <WorkforceCashPanel data={data.cash} />
         ) : (
-          <MetricsTable data={data} admin={admin} />
+          <MetricsTable data={data} />
         )
       ) : null}
       <EditorModal

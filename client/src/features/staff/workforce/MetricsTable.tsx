@@ -11,20 +11,9 @@ const COLUMNS = [
 ];
 
 /** Hiệu suất tuần theo nhân viên: giờ làm, chuyên cần và thao tác KDS. */
-export function MetricsTable({
-  data,
-  admin,
-}: {
-  data: WorkforceWeek;
-  admin: boolean;
-}): JSX.Element {
+export function MetricsTable({ data }: { data: WorkforceWeek }): JSX.Element {
   return (
     <section className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Chỉ ghi nhận thao tác KDS từ khi bật tính năng. Mỗi công đoạn tính cho người bấm; thời gian
-        pha từ Bắt đầu pha → Sẵn sàng tính cho người bắt đầu pha, theo tuần hoàn tất pha. Sao là
-        đánh giá đơn do người đó giao, kèm số mẫu; không phải điểm cá nhân.
-      </p>
       <div className="overflow-x-auto rounded-2xl border bg-card">
         <table className="w-full text-left text-sm">
           <caption className="sr-only">Hiệu suất nhân viên trong tuần đã chọn</caption>
@@ -69,16 +58,6 @@ export function MetricsTable({
         </table>
       </div>
       {!data.metrics.length ? <p>Chưa có dữ liệu trong tuần này.</p> : null}
-      <p className="text-sm text-muted-foreground">
-        Giờ thực tế được chia theo ranh giới tuần; ca chưa ra không tự cộng giờ. Thao tác ngoài ca
-        vẫn ghi nhận. Điều chỉnh chấm công không đổi người/ca đã gắn với thao tác KDS.
-      </p>
-      {admin ? (
-        <p className="text-sm">
-          Đối soát chênh lệch tiền xem tại tab Đối soát ca thu ngân. Lịch làm không chia chênh lệch
-          tiền cho từng nhân viên.
-        </p>
-      ) : null}
     </section>
   );
 }

@@ -23,11 +23,7 @@ export function CoveragePanel({
     });
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Đặt số người tối thiểu cho từng khung giờ, kể cả giờ cao điểm. Số đã xếp là mức thấp nhất
-          trong cả khung; nhân viên bị khóa/xóa không được tính.
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Button variant="outline" disabled={busy} onClick={() => openPolicy(data.policy.rules)}>
           <Users className="mr-2 h-4 w-4" />
           Cấu hình nhu cầu

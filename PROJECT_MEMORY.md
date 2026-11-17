@@ -4,6 +4,13 @@ Cập nhật: 17/11/2026.
 
 > **Quy tắc đang áp dụng:** Quán dùng **QR cố định ký HMAC `qrs1`**, in/dùng lại qua các phiên; không đổi mỗi 60 giây. [QR hiện hành](docs/qr-prepayment.md) thay thế thiết kế QR động ghi ngày 12/10 bên dưới. Mỗi mục có ngày trong memory là lịch sử, không tự đại diện cho trạng thái hiện tại. Các tính năng đã gỡ xem [phạm vi hiện hành](docs/retired-features.md).
 
+## Cấp lại khóa QR, hero món bán chạy, gọn tab Lịch ca — 17/11/2026
+
+- **Cấp lại khóa QR:** hộp "Xem QR tĩnh" (Admin + Staff) có nút **Cấp lại khóa (vô hiệu QR cũ)** có `window.confirm`, gọi API sẵn có (`/admin/tables/:id/rotate-token`, Staff `/staff/tables/:id/display`) tăng `staticQrEpoch` rồi tự nạp QR mới. Khách đang ngồi giữ phiên. Test `tableQrRotate.test.tsx` 3/3.
+- **Hero trang menu = 10 món bán chạy:** chưa tìm và đang ở "Tất cả" thì ảnh lớn dùng `GET /products/best-sellers` (công khai, cache theo `MENU_CACHE_TTL_SECONDS`), nhãn "Bán chạy · Top N"; chọn danh mục/tìm kiếm quay về danh sách đang lọc; thiếu dữ liệu thì bù theo thứ tự thực đơn. Xếp hạng dùng chung `SOLD_ORDER_FILTER` + `topProductStages` với "Top sản phẩm" Dashboard và cùng kỳ mặc định 30 ngày giờ VN (`server/src/utils/reportWindow.ts`), thêm tie-break `_id`. Test `bestSellers.test.ts` 3/3, gồm so khớp top 5 Dashboard.
+- **Gọn tab Lịch ca & hiệu suất:** theo user, bỏ 7 đoạn chú thích ở Đối soát ca thu ngân, Nhu cầu nhân sự, Hiệu suất; bỏ prop `admin` thừa của MetricsTable; xóa 2 assertion test chỉ kiểm chữ đã bỏ.
+- Kiểm tra: client 229/229, server unit 144/144, integration liên quan 65/65, lint/boundaries/typecheck đạt; build image 7 service server + web. Lệnh `docker compose up` bị auto mode chặn, user tự chạy deploy theo wave. Lưu ý mỗi service server có **image riêng**, phải build đủ guest-a/b, internal-a/b và worker, nếu không instance cũ trả 404 cho route mới.
+
 ## Admin chỉ lưu điều chỉnh, bỏ bước duyệt riêng — 17/11/2026
 
 - Trước push theo yêu cầu user: chạy lại toàn bộ client **226/226 test (38 file)** đạt; các kiểm tra tích hợp khoản thu/khuyến mãi56case và lint/typecheck/build/smoke ở trên vẫn là kết quả xác minh cho thay đổi tương ứng. Log `.cache/git-push-final-20261117-client.log`.

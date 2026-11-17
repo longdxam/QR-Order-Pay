@@ -79,10 +79,6 @@ export function WorkforcePeaksPanel({
           })}
         </div>
       )}
-      <p className="text-xs text-muted-foreground">
-        Chọn gợi ý để mở bản nháp cấu hình rồi bấm Lưu. Chưa tự thay lịch hay số người tối thiểu;
-        định mức điều chỉnh ở Cấu hình nhu cầu.
-      </p>
     </section>
   );
 }
@@ -95,11 +91,6 @@ export function WorkforceCashPanel({ data }: { data: WorkforceCash | null }) {
         <h2 className="font-semibold">Đối soát ca thu ngân</h2>
         <p className="mt-2">
           {data.closedCount} ca chốt trong tuần · Tổng chênh lệch {vnd(data.totalDifference)}
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Hiển thị ca mở/chốt trong tuần và ca thu ngân đang mở. Tổng chênh lệch tính toàn bộ ca
-          chốt trong tuần, theo giờ chốt. Số tiền lấy từ biên bản đối soát; người có lịch làm trùng
-          giờ không tự chịu chênh lệch này.
         </p>
       </div>
       <div className="overflow-x-auto rounded-2xl border bg-card">
@@ -153,14 +144,7 @@ export function WorkforceCashPanel({ data }: { data: WorkforceCash | null }) {
           </tbody>
         </table>
       </div>
-      {!data.total ? (
-        <p>Chưa có ca thu ngân trong khoảng đã chọn.</p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Hiển thị {data.items.length}/{data.total} ca gần nhất. Tổng phía trên không bị giới hạn
-          bởi số dòng hiển thị.
-        </p>
-      )}
+      {!data.total ? <p>Chưa có ca thu ngân trong khoảng đã chọn.</p> : null}
       <Link to="/admin/payments" className="text-sm font-semibold text-primary underline">
         Xem khoản thu và lịch sử điều chỉnh
       </Link>

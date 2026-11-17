@@ -214,7 +214,6 @@ describe('workforce UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đối soát ca thu ngân' }));
     expect(screen.getByText(/Người thu/).textContent).toContain('Người chốt');
     expect(screen.getByText('Đã ghi lý do thiếu')).toBeTruthy();
-    expect(screen.getByText(/Hiển thị 1\/60 ca/)).toBeTruthy();
     expect(screen.getByText(/60 ca chốt trong tuần/).textContent).toContain('-600');
   });
   it('previews copying, prevents conflicting confirmation and retries the same request after a lost response', async () => {
@@ -504,6 +503,5 @@ describe('workforce UI', () => {
     await waitFor(() => expect(screen.getAllByText('Lan · Ca đêm')).toHaveLength(2));
     fireEvent.click(screen.getByRole('button', { name: 'Hiệu suất' }));
     expect(screen.getAllByText('Chưa có mẫu')).toHaveLength(2);
-    expect(screen.getByText(/Sao là đánh giá đơn/)).toBeTruthy();
   });
 });
