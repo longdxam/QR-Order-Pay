@@ -13,6 +13,7 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
   children,
   status,
   compact = false,
+  ranked = false,
 }: {
   products: T[];
   categories: Array<{ _id: string; name: string }>;
@@ -20,6 +21,8 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
   children: ReactNode;
   status?: ReactNode;
   compact?: boolean;
+  /** Danh sách đã xếp hạng bán chạy: hiện "Bán chạy · Top N" thay cho tên danh mục. */
+  ranked?: boolean;
 }): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(null);
   const index = Math.max(
@@ -135,7 +138,14 @@ export function MenuShowcase<T extends Product & { categoryId: string }>({
           <div className="menu-showcase-body">
             <div className="menu-hero-caption">
               <div id="menu-preview-info" aria-live="polite" aria-atomic="true">
-                {activeCategory ? <p className="menu-preview-category">{activeCategory}</p> : null}
+                {ranked ? (
+                  <p className="menu-preview-category">
+                    Bán chạy · Top {index + 1}
+                    {activeCategory ? ` · ${activeCategory}` : ''}
+                  </p>
+                ) : activeCategory ? (
+                  <p className="menu-preview-category">{activeCategory}</p>
+                ) : null}
                 <h2 className="menu-preview-name">{active.name}</h2>
                 {active.description ? (
                   <p className="menu-preview-description">{active.description}</p>

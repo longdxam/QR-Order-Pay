@@ -12,6 +12,7 @@ export const menuRoutes = Router();
 menuRoutes.get('/categories', menu.listMenu);
 menuRoutes.get('/products', menu.listMenu);
 menuRoutes.get('/products/featured', menu.listFeaturedMenu);
+menuRoutes.get('/products/best-sellers', menu.listBestSellers);
 menuRoutes.post(
   '/menu/search',
   rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'menu-search'),

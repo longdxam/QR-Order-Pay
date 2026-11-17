@@ -14,6 +14,7 @@ import { AISheet } from '../ai/AISheet';
 import { MenuShowcase } from './MenuShowcase';
 import { MenuCatalog } from './MenuCatalog';
 import { usePublicMenu } from './usePublicMenu';
+import { useBestSellerIds } from './useBestSellers';
 
 type Product = MenuProduct;
 
@@ -37,6 +38,7 @@ export function MenuPage(): JSX.Element {
   }, [searchText]);
 
   const menuQuery = usePublicMenu();
+  const bestSellerIds = useBestSellerIds();
 
   const searchQuery = useQuery({
     queryKey: ['menu-search', debouncedQuery, maxBudget, noCaffeine, noDairy],
@@ -82,6 +84,16 @@ export function MenuPage(): JSX.Element {
       return inCat;
     });
   }, [menuQuery.data, activeCat, searchActive, searchQuery.data]);
+
+  // Chưa tìm kiếm và đang ở "Tất cả": ảnh lớn là các món bán chạy nhất. Còn lại theo danh sách đang lọc.
+  const bestSellers = useMemo(() => {
+    if (searchActive || activeCat !== 'all' || !menuQuery.data || !bestSellerIds.data) return [];
+    const byId = new Map(menuQuery.data.products.map((product) => [product._id, product]));
+    return bestSellerIds.data
+      .map((id) => byId.get(id))
+      .filter((product): product is Product => !!product && !product.isArchived);
+  }, [searchActive, activeCat, menuQuery.data, bestSellerIds.data]);
+  const showBestSellers = bestSellers.length > 0;
 
   const searchPending = searchActive && (searchQuery.isLoading || debouncedQuery !== searchText);
   function showSearchResults(): void {
@@ -129,7 +141,8 @@ export function MenuPage(): JSX.Element {
   return (
     <>
       <MenuShowcase
-        products={filtered}
+        products={showBestSellers ? bestSellers : filtered}
+        ranked={showBestSellers}
         categories={menuQuery.data?.categories ?? []}
         onChoose={setSelected}
         status={status}

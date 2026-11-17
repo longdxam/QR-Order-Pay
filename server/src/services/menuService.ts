@@ -1,6 +1,8 @@
 import { productRepository } from '../repositories/productRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { defaultReportWindow } from '../utils/reportWindow.js';
 import { NotFoundError } from '../errors/AppError.js';
 import { config } from '../config/index.js';
 import {
@@ -46,6 +48,27 @@ export async function listFeatured(limit?: number) {
   );
   await applyInventoryAvailability(products, []);
   return products.filter((p) => p.isAvailable).slice(0, normalizedLimit);
+}
+
+/**
+ * Id món bán chạy cho trang khách, xếp hạng giống hệt "Top sản phẩm" trên Dashboard ở kỳ mặc định
+ * (30 ngày gần nhất theo giờ Việt Nam). Chỉ gồm món đang bán; nếu chưa đủ `limit` món có doanh số
+ * thì bổ sung theo thứ tự thực đơn để luôn trả đủ số lượng.
+ */
+export async function listBestSellerIds(limit = 10): Promise<string[]> {
+  const n = Math.max(1, Math.min(Math.trunc(limit) || 10, 20));
+  const { from, until } = defaultReportWindow();
+  const ranked = await cachedJson(
+    `maycafe:cache:menu:best-sellers:${from.toISOString()}`,
+    config.menuCacheTtlSeconds,
+    () => orderRepository.bestSellingProductIds(from, until, 20),
+  );
+  const menu = await listPublicMenu();
+  const sellable = menu.products.map((product) => String(product._id));
+  const sellableSet = new Set(sellable);
+  const ids = ranked.filter((id) => sellableSet.has(id));
+  for (const id of sellable) if (ids.length < n && !ids.includes(id)) ids.push(id);
+  return ids.slice(0, n);
 }
 
 export async function invalidatePublicMenuCache(): Promise<void> {

@@ -1,4 +1,4 @@
-import { Types, type ClientSession, type FilterQuery } from 'mongoose';
+import { Types, type ClientSession, type FilterQuery, type PipelineStage } from 'mongoose';
 import { OrderModel, type OrderDoc } from '../models/Order.js';
 import type { OrderStatus, PaymentStatus } from '@may-cafe/contracts';
 import { settleOrderInventory } from '../services/orderInventoryService.js';
@@ -61,6 +61,26 @@ export interface PaidOrderAnalytics {
   topProducts: Array<{ productId: string; name: string; quantity: number; revenue: number }>;
   revenueByDay: Array<{ date: string; revenue: number; orders: number }>;
   revenueByHour: Array<{ hour: number; revenue: number }>;
+}
+
+/** Đơn được tính là "đã bán": đã trả tiền và không bị hủy. */
+const SOLD_ORDER_FILTER = { paymentStatus: 'PAID', status: { $ne: 'CANCELLED' } } as const;
+
+/** Xếp hạng món: tổng số lượng giảm dần, rồi doanh thu, rồi id để thứ tự luôn ổn định. */
+function topProductStages(limit: number): PipelineStage.FacetPipelineStage[] {
+  return [
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.productId',
+        name: { $last: '$items.nameSnapshot' },
+        quantity: { $sum: '$items.quantity' },
+        revenue: { $sum: '$items.lineTotal' },
+      },
+    },
+    { $sort: { quantity: -1, revenue: -1, _id: 1 } },
+    { $limit: limit },
+  ];
 }
 
 export const orderRepository = {
@@ -262,8 +282,7 @@ export const orderRepository = {
       {
         $match: {
           createdAt: { $gte: from, $lt: to },
-          paymentStatus: 'PAID',
-          status: { $ne: 'CANCELLED' },
+          ...SOLD_ORDER_FILTER,
         },
       },
       {
@@ -287,17 +306,7 @@ export const orderRepository = {
             },
           ],
           topProducts: [
-            { $unwind: '$items' },
-            {
-              $group: {
-                _id: '$items.productId',
-                name: { $last: '$items.nameSnapshot' },
-                quantity: { $sum: '$items.quantity' },
-                revenue: { $sum: '$items.lineTotal' },
-              },
-            },
-            { $sort: { quantity: -1, revenue: -1 } },
-            { $limit: 5 },
+            ...topProductStages(5),
             {
               $project: {
                 _id: 0,
@@ -355,6 +364,17 @@ export const orderRepository = {
       revenueByDay: result?.revenueByDay ?? [],
       revenueByHour: result?.revenueByHour ?? [],
     };
+  },
+  /**
+   * Id món bán chạy trong [from, until): cùng bộ lọc và cùng thứ tự với "Top sản phẩm" của Dashboard
+   * (`paidAnalytics`), chỉ khác số lượng trả về.
+   */
+  async bestSellingProductIds(from: Date, until: Date, limit: number): Promise<string[]> {
+    const rows = await OrderModel.aggregate<{ _id: unknown }>([
+      { $match: { createdAt: { $gte: from, $lt: until }, ...SOLD_ORDER_FILTER } },
+      ...topProductStages(limit),
+    ]);
+    return rows.map((row) => String(row._id));
   },
   /** Số đơn đã trả tiền, chưa hủy theo (thứ ISO, giờ) giờ Việt Nam trong [from, until). */
   async paidCountsByWeekdayHour(from: Date, until: Date) {

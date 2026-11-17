@@ -1,24 +1,16 @@
 import { orderRepository } from '../repositories/orderRepository.js';
 import { paymentAnalytics } from './paymentAnalyticsService.js';
 import { operationalAnalytics } from '../repositories/dashboardRepository.js';
-
-const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-function startOfDayVietnam(date: Date): Date {
-  const vietnam = new Date(date.getTime() + VIETNAM_OFFSET_MS);
-  return new Date(
-    Date.UTC(vietnam.getUTCFullYear(), vietnam.getUTCMonth(), vietnam.getUTCDate()) -
-      VIETNAM_OFFSET_MS,
-  );
-}
-
-function endOfDayVietnam(date: Date): Date {
-  return new Date(startOfDayVietnam(date).getTime() + 86_400_000 - 1);
-}
+import {
+  DEFAULT_REPORT_DAYS,
+  VIETNAM_OFFSET_MS,
+  endOfDayVietnam,
+  startOfDayVietnam,
+} from '../utils/reportWindow.js';
 
 export async function overview(from?: Date, to?: Date) {
   const today = new Date();
-  const defaultFrom = new Date(today.getTime() - 29 * 86400000);
+  const defaultFrom = new Date(today.getTime() - (DEFAULT_REPORT_DAYS - 1) * 86400000);
   const f = from ? startOfDayVietnam(from) : startOfDayVietnam(defaultFrom);
   const t = to ? endOfDayVietnam(to) : endOfDayVietnam(today);
 
