@@ -6,8 +6,11 @@ import {
   workCopyConfirmSchema,
   type WorkCopyPreview,
 } from '@may-cafe/contracts';
-import { UserModel } from '../models/User.js';
-import { WorkShiftModel, WorkScheduleCopyModel } from '../models/WorkShift.js';
+import { userRepository } from '../repositories/userRepository.js';
+import {
+  workScheduleCopyRepository,
+  workShiftRepository,
+} from '../repositories/workforceRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { sha256 } from '../utils/crypto.js';
 import { queueWorkforceChanged } from './workforceRealtimeService.js';
@@ -26,16 +29,12 @@ async function plan(
   const start = new Date(`${from}T00:00:00+07:00`),
     end = new Date(start.getTime() + 7 * 86400000);
   const offset = Date.parse(`${targetFrom}T00:00:00+07:00`) - start.getTime();
-  const source = await WorkShiftModel.find({
-    startsAt: { $gte: start, $lt: end },
-    status: { $ne: 'CANCELLED' },
-  })
-    .sort({ _id: 1 })
-    .session(session ?? null);
+  const source = await workShiftRepository.listStartingBetween(start, end, session);
   if (!source.length) throw new ValidationError('Tuần nguồn không có ca bắt đầu để sao chép.');
   if (source.length > 200) throw new ValidationError('Tối đa 200 ca trong một lần sao chép.');
-  const users = await UserModel.find({ _id: { $in: source.map((s) => s.staffId) } }).session(
-    session ?? null,
+  const users = await userRepository.listByIds(
+    source.map((s) => s.staffId),
+    session,
   );
   const shifts = source.map((s) => ({
     sourceId: s.id,
@@ -46,12 +45,12 @@ async function plan(
     endsAt: new Date(s.endsAt.getTime() + offset).toISOString(),
     note: s.note,
   }));
-  const targets = await WorkShiftModel.find({
-    staffId: { $in: source.map((s) => s.staffId) },
-    status: { $ne: 'CANCELLED' },
-    startsAt: { $lt: new Date(Math.max(...shifts.map((s) => Date.parse(s.endsAt)))) },
-    endsAt: { $gt: new Date(Math.min(...shifts.map((s) => Date.parse(s.startsAt)))) },
-  }).session(session ?? null);
+  const targets = await workShiftRepository.listActiveForStaffBetween(
+    source.map((s) => s.staffId),
+    new Date(Math.min(...shifts.map((s) => Date.parse(s.startsAt)))),
+    new Date(Math.max(...shifts.map((s) => Date.parse(s.endsAt)))),
+    session,
+  );
   const conflicts: WorkCopyPreview['conflicts'] = [];
   for (const s of shifts) {
     const user = users.find((u) => String(u._id) === s.staffId);
@@ -85,15 +84,7 @@ async function plan(
 }
 export async function previewWorkSchedule(actorId: string, raw: unknown) {
   const data = workCopyPreviewSchema.parse(raw);
-  if (
-    !(await UserModel.exists({
-      _id: actorId,
-      role: 'ADMIN',
-      isActive: true,
-      isDeleted: { $ne: true },
-    }))
-  )
-    throw new ForbiddenError();
+  if (!(await userRepository.isActiveAdmin(actorId))) throw new ForbiddenError();
   return plan(data.from, data.targetFrom);
 }
 export async function copyWorkSchedule(actorId: string, raw: unknown) {
@@ -102,7 +93,7 @@ export async function copyWorkSchedule(actorId: string, raw: unknown) {
   return unitOfWork
     .withTransaction(async (session) => {
       await lockWorkforceUser(actorId, session, true);
-      const replay = await WorkScheduleCopyModel.findById(data.requestId).session(session);
+      const replay = await workScheduleCopyRepository.findById(data.requestId, session);
       if (replay) {
         if (replay.requestHash !== requestHash)
           throw new ConflictError(
@@ -136,41 +127,39 @@ export async function copyWorkSchedule(actorId: string, raw: unknown) {
           session,
         );
         const requestId = randomUUID();
-        const [created] = await WorkShiftModel.create(
-          [
-            {
-              staffId: s.staffId,
-              staffName: s.staffName,
-              label: s.label,
-              startsAt: s.startsAt,
-              endsAt: s.endsAt,
-              note: s.note,
-              requestId,
-              requestHash: sha256(JSON.stringify(s)),
-            },
-          ],
-          { session },
+        const created = await workShiftRepository.create(
+          {
+            staffId: s.staffId,
+            staffName: s.staffName,
+            label: s.label,
+            startsAt: s.startsAt,
+            endsAt: s.endsAt,
+            note: s.note,
+            requestId,
+            requestHash: sha256(JSON.stringify(s)),
+          },
+          session,
         );
         await logWorkShiftAudit(
           actorId,
           'copied',
-          created!,
+          created,
           { sourceId: s.sourceId, batchId: data.requestId },
           session,
           false,
         );
-        ids.push(created!.id);
+        ids.push(created.id);
       }
-      await WorkScheduleCopyModel.create(
-        [{ _id: data.requestId, requestHash, createdBy: actorId, shiftIds: ids }],
-        { session },
+      await workScheduleCopyRepository.create(
+        { _id: data.requestId, requestHash, createdBy: actorId, shiftIds: ids },
+        session,
       );
       await queueWorkforceChanged(session);
       return { count: ids.length, ids, targetFrom: data.targetFrom };
     })
     .catch(async (error: unknown) => {
       if ((error as { code?: number }).code === 11000) {
-        const replay = await WorkScheduleCopyModel.findById(data.requestId);
+        const replay = await workScheduleCopyRepository.findById(data.requestId);
         if (replay?.requestHash === requestHash)
           return {
             count: replay.shiftIds.length,

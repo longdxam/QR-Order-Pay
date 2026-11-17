@@ -188,7 +188,6 @@ export function AdminReviews(): JSX.Element {
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <Badge tone="neutral">{review.tableName ?? 'Bàn không còn dữ liệu'}</Badge>
-                <span>Đơn {review.orderCode ?? '—'}</span>
                 {typeof review.orderTotal === 'number' ? (
                   <span>{vnd(review.orderTotal)}</span>
                 ) : null}

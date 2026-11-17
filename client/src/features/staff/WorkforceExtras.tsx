@@ -125,7 +125,7 @@ export function WorkforceCashPanel({ data }: { data: WorkforceCash | null }) {
             {data.items.map((s) => (
               <tr key={s.id} className="border-t">
                 <th className="p-3" scope="row">
-                  {s.code}
+                  Ca thu ngân
                   <p className="text-xs font-normal">
                     {s.status === 'OPEN' ? 'Đang mở' : 'Đã chốt'}
                   </p>

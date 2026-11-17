@@ -11,6 +11,11 @@ export const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
   'READY',
 ];
 
+const PAID_LIVE = {
+  paymentStatus: 'PAID',
+  status: { $in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED'] },
+};
+
 export interface StaffOrderFeedFilters {
   tableSessionIds: string[];
   status?: OrderStatus;
@@ -67,7 +72,10 @@ export const orderRepository = {
     if (!doc) throw new Error('Failed to create order');
     return doc;
   },
-  async findById(id: string, session?: ClientSession | null): Promise<OrderDoc | null> {
+  async findById(
+    id: string | Types.ObjectId,
+    session?: ClientSession | null,
+  ): Promise<OrderDoc | null> {
     return OrderModel.findById(id, null, { session: session ?? undefined });
   },
   async findByCode(code: string): Promise<OrderDoc | null> {
@@ -347,5 +355,175 @@ export const orderRepository = {
       revenueByDay: result?.revenueByDay ?? [],
       revenueByHour: result?.revenueByHour ?? [],
     };
+  },
+  /** Số đơn đã trả tiền, chưa hủy theo (thứ ISO, giờ) giờ Việt Nam trong [from, until). */
+  async paidCountsByWeekdayHour(from: Date, until: Date) {
+    return OrderModel.aggregate<{ _id: { day: number; hour: number }; count: number }>([
+      {
+        $match: {
+          createdAt: { $gte: from, $lt: until },
+          paymentStatus: 'PAID',
+          status: { $ne: 'CANCELLED' },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            day: { $isoDayOfWeek: { date: '$createdAt', timezone: 'Asia/Ho_Chi_Minh' } },
+            hour: { $hour: { date: '$createdAt', timezone: 'Asia/Ho_Chi_Minh' } },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+  },
+  /** Phiên còn đơn chưa hủy, hoặc là bàn nhận của đơn quà chưa giao: chưa được tự đóng. */
+  async sessionHasLiveOrder(tableSessionId: Types.ObjectId, session: ClientSession) {
+    return OrderModel.exists({
+      $or: [
+        { tableSessionId, status: { $ne: 'CANCELLED' } },
+        { 'gift.recipientSessionId': tableSessionId, status: { $nin: ['SERVED', 'CANCELLED'] } },
+      ],
+    }).session(session);
+  },
+  async listServedPaidForParticipant(tableSessionId: string, participantId: string) {
+    return OrderModel.find({
+      tableSessionId,
+      participantId,
+      paymentStatus: 'PAID',
+      status: 'SERVED',
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+  },
+  async countAwaitingPayment(
+    tableSessionId: string,
+    participantId: string,
+    session: ClientSession,
+  ): Promise<number> {
+    return OrderModel.countDocuments({
+      tableSessionId,
+      participantId,
+      status: 'AWAITING_PAYMENT',
+    }).session(session);
+  },
+  /** Mốc tạo và lịch sử trạng thái của đơn (trừ đơn hẹn không đến) để phát hiện bất thường. */
+  async listStatusTimelineSince(since: Date) {
+    return OrderModel.find({
+      'pickup.outcome': { $ne: 'NO_SHOW' },
+      $or: [
+        { createdAt: { $gte: since } },
+        { 'statusHistory.at': { $gte: since } },
+        { status: 'PREPARING' },
+      ],
+    })
+      .select('createdAt status statusHistory')
+      .lean();
+  },
+  /** Số đơn và đơn cũ nhất theo trạng thái trong phạm vi cho trước. */
+  async countByStatus(scope: FilterQuery<OrderDoc>) {
+    return OrderModel.aggregate<{ _id: string; count: number; oldestCreatedAt: Date }>([
+      { $match: scope },
+      { $group: { _id: '$status', count: { $sum: 1 }, oldestCreatedAt: { $min: '$createdAt' } } },
+    ]);
+  },
+  async clearPaidAmount(orderId: Types.ObjectId, session: ClientSession): Promise<void> {
+    await OrderModel.updateOne({ _id: orderId }, { $set: { paidAmount: 0 } }, { session });
+  },
+  async saveInventoryState(order: OrderDoc, session: ClientSession): Promise<void> {
+    await OrderModel.updateOne(
+      { _id: order._id },
+      { $set: { inventoryState: order.inventoryState } },
+      { session },
+    );
+  },
+  /** Tăng version nếu đơn chưa đổi (khóa lạc quan); trả về có khớp hay không. */
+  async bumpVersion(order: OrderDoc, session: ClientSession): Promise<boolean> {
+    const guarded = await OrderModel.updateOne(
+      { _id: order._id, version: order.version },
+      { $inc: { version: 1 } },
+      { session },
+    );
+    return guarded.modifiedCount === 1;
+  },
+  /** Phiên là bàn nhận của đơn quà chưa giao xong. */
+  async hasUndeliveredGiftFor(tableSessionId: string, session: ClientSession): Promise<boolean> {
+    return !!(await OrderModel.exists({
+      'gift.recipientSessionId': tableSessionId,
+      status: { $nin: ['SERVED', 'CANCELLED'] },
+    }).session(session));
+  },
+  /** Phiên đã gửi một đơn quà chưa giao xong. */
+  async hasUndeliveredGiftFrom(tableSessionId: string, session: ClientSession): Promise<boolean> {
+    return !!(await OrderModel.exists({
+      tableSessionId,
+      gift: { $ne: null },
+      status: { $nin: ['SERVED', 'CANCELLED'] },
+    }).session(session));
+  },
+  /** Phiên còn đơn chưa giao xong (không tính đơn đã hủy). */
+  async hasUnfinished(tableSessionId: string, session: ClientSession): Promise<boolean> {
+    return !!(await OrderModel.exists({
+      tableSessionId,
+      status: { $nin: ['SERVED', 'CANCELLED'] },
+    }).session(session));
+  },
+  /** Phiên còn đơn chưa hủy mà chưa thu tiền. */
+  async hasUnpaid(tableSessionId: string, session: ClientSession): Promise<boolean> {
+    return !!(await OrderModel.exists({
+      tableSessionId,
+      status: { $ne: 'CANCELLED' },
+      paymentStatus: 'UNPAID',
+    }).session(session));
+  },
+  async moveSessionToTable(
+    tableSessionId: Types.ObjectId,
+    tableId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<void> {
+    await OrderModel.updateMany({ tableSessionId }, { $set: { tableId } }, { session });
+  },
+  /** Tăng version để mọi thao tác tiền khác trên đơn này phải xếp hàng sau transaction hiện tại. */
+  async touchVersion(orderId: Types.ObjectId, session: ClientSession): Promise<void> {
+    await OrderModel.updateOne({ _id: orderId }, { $inc: { version: 1 } }, { session });
+  },
+  /** Đơn mang đi/đặt trước thuộc tính năng đã gỡ, chỉ còn trong lịch sử. */
+  async listRetiredFulfillmentIds() {
+    return OrderModel.distinct('_id', { fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] } });
+  },
+  /** Đơn tại bàn đang chờ thu tiền có thể nhận khoản thu chuyển sang (tối đa 200). */
+  async listTransferTargets(excludeIds: unknown[]) {
+    return OrderModel.find({
+      _id: { $nin: excludeIds },
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+    })
+      .select('code tableId total paidAmount createdAt')
+      .populate('tableId', 'name')
+      .limit(200)
+      .lean();
+  },
+  /** Mã đơn, loại phục vụ và tên bàn để hiển thị cạnh khoản thu. */
+  async listLabels(ids: unknown[]) {
+    return OrderModel.find({ _id: { $in: ids } })
+      .select('code tableId fulfillmentType createdAt')
+      .populate('tableId', 'name');
+  },
+  /** Đơn đã thanh toán và chưa hủy (in ảnh cốc của món). */
+  async findPaidLive(id: string, session?: ClientSession | null) {
+    return OrderModel.findOne({ _id: id, ...PAID_LIVE }).session(session ?? null);
+  },
+  /** Đơn đã thanh toán có món kèm ảnh cốc, 20 đơn mới nhất mỗi trang. */
+  async pageWithCupPhotos(page: number) {
+    const filter = { ...PAID_LIVE, 'items.cupPhotoId': { $type: 'objectId' } };
+    const total = await OrderModel.countDocuments(filter),
+      orders = await OrderModel.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * 20)
+        .limit(20);
+    return { total, orders };
+  },
+  async listStatuses(ids: unknown[]) {
+    return OrderModel.find({ _id: { $in: ids } }).select('status');
   },
 };

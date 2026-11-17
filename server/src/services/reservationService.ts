@@ -8,10 +8,9 @@ import {
   reservationActionSchema,
   type Reservation,
 } from '@may-cafe/contracts';
-import { ReservationModel, type ReservationDoc } from '../models/Reservation.js';
-import { TableModel } from '../models/Table.js';
-import { TableSessionModel } from '../models/TableSession.js';
-import { MemberModel } from '../models/Member.js';
+import type { ReservationDoc } from '../models/Reservation.js';
+import { reservationRepository } from '../repositories/reservationRepository.js';
+import { memberRepository } from '../repositories/memberRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import {
   ConflictError,
@@ -24,11 +23,8 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { logger } from '../infrastructure/logger.js';
-import {
-  liveReservationFilter,
-  lockReservationTable,
-  reservationChanged,
-} from './reservationGuards.js';
+import { lockReservationTable, reservationChanged } from './reservationGuards.js';
+import { tableRepository } from '../repositories/tableRepository.js';
 
 export interface ReservationActor {
   id: string;
@@ -68,22 +64,12 @@ export async function reservationAvailability(raw: unknown) {
   const input = reservationSearchSchema.parse(raw),
     range = interval(input.startsAt),
     now = new Date();
-  const occupied = await ReservationModel.distinct('tableId', {
-    ...liveReservationFilter(now),
-    startsAt: { $lt: range.endsAt },
-    endsAt: { $gt: range.startsAt },
-  });
+  const occupied = await reservationRepository.tablesHeldDuring(range.startsAt, range.endsAt, now);
   // Current sessions have no forced end. Treat the next hour as occupied;
   // future bookings still require staff to resolve any overrun at check-in.
   if (range.startsAt.getTime() < now.getTime() + RESERVATION_MINUTES * minute)
-    occupied.push(
-      ...(await TableSessionModel.distinct('tableId', { status: { $in: ['OPEN', 'CHECKOUT'] } })),
-    );
-  const tables = await TableModel.find({
-    isActive: true,
-    capacity: { $gte: input.partySize },
-    _id: { $nin: occupied },
-  }).sort({ capacity: 1, code: 1 });
+    occupied.push(...(await tableSessionRepository.listOccupiedTableIds()));
+  const tables = await tableRepository.listAvailableFor(input.partySize, occupied);
   return {
     tables: tables.map((t) => ({ id: t.id, name: t.name, code: t.code, capacity: t.capacity })),
     startsAt: range.startsAt.toISOString(),
@@ -101,7 +87,7 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
     requestId: input.requestId,
   };
   const replay = async () => {
-    const r = await ReservationModel.findOne(replayFilter).select('+requestHash');
+    const r = await reservationRepository.findByRequest(replayFilter);
     if (!r) return null;
     if (r.requestHash !== requestHash)
       throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã yêu cầu đã dùng với nội dung khác.');
@@ -113,16 +99,10 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
   try {
     return await unitOfWork.withTransaction(async (session) => {
       if (!a.staff) {
-        const member = await MemberModel.findOneAndUpdate(
-          { _id: a.id, isActive: true },
-          { $inc: { version: 1 } },
-          { session, new: true },
-        );
+        const member = await memberRepository.lockActive(a.id, session);
         if (!member) throw new ForbiddenError('Thành viên không hoạt động.');
         // Serialize same-member limits even when requests target different tables.
-        const existing = await ReservationModel.findOne(replayFilter)
-          .select('+requestHash')
-          .session(session);
+        const existing = await reservationRepository.findByRequest(replayFilter, session);
         if (existing) {
           if (existing.requestHash !== requestHash)
             throw new ConflictError(
@@ -131,21 +111,18 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
             );
           return { reservation: reservationDto(existing), created: false };
         }
-        const active = await ReservationModel.countDocuments({
-          memberId: a.id,
-          ...liveReservationFilter(),
-        }).session(session);
+        const active = await reservationRepository.countLiveForMember(a.id, session);
         if (active >= 3)
           throw new ConflictError(
             'RESERVATION_LIMIT',
             'Bạn đang có 3 lịch đặt. Hãy hủy hoặc hoàn tất lịch cũ.',
           );
-        const personalOverlap = await ReservationModel.exists({
-          memberId: a.id,
-          ...liveReservationFilter(),
-          startsAt: { $lt: range.endsAt },
-          endsAt: { $gt: range.startsAt },
-        }).session(session);
+        const personalOverlap = await reservationRepository.memberHasLiveOverlap(
+          a.id,
+          range.startsAt,
+          range.endsAt,
+          session,
+        );
         if (personalOverlap)
           throw new ConflictError(
             'RESERVATION_OVERLAP',
@@ -153,9 +130,7 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
           );
       }
       const table = await lockReservationTable(input.tableId, session);
-      const duplicate = await ReservationModel.findOne(replayFilter)
-        .select('+requestHash')
-        .session(session);
+      const duplicate = await reservationRepository.findByRequest(replayFilter, session);
       if (duplicate) {
         if (duplicate.requestHash !== requestHash)
           throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã yêu cầu đã dùng với nội dung khác.');
@@ -163,12 +138,12 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
       }
       if (table.capacity < input.partySize)
         throw new ConflictError('TABLE_TOO_SMALL', 'Bàn không đủ chỗ.');
-      const overlap = await ReservationModel.exists({
-        tableId: input.tableId,
-        ...liveReservationFilter(),
-        startsAt: { $lt: range.endsAt },
-        endsAt: { $gt: range.startsAt },
-      }).session(session);
+      const overlap = await reservationRepository.hasLiveOverlap(
+        input.tableId,
+        range.startsAt,
+        range.endsAt,
+        session,
+      );
       if (overlap)
         throw new ConflictError(
           'TABLE_RESERVED',
@@ -182,22 +157,18 @@ export async function createReservation(a: ReservationActor, raw: unknown) {
           'TABLE_OCCUPIED',
           'Bàn đang phục vụ khách. Vui lòng chọn bàn khác.',
         );
-      const [r] = await ReservationModel.create(
-        [
-          {
-            ...input,
-            ...range,
-            ...replayFilter,
-            requestHash,
-            memberId: a.staff ? null : a.id,
-            tableName: table.name,
-            arrivalDeadline: new Date(
-              range.startsAt.getTime() + RESERVATION_GRACE_MINUTES * minute,
-            ),
-            code: `DB-${randomBytes(6).toString('hex').toUpperCase()}`,
-          },
-        ],
-        { session },
+      const r = await reservationRepository.create(
+        {
+          ...input,
+          ...range,
+          ...replayFilter,
+          requestHash,
+          memberId: a.staff ? null : a.id,
+          tableName: table.name,
+          arrivalDeadline: new Date(range.startsAt.getTime() + RESERVATION_GRACE_MINUTES * minute),
+          code: `DB-${randomBytes(6).toString('hex').toUpperCase()}`,
+        },
+        session,
       );
       await auditRepository.log(
         {
@@ -240,7 +211,10 @@ export async function listReservations(a: ReservationActor, query: unknown) {
     .parse(query);
   if (input.date) {
     const parsed = new Date(`${input.date}T00:00:00+07:00`);
-    if (!Number.isFinite(parsed.getTime()) || new Date(parsed.getTime() + 7 * 3600000).toISOString().slice(0, 10) !== input.date)
+    if (
+      !Number.isFinite(parsed.getTime()) ||
+      new Date(parsed.getTime() + 7 * 3600000).toISOString().slice(0, 10) !== input.date
+    )
       throw new ValidationError('Ngày lọc không hợp lệ.');
   }
   await expireReservations();
@@ -256,13 +230,11 @@ export async function listReservations(a: ReservationActor, query: unknown) {
         }
       : {}),
   };
-  const [items, total] = await Promise.all([
-    ReservationModel.find(filter)
-      .sort({ startsAt: input.history === 'true' ? -1 : 1 })
-      .skip((input.page - 1) * 30)
-      .limit(30),
-    ReservationModel.countDocuments(filter),
-  ]);
+  const [items, total] = await reservationRepository.page(
+    filter,
+    input.history === 'true',
+    input.page,
+  );
   return { items: items.map(reservationDto), total };
 }
 export async function actOnReservation(
@@ -274,7 +246,7 @@ export async function actOnReservation(
   const input = reservationActionSchema.parse(raw);
   if (kind === 'check-in' && !a.staff) throw new ForbiddenError();
   return unitOfWork.withTransaction(async (session) => {
-    const r = await ReservationModel.findOne({ _id: id, ...scope(a) }).session(session);
+    const r = await reservationRepository.findScoped(id, scope(a), session);
     if (!r) throw new NotFoundError('Không tìm thấy lịch đặt.');
     // Safe replay for a response lost after commit; never repeat check-in or close a session.
     if (
@@ -299,13 +271,13 @@ export async function actOnReservation(
           'TABLE_OCCUPIED',
           'Bàn còn phiên phục vụ. Hãy xử lý và đóng phiên cũ trước khi check-in.',
         );
-      const other = await ReservationModel.exists({
-        _id: { $ne: r._id },
-        tableId: table._id,
-        ...liveReservationFilter(),
-        startsAt: { $lt: new Date() },
-        endsAt: { $gt: new Date() },
-      }).session(session);
+      const other = await reservationRepository.hasLiveOverlap(
+        table._id,
+        new Date(),
+        new Date(),
+        session,
+        r._id,
+      );
       if (other)
         throw new ConflictError('TABLE_RESERVED', 'Bàn còn trong thời gian của lịch đặt trước.');
       const opened = await tableSessionRepository.create(
@@ -357,29 +329,12 @@ export async function actOnReservation(
   });
 }
 export async function expireReservations(now = new Date()) {
-  const candidates = await ReservationModel.find({
-    status: 'CONFIRMED',
-    arrivalDeadline: { $lte: now },
-  })
-    .sort({ arrivalDeadline: 1 })
-    .limit(200)
-    .select('_id tableId');
+  const candidates = await reservationRepository.listOverdue(now);
   let count = 0;
   for (const candidate of candidates) {
     const expired = await unitOfWork.withTransaction(async (session) => {
-      await TableModel.updateOne(
-        { _id: candidate.tableId },
-        { $inc: { admissionCount: 1 } },
-        { session },
-      );
-      const r = await ReservationModel.findOneAndUpdate(
-        { _id: candidate._id, status: 'CONFIRMED', arrivalDeadline: { $lte: now } },
-        {
-          $set: { status: 'NO_SHOW', closedAt: now, reason: 'Quá giờ đến 15 phút' },
-          $inc: { version: 1 },
-        },
-        { new: true, session },
-      );
+      await tableRepository.touchAdmission(candidate.tableId, session);
+      const r = await reservationRepository.markNoShow(candidate._id, now, session);
       if (!r) return false;
       await auditRepository.log(
         {

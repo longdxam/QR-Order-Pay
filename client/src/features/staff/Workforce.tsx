@@ -142,10 +142,6 @@ export function Workforce({ admin = false }: { admin?: boolean }): JSX.Element {
           </Button>
         ) : null}
       </div>
-      <p className="text-sm text-muted-foreground">
-        Vào ca từ 30 phút trước giờ bắt đầu. Trễ được tính sau 5 phút. Giờ làm chỉ cộng khi đã ra
-        ca; quên chấm công cần quản lý điều chỉnh.
-      </p>
       {!admin && current ? (
         <section
           className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary bg-primary/5 p-5"

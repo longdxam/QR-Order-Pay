@@ -76,10 +76,6 @@ export function AdminVouchers(): JSX.Element {
           Tạo voucher
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Giảm số tiền cố định hoặc theo %. Lượt đang giữ cho đơn chờ thanh toán được tính vào giới
-        hạn; hủy đơn hợp lệ sẽ trả lượt.
-      </p>
       {query.isError ? (
         <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />
       ) : query.isPending ? (

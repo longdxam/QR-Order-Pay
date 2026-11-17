@@ -43,7 +43,6 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
       )}
       {feed.data?.items.map((order) => (
         <Card key={order.id} className="space-y-3 p-5">
-          <h2 className="text-xl font-semibold">{order.code}</h2>
           <p>
             {order.destination} · {order.status}
           </p>
@@ -55,7 +54,7 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
               >
                 <div>
                   <h3 className="font-medium">
-                    Dòng {item.index + 1}: {item.quantity} × {item.name} {item.size}
+                    {item.quantity} × {item.name} {item.size}
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {item.available
@@ -199,9 +198,7 @@ function PrintPreview({
       aria-label="Xem trước tem"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">
-          Tem {selected.order.code} · dòng {selected.item.index + 1}
-        </h2>
+        <h2 className="text-xl font-semibold">Xem trước tem</h2>
         <Button variant="outline" disabled={busy} onClick={onClose}>
           Đóng xem trước
         </Button>
@@ -305,15 +302,12 @@ function CupLabel({
 }): JSX.Element {
   return (
     <article className="cup-photo-label">
-      <strong>
-        {selected.order.code} · Dòng {selected.item.index + 1}
-      </strong>
       <p className="cup-label-name">
         {selected.item.name} {selected.item.size}
       </p>
       <img
         src={url}
-        alt={`Ảnh tem ${selected.order.code} cốc ${copy}`}
+        alt={`Ảnh tem ${selected.item.name} cốc ${copy}`}
         onLoad={onLoad}
         onError={onError}
       />

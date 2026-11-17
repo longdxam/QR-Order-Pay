@@ -182,7 +182,6 @@ export function AdminMembers(): JSX.Element {
                   <div key={entry.id} className="flex justify-between gap-3 border-b py-2 text-sm">
                     <div>
                       <p>
-                        {entry.orderCode} ·{' '}
                         {entry.type === 'EARN' ? 'Tích' : entry.type === 'REDEEM' ? 'Đổi' : 'Hoàn'}{' '}
                         điểm
                       </p>

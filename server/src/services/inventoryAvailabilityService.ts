@@ -1,7 +1,7 @@
 import type { ClientSession } from 'mongoose';
-import { IngredientModel } from '../models/Ingredient.js';
-import { RecipeModel, type RecipeData } from '../models/Recipe.js';
+import type { RecipeData } from '../models/Recipe.js';
 import { ConflictError } from '../errors/AppError.js';
+import { ingredientRepository, recipeRepository } from '../repositories/inventoryRepository.js';
 
 export interface InventoryItem {
   freestyle?: { components: { ingredientId: { toString(): string }; quantity: number }[] };
@@ -19,12 +19,8 @@ export const displayUnits = (quantity: number): number => quantity / 1000;
 export const recipeKey = (type: string, id: { toString(): string }): string => `${type}:${id}`;
 
 export async function inventoryContext(session?: ClientSession | null) {
-  const recipes = await RecipeModel.find({ enabled: true })
-    .session(session ?? null)
-    .lean();
-  const ingredients = await IngredientModel.find({})
-    .session(session ?? null)
-    .lean();
+  const recipes = await recipeRepository.listEnabled(session);
+  const ingredients = await ingredientRepository.listAll(session);
   return {
     recipes: new Map(recipes.map((r) => [recipeKey(r.targetType, r.targetId), r])),
     ingredients: new Map(ingredients.map((i) => [String(i._id), i])),

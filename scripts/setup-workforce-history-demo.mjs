@@ -3,6 +3,10 @@
 import mongoose from 'mongoose';
 import { createHash, randomBytes } from 'node:crypto';
 const apply = process.argv.includes('--apply');
+if (apply)
+  throw new Error(
+    'Live demo import retired on 16/11/2026. The dataset was archived; use isolated test fixtures instead.',
+  );
 const base = '/app/server/dist/src';
 const { OrderModel } = await import(`${base}/models/Order.js`);
 const { PaymentModel } = await import(`${base}/models/Payment.js`);

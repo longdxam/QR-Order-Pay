@@ -33,7 +33,7 @@ export function TechnicalDetails({ data }: { data: OperationsSummary }): JSX.Ele
         />
       </div>
       <Card className="p-4">
-        <h2 className="font-semibold">Máy chủ {data.instance.instanceId}</h2>
+        <h2 className="font-semibold">Máy chủ hiện tại</h2>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Stat label="Thời gian hoạt động" value={formatDuration(data.instance.uptimeSeconds)} />
           <Stat label="Lượt truy cập" value={data.instance.http.requests.toLocaleString('vi-VN')} />
@@ -83,14 +83,12 @@ export function TechnicalDetails({ data }: { data: OperationsSummary }): JSX.Ele
                   {worker.role} · {stale ? 'Mất tín hiệu' : 'Đang hoạt động'}
                 </Badge>
                 <span className="break-all text-muted-foreground">
-                  {worker.id} ·{' '}
                   {new Date(worker.updatedAt).toLocaleTimeString('vi-VN', {
                     timeZone: 'Asia/Ho_Chi_Minh',
                   })}
                 </span>
                 {worker.activeJobStartedAt ? (
                   <span>
-                    {worker.activeJobId} ·{' '}
                     {formatDuration(
                       Math.floor((Date.now() - Date.parse(worker.activeJobStartedAt)) / 1000),
                     )}

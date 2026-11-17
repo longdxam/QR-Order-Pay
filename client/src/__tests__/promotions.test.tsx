@@ -109,11 +109,11 @@ describe('members and promotions UI', () => {
       return response({});
     });
     const qc = mount(<MemberPage />);
-    await screen.findByText('Hoàn điểm · MC1');
+    await screen.findByText('Hoàn điểm');
     fireEvent.click(screen.getByRole('button', { name: 'Đăng xuất thành viên' }));
     await screen.findByRole('button', { name: 'Đăng nhập' });
     await waitFor(() => expect(qc.getQueryData(['member-points', member.id, 1])).toBeUndefined());
-    expect(screen.queryByText('Hoàn điểm · MC1')).toBeNull();
+    expect(screen.queryByText('Hoàn điểm')).toBeNull();
   });
   it('shows authoritative voucher discount and sends the code with a signed quote', async () => {
     cart();

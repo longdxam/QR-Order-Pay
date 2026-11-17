@@ -1,6 +1,6 @@
 import type { WorkforcePeaks, WorkforceCash, WorkforceWeek } from '@may-cafe/contracts';
-import { OrderModel } from '../models/Order.js';
-import { CashShiftModel } from '../models/CashShift.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { cashShiftRepository } from '../repositories/cashShiftRepository.js';
 
 export async function workforcePeaks(
   selectedStart: Date,
@@ -12,24 +12,7 @@ export async function workforcePeaks(
   );
   const until = new Date(Math.min(selectedStart.getTime(), today.getTime()));
   const from = new Date(until.getTime() - 28 * 86400000);
-  const rows = await OrderModel.aggregate<{ _id: { day: number; hour: number }; count: number }>([
-    {
-      $match: {
-        createdAt: { $gte: from, $lt: until },
-        paymentStatus: 'PAID',
-        status: { $ne: 'CANCELLED' },
-      },
-    },
-    {
-      $group: {
-        _id: {
-          day: { $isoDayOfWeek: { date: '$createdAt', timezone: 'Asia/Ho_Chi_Minh' } },
-          hour: { $hour: { date: '$createdAt', timezone: 'Asia/Ho_Chi_Minh' } },
-        },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
+  const rows = await orderRepository.paidCountsByWeekdayHour(from, until);
   const paidOrders = rows.reduce((n, r) => n + r.count, 0),
     minimumOrders = 20;
   return {
@@ -59,31 +42,11 @@ export async function workforcePeaks(
 }
 
 export async function workforceCash(start: Date, end: Date): Promise<WorkforceCash> {
-  const filter = {
-    $or: [
-      { openedAt: { $gte: start, $lt: end } },
-      { closedAt: { $gte: start, $lt: end } },
-      { status: 'OPEN' },
-    ],
-  };
-  const [items, total, summary] = await Promise.all([
-    CashShiftModel.find(filter).sort({ status: -1, openedAt: -1 }).limit(50).lean(),
-    CashShiftModel.countDocuments(filter),
-    CashShiftModel.aggregate<{ count: number; difference: number }>([
-      { $match: { status: 'CLOSED', closedAt: { $gte: start, $lt: end } } },
-      {
-        $group: {
-          _id: null,
-          count: { $sum: 1 },
-          difference: { $sum: { $ifNull: ['$difference', 0] } },
-        },
-      },
-    ]),
-  ]);
+  const { items, total, summary } = await cashShiftRepository.summarizeWindow(start, end);
   return {
     total,
-    closedCount: summary[0]?.count ?? 0,
-    totalDifference: summary[0]?.difference ?? 0,
+    closedCount: summary?.count ?? 0,
+    totalDifference: summary?.difference ?? 0,
     items: items.map((s) => ({
       id: String(s._id),
       code: s.code,

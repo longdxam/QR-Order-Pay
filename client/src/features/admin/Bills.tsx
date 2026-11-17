@@ -68,15 +68,14 @@ export function AdminBills(): JSX.Element {
           Khoản thu & điều chỉnh
         </Link>
       </div>
-      <Card className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">
-        {(['q', 'table', 'cashier', 'from', 'to'] as const).map((key) => (
+      <Card className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        {(['table', 'cashier', 'from', 'to'] as const).map((key) => (
           <Input
             key={key}
             type={key === 'from' || key === 'to' ? 'date' : 'text'}
             value={filters[key]}
             placeholder={
               {
-                q: 'Mã hóa đơn',
                 table: 'Bàn',
                 cashier: 'Thu ngân',
                 from: 'Từ ngày',
@@ -94,7 +93,7 @@ export function AdminBills(): JSX.Element {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-muted-foreground">
-              <th className="p-3">Mã</th>
+              <th className="p-3">Chốt lúc</th>
               <th className="p-3">Bàn</th>
               <th className="p-3">Thu ngân</th>
               <th className="p-3">Thanh toán</th>
@@ -105,16 +104,11 @@ export function AdminBills(): JSX.Element {
           <tbody>
             {query.data!.items.map((bill) => (
               <tr key={bill.id} className="border-b border-border">
-                <td className="p-3 font-medium">{bill.invoiceCode}</td>
-                <td className="p-3">
-                  {bill.tableCode} · {bill.tableName}
-                </td>
+                <td className="p-3 font-medium">{billTime(bill.closedAt)}</td>
+                <td className="p-3">{bill.tableName}</td>
                 <td className="p-3">{bill.cashierName}</td>
                 <td className="p-3">
                   <p className="font-medium">{paymentLabel(bill)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Chốt: {billTime(bill.closedAt)}
-                  </p>
                 </td>
                 <td className="p-3 text-right font-semibold">{vnd(bill.total)}</td>
                 <td className="p-3">
@@ -154,7 +148,7 @@ export function AdminBills(): JSX.Element {
       <Modal
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
-        title={detail.data?.invoiceCode ?? 'Chi tiết hóa đơn'}
+        title="Chi tiết hóa đơn"
         className="max-w-2xl"
       >
         {detail.isLoading ? (
@@ -174,10 +168,7 @@ function BillPrint({ bill }: { bill: BillDetail }): JSX.Element {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 text-sm">
         <span>
-          Bàn:{' '}
-          <strong>
-            {bill.tableCode} · {bill.tableName}
-          </strong>
+          Bàn: <strong>{bill.tableName}</strong>
         </span>
         <span>
           Thu ngân: <strong>{bill.cashierName}</strong>

@@ -119,10 +119,6 @@ export function LatteArtPicker({
   }
   return (
     <div className="space-y-3 text-sm">
-      <p>
-        Biến ảnh của bạn thành tông cà phê, giữ nguyên nội dung. Chọn một trong ba bản để gắn vào
-        món.
-      </p>
       <label className="block font-medium">
         Tải ảnh làm latte art
         <input
@@ -138,9 +134,7 @@ export function LatteArtPicker({
           }}
         />
       </label>
-      <p className="text-xs text-muted-foreground">
-        JPEG/PNG/WebP · tối đa 4 MB. Một thiết kế cho mọi cốc trong cùng dòng.
-      </p>
+      <p className="text-xs text-muted-foreground">JPEG/PNG/WebP</p>
       {busy && <p role="status">Đang tạo 3 kiểu latte art…</p>}
       {error && <p role="alert">{error}</p>}
       {!candidates.length && photoId && selected.url && (
@@ -227,10 +221,6 @@ export function LatteArtPicker({
           Bỏ ảnh latte art
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">
-        Xem trước trên bọt là mô phỏng. Bản thiết kế chưa được in trực tiếp khi quán chưa có máy in
-        đồ uống.
-      </p>
     </div>
   );
 }

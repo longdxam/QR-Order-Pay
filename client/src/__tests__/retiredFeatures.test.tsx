@@ -34,7 +34,7 @@ function mount(element: JSX.Element, path = '/t') {
 beforeEach(() => {
   vi.stubGlobal(
     'matchMedia',
-    vi.fn(() => ({ matches: false })),
+    vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
   );
   Element.prototype.scrollIntoView = vi.fn();
   localStorage.clear();

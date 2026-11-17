@@ -1,5 +1,5 @@
 import type { ClientSession } from 'mongoose';
-import { GuestSessionModel } from '../models/GuestSession.js';
+import { GuestSessionModel, type GuestSessionDoc } from '../models/GuestSession.js';
 
 export interface IGuestSessionRepository {
   findActiveByTokenHash(hash: string): Promise<{
@@ -22,6 +22,9 @@ export interface IGuestSessionRepository {
   revokeByTableSession(tableSessionId: string, session?: ClientSession): Promise<number>;
   revokeByHash(hash: string): Promise<boolean>;
   clearReceiptByHash(hash: string): Promise<boolean>;
+  findByReceiptHash(hash: string): Promise<GuestSessionDoc | null>;
+  listSessionsWithLiveGuests(tableSessionIds: unknown[]): Promise<unknown[]>;
+  hasLiveGuest(tableSessionId: string, session: ClientSession): Promise<boolean>;
 }
 
 export const guestSessionRepository: IGuestSessionRepository = {
@@ -68,5 +71,24 @@ export const guestSessionRepository: IGuestSessionRepository = {
       { $unset: { receiptTokenHash: 1 } },
     );
     return result.modifiedCount > 0;
+  },
+  /** Phiên khách còn hạn giữ quyền xem biên nhận (kể cả đã bị thu hồi quyền gọi món). */
+  async findByReceiptHash(hash: string) {
+    return GuestSessionModel.findOne({ receiptTokenHash: hash, expiresAt: { $gt: new Date() } });
+  },
+  /** Phiên (trong danh sách) còn ít nhất một khách đang dùng: chưa thu hồi, chưa hết hạn. */
+  async listSessionsWithLiveGuests(tableSessionIds) {
+    return GuestSessionModel.distinct('tableSessionId', {
+      tableSessionId: { $in: tableSessionIds },
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    });
+  },
+  async hasLiveGuest(tableSessionId, session) {
+    return !!(await GuestSessionModel.exists({
+      tableSessionId,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).session(session));
   },
 };

@@ -157,7 +157,7 @@ export function OrdersPage(): JSX.Element {
                       Đặt lúc {formatTime(order.createdAt)}
                     </p>
                   ) : null}
-                  <h2 className="g-display text-2xl">{order.code}</h2>
+                  <h2 className="g-display text-2xl">Đơn hàng</h2>
                   <GiftLabel gift={order.gift} />
                 </div>
                 <Badge
@@ -279,7 +279,7 @@ export function OrdersPage(): JSX.Element {
         title="Yêu cầu hủy đơn"
         description={
           cancelTarget
-            ? `Đơn ${cancelTarget.code}. Nhân viên sẽ xem xét trước khi pha chế.`
+            ? `Đơn đặt lúc ${formatTime(cancelTarget.createdAt)}. Nhân viên sẽ xem xét trước khi pha chế.`
             : undefined
         }
         className="g-sheet"
@@ -339,25 +339,6 @@ function statusLabel(s: Order['status']): string {
   }
 }
 
-function statusHint(s: Order['status']): string {
-  switch (s) {
-    case 'AWAITING_PAYMENT':
-      return 'Vui lòng thanh toán với nhân viên. Đơn chỉ được pha chế sau khi đã nhận đủ tiền.';
-    case 'PENDING':
-      return 'Đang chờ nhân viên xác nhận đơn.';
-    case 'CONFIRMED':
-      return 'Nhân viên đã nhận đơn, sắp chuyển cho quầy pha chế.';
-    case 'PREPARING':
-      return 'Quầy pha chế đang làm đồ uống của bạn.';
-    case 'READY':
-      return 'Đồ uống đã xong, nhân viên sẽ mang ra bàn.';
-    case 'SERVED':
-      return 'Đồ uống đã được phục vụ tại bàn.';
-    case 'CANCELLED':
-      return 'Đơn này đã được hủy.';
-  }
-}
-
 function iceLabel(v: string): string {
   if (v === 'Theo công thức') return v;
   return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
@@ -404,10 +385,7 @@ function Progress({
           />
         ))}
       </div>
-      <p className="mt-3 text-sm">
-        <span className="font-semibold">{statusLabel(status)}.</span>{' '}
-        <span className="text-muted-foreground">{statusHint(status)}</span>
-      </p>
+      <p className="mt-3 text-sm font-semibold">{statusLabel(status)}</p>
       <p className="mt-1 text-sm text-muted-foreground">
         Thanh toán:{' '}
         {paymentStatus === 'PAID'

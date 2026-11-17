@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Star } from 'lucide-react';
@@ -9,6 +10,7 @@ import { useToast } from '../../components/ui/useToast';
 interface ReviewableOrder {
   _id: string;
   code: string;
+  createdAt?: string;
   review: Review | null;
 }
 
@@ -73,7 +75,7 @@ export function OrderReview({
   if (saved)
     return (
       <div className="rounded-2xl border border-border bg-card p-4">
-        <p className="text-sm font-semibold">Đơn {order.code}</p>
+        <p className="text-sm font-semibold">{orderLabel(order)}</p>
         <p className="mt-1 flex items-center gap-2 text-sm">
           <span
             className="flex gap-0.5 text-accent-ink"
@@ -83,7 +85,9 @@ export function OrderReview({
             {[1, 2, 3, 4, 5].map((n) => (
               <Star
                 key={n}
-                className={n <= saved.rating ? 'h-4 w-4 fill-current' : 'h-4 w-4 text-muted-foreground'}
+                className={
+                  n <= saved.rating ? 'h-4 w-4 fill-current' : 'h-4 w-4 text-muted-foreground'
+                }
               />
             ))}
           </span>
@@ -105,11 +109,11 @@ export function OrderReview({
     >
       <fieldset disabled={review.isPending || review.isSuccess} className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold">Đơn {order.code}</p>
+          <p className="text-sm font-semibold">{orderLabel(order)}</p>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Số sao</span>
             <select
-              aria-label={`Số sao cho đơn ${order.code}`}
+              aria-label={`Số sao cho ${orderLabel(order)}`}
               value={rating}
               onChange={(event) => setRating(Number(event.target.value))}
               className="h-10 rounded-xl border border-control bg-card px-3 text-sm font-semibold focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"

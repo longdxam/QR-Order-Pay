@@ -167,13 +167,14 @@ describe('staff cup label preview and intent', () => {
   async function preview(admin = false) {
     const view = wrapper(<CupPrintPage admin={admin} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Xem & in tem' }));
-    const image = (await screen.findAllByAltText('Ảnh tem MC-PHOTO cốc 1'))[0]!;
+    const image = (await screen.findAllByAltText('Ảnh tem Cà phê cốc 1'))[0]!;
     fireEvent.load(image);
     return view;
   }
   it('does not request printing or fetch image bytes just by entering the list', async () => {
     wrapper(<CupPrintPage />);
-    await screen.findByText('MC-PHOTO');
+    await screen.findByRole('heading', { name: '3 × Cà phê M' });
+    expect(screen.queryByText('MC-PHOTO')).toBeNull();
     expect(mock.post).not.toHaveBeenCalled();
     expect(print).not.toHaveBeenCalled();
     expect(mock.get.mock.calls.every((c) => !c[0].includes('/image'))).toBe(true);
@@ -187,7 +188,8 @@ describe('staff cup label preview and intent', () => {
     const sheet = document.getElementById('cup-photo-print-sheet')!;
     expect(sheet.querySelectorAll('article')).toHaveLength(3);
     expect(sheet.textContent).toContain('Cốc 3/3');
-    expect(sheet.textContent).toContain('Dòng 1');
+    expect(sheet.textContent).not.toContain('Dòng 1');
+    expect(sheet.textContent).not.toContain('MC-PHOTO');
     expect(sheet.textContent).toContain('Bàn 1');
     expect(sheet.className).toBe('cup-sheet-a4');
     fireEvent.click(screen.getByRole('button', { name: 'In tem' }));
@@ -200,9 +202,9 @@ describe('staff cup label preview and intent', () => {
   it('supports label paper, validates copies and never prints before the image decodes', async () => {
     wrapper(<CupPrintPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Xem & in tem' }));
-    (await screen.findAllByAltText('Ảnh tem MC-PHOTO cốc 1'))[0]!;
+    (await screen.findAllByAltText('Ảnh tem Cà phê cốc 1'))[0]!;
     expect(screen.getByRole('button', { name: 'In tem' }).hasAttribute('disabled')).toBe(true);
-    fireEvent.load(screen.getAllByAltText('Ảnh tem MC-PHOTO cốc 1')[0]!);
+    fireEvent.load(screen.getAllByAltText('Ảnh tem Cà phê cốc 1')[0]!);
     fireEvent.change(screen.getByLabelText('Khổ giấy'), { target: { value: 'LABEL_60_80' } });
     fireEvent.change(screen.getByLabelText('Số tem'), { target: { value: '4' } });
     expect(screen.getByRole('button', { name: 'In tem' }).hasAttribute('disabled')).toBe(true);

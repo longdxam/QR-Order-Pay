@@ -5,7 +5,6 @@ import { ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
 import type { Request, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { GuestSessionModel } from '../models/GuestSession.js';
 
 export const GUEST_COOKIE = 'mc_guest';
 export const RECEIPT_COOKIE = 'mc_receipt';
@@ -25,7 +24,11 @@ export async function resolveGuest(req: Request): Promise<ResolvedGuest | null> 
   if (!session) return null;
   const tableSession = await tableSessionRepository.findById(session.tableSessionId);
   if (!tableSession || tableSession.status === 'CLOSED') return null;
-  return { id: session.id, tableSessionId: session.tableSessionId, participantId: session.participantId };
+  return {
+    id: session.id,
+    tableSessionId: session.tableSessionId,
+    participantId: session.participantId,
+  };
 }
 
 export function attachGuest(req: Request, guest: ResolvedGuest): void {
@@ -57,26 +60,36 @@ export function requireOpenTableSession(req: Request, _res: Response, next: Next
 export async function resolveReceiptGuest(req: Request): Promise<ResolvedGuest | null> {
   const token = req.cookies?.[RECEIPT_COOKIE];
   if (typeof token !== 'string') return null;
-  const guest = await GuestSessionModel.findOne({ receiptTokenHash: sha256(token), expiresAt: { $gt: new Date() } });
+  const guest = await guestSessionRepository.findByReceiptHash(sha256(token));
   if (!guest) return null;
   const session = await tableSessionRepository.findById(guest.tableSessionId.toString());
   if (!session || session.status !== 'CLOSED') return null;
   return { id: guest.id, participantId: guest.participantId, tableSessionId: session.id };
 }
 
-export async function loadReceiptGuest(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export async function loadReceiptGuest(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const guest = await resolveReceiptGuest(req);
     if (!guest) throw new UnauthorizedError('Chưa có hóa đơn đã đóng hoặc quyền xem đã hết hạn.');
     req.guest = guest;
     next();
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 }
 
 export function setReceiptCookie(res: Response, token: string): void {
   res.cookie(RECEIPT_COOKIE, token, {
-    httpOnly: true, sameSite: 'lax', secure: config.cookieSecure,
-    domain: config.cookieDomain, maxAge: GUEST_COOKIE_TTL_MS, path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.cookieSecure,
+    domain: config.cookieDomain,
+    maxAge: GUEST_COOKIE_TTL_MS,
+    path: '/',
   });
 }
 
@@ -104,7 +117,8 @@ export function guestCsrfGuard(req: Request, _res: Response, next: NextFunction)
   const origin = req.headers.origin;
   const referer = req.headers.referer;
   const allowed = new Set<string>([config.serverOrigin, config.publicAppUrl]);
-  if (origin && !allowed.has(origin)) return next(new ForbiddenError('Nguồn yêu cầu không hợp lệ.'));
+  if (origin && !allowed.has(origin))
+    return next(new ForbiddenError('Nguồn yêu cầu không hợp lệ.'));
   if (!origin && referer) {
     try {
       const refUrl = new URL(referer);

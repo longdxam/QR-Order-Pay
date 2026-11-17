@@ -1,29 +1,23 @@
-import { OrderModel } from '../models/Order.js';
-import { ServiceRequestModel } from '../models/ServiceRequest.js';
-import { TableSessionModel } from '../models/TableSession.js';
 import { checkMongoReadiness } from '../infrastructure/mongo.js';
 import { getInstanceMetricsSnapshot, setDependencyReadiness } from '../infrastructure/metrics.js';
 import { isRedisReady } from '../infrastructure/redis.js';
 import { queueSnapshot } from '../infrastructure/backgroundQueue.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
-import { staffOrderFeedQuery } from '../repositories/orderRepository.js';
+import { orderRepository, staffOrderFeedQuery } from '../repositories/orderRepository.js';
+import { serviceRequestRepository } from '../repositories/serviceRequestRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 
 const ACTIVE_ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] as const;
 
 export async function operationsSummary() {
-  const activeSessions = await TableSessionModel.find({ status: { $in: ['OPEN', 'CHECKOUT'] } })
-    .select('_id')
-    .lean();
+  const activeSessions = await tableSessionRepository.listActiveIds();
   const orderScope = staffOrderFeedQuery({
     tableSessionIds: activeSessions.map((session) => String(session._id)),
   });
   const [mongoReady, openServiceRequests, groupedOrders, queues, outbox] = await Promise.all([
     checkMongoReadiness(),
-    ServiceRequestModel.countDocuments({ status: 'OPEN' }),
-    OrderModel.aggregate<{ _id: string; count: number; oldestCreatedAt: Date }>([
-      { $match: orderScope },
-      { $group: { _id: '$status', count: { $sum: 1 }, oldestCreatedAt: { $min: '$createdAt' } } },
-    ]),
+    serviceRequestRepository.countOpen(),
+    orderRepository.countByStatus(orderScope),
     queueSnapshot(),
     outboxRepository.statusCounts(),
   ]);

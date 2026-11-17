@@ -25,7 +25,7 @@ export const serviceRequestRepository = {
   /** Đóng mọi yêu cầu còn mở của phiên (dùng khi thu tiền và đóng bàn). */
   async resolveOpenBySession(
     tableSessionId: string,
-    resolvedBy: string,
+    resolvedBy: string | null,
     session?: ClientSession | null,
   ): Promise<void> {
     await ServiceRequestModel.updateMany(
@@ -40,5 +40,8 @@ export const serviceRequestRepository = {
       { status: 'RESOLVED', resolvedBy, resolvedAt: new Date() },
       { new: true, session: session ?? undefined },
     );
+  },
+  async countOpen(): Promise<number> {
+    return ServiceRequestModel.countDocuments({ status: 'OPEN' });
   },
 };

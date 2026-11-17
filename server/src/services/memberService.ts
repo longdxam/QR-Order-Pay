@@ -7,12 +7,12 @@ import {
   memberDtoSchema,
   pointEntrySchema,
 } from '@may-cafe/contracts';
+import type { MemberDoc } from '../models/Member.js';
 import {
-  MemberModel,
-  MemberSessionModel,
-  PointEntryModel,
-  type MemberDoc,
-} from '../models/Member.js';
+  memberRepository,
+  memberSessionRepository,
+  pointEntryRepository,
+} from '../repositories/memberRepository.js';
 import { hashPassword, verifyPassword, randomToken, sha256 } from '../utils/crypto.js';
 import {
   ConflictError,
@@ -38,29 +38,20 @@ export function memberDto(m: MemberDoc) {
 }
 export async function resolveMember(token: unknown, session?: ClientSession | null) {
   if (typeof token !== 'string' || token.length > 128) return null;
-  const login = await MemberSessionModel.findOne({
-    tokenHash: sha256(token),
-    expiresAt: { $gt: new Date() },
-  }).session(session ?? null);
+  const login = await memberSessionRepository.findLive(sha256(token), session);
   if (!login) return null;
-  return MemberModel.findOne({
-    _id: login.memberId,
-    isActive: true,
-    authVersion: login.authVersion,
-  }).session(session ?? null);
+  return memberRepository.findActiveForLogin(login.memberId, login.authVersion, session);
 }
 async function newSession(member: MemberDoc, session: ClientSession) {
   const token = randomToken();
-  await MemberSessionModel.create(
-    [
-      {
-        memberId: member._id,
-        tokenHash: sha256(token),
-        authVersion: member.authVersion,
-        expiresAt: new Date(Date.now() + MEMBER_TTL_MS),
-      },
-    ],
-    { session },
+  await memberSessionRepository.create(
+    {
+      memberId: member._id,
+      tokenHash: sha256(token),
+      authVersion: member.authVersion,
+      expiresAt: new Date(Date.now() + MEMBER_TTL_MS),
+    },
+    session,
   );
   return { member: memberDto(member), token };
 }
@@ -69,9 +60,9 @@ export async function registerMember(body: unknown) {
   const passwordHash = await hashPassword(input.password);
   try {
     return await unitOfWork.withTransaction(async (session) => {
-      const [member] = await MemberModel.create(
-        [{ name: input.name, phone: input.phone, passwordHash }],
-        { session },
+      const member = await memberRepository.create(
+        { name: input.name, phone: input.phone, passwordHash },
+        session,
       );
       if (!member) throw new Error('Failed to create member');
       return newSession(member, session);
@@ -86,10 +77,10 @@ export async function registerMember(body: unknown) {
 const dummyHash = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 export async function loginMember(body: unknown) {
   const input = memberLoginSchema.parse(body);
-  const candidate = await MemberModel.findOne({ phone: input.phone });
+  const candidate = await memberRepository.findByPhone(input.phone);
   const valid = await verifyPassword(input.password, candidate?.passwordHash ?? dummyHash);
   const outcome = await unitOfWork.withTransaction(async (session) => {
-    const member = candidate ? await MemberModel.findById(candidate._id).session(session) : null;
+    const member = candidate ? await memberRepository.findById(candidate._id, session) : null;
     if (member?.lockedUntil && member.lockedUntil.getTime() > Date.now())
       return { locked: true } as const;
     if (!member || !valid || member.passwordHash !== candidate?.passwordHash || !member.isActive) {
@@ -98,15 +89,11 @@ export async function loginMember(body: unknown) {
           member.lockedUntil && member.lockedUntil.getTime() <= Date.now()
             ? 1
             : member.failedLogins + 1;
-        await MemberModel.updateOne(
-          { _id: member._id },
-          {
-            $set: {
-              failedLogins: attempts,
-              lockedUntil: attempts >= 6 ? new Date(Date.now() + 15 * 60000) : null,
-            },
-          },
-          { session },
+        await memberRepository.recordFailedLogin(
+          member._id,
+          attempts,
+          attempts >= 6 ? new Date(Date.now() + 15 * 60000) : null,
+          session,
         );
       }
       return { invalid: true } as const;
@@ -122,7 +109,7 @@ export async function loginMember(body: unknown) {
   return outcome;
 }
 export async function logoutMember(token: unknown) {
-  if (typeof token === 'string') await MemberSessionModel.deleteOne({ tokenHash: sha256(token) });
+  if (typeof token === 'string') await memberSessionRepository.deleteByTokenHash(sha256(token));
 }
 export async function requireMember(token: unknown) {
   const member = await resolveMember(token);
@@ -136,27 +123,19 @@ export async function changeMemberPassword(token: unknown, body: unknown) {
     throw new UnauthorizedError('Mật khẩu hiện tại không đúng.');
   const passwordHash = await hashPassword(input.password);
   await unitOfWork.withTransaction(async (session) => {
-    const updated = await MemberModel.findOneAndUpdate(
-      { _id: member._id, authVersion: member.authVersion },
-      {
-        $set: { passwordHash, failedLogins: 0, lockedUntil: null },
-        $inc: { authVersion: 1, version: 1 },
-      },
-      { session },
+    const updated = await memberRepository.replacePassword(
+      member._id,
+      member.authVersion,
+      passwordHash,
+      session,
     );
     if (!updated)
       throw new ConflictError('CONFLICT', 'Tài khoản vừa thay đổi. Vui lòng đăng nhập lại.');
-    await MemberSessionModel.deleteMany({ memberId: member._id }, { session });
+    await memberSessionRepository.deleteAllForMember(member._id, session);
   });
 }
 export async function listMemberPoints(memberId: string, page = 1) {
-  const [rows, total] = await Promise.all([
-    PointEntryModel.find({ memberId })
-      .sort({ createdAt: -1, _id: -1 })
-      .skip((page - 1) * 20)
-      .limit(20),
-    PointEntryModel.countDocuments({ memberId }),
-  ]);
+  const [rows, total] = await pointEntryRepository.pageForMember(memberId, page);
   return {
     items: rows.map((r) =>
       pointEntrySchema.parse({
@@ -177,35 +156,27 @@ export async function listMembers(q: string, page = 1) {
   const filter = q
     ? { $or: [{ phone: new RegExp(escaped, 'i') }, { name: new RegExp(escaped, 'i') }] }
     : {};
-  const [members, total] = await Promise.all([
-    MemberModel.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * 20)
-      .limit(20),
-    MemberModel.countDocuments(filter),
-  ]);
+  const [members, total] = await memberRepository.page(filter, page);
   return { items: members.map(memberDto), total, page };
 }
 export async function updateMember(id: string, body: unknown, actorId: string) {
   const { expectedVersion, password, ...changes } = memberAdminUpdateSchema.parse(body);
   const passwordHash = password ? await hashPassword(password) : undefined;
   return unitOfWork.withTransaction(async (session) => {
-    const member = await MemberModel.findOneAndUpdate(
-      { _id: id, version: expectedVersion },
+    const member = await memberRepository.adminUpdate(
+      id,
+      expectedVersion,
       {
-        $set: {
-          ...changes,
-          ...(passwordHash ? { passwordHash, failedLogins: 0, lockedUntil: null } : {}),
-        },
-        $inc: { version: 1, authVersion: 1 },
+        ...changes,
+        ...(passwordHash ? { passwordHash, failedLogins: 0, lockedUntil: null } : {}),
       },
-      { new: true, session },
+      session,
     );
     if (!member) {
-      if (!(await MemberModel.exists({ _id: id }).session(session))) throw new NotFoundError();
+      if (!(await memberRepository.existsById(id, session))) throw new NotFoundError();
       throw new ConflictError('CONFLICT', 'Thành viên vừa được cập nhật.');
     }
-    await MemberSessionModel.deleteMany({ memberId: member._id }, { session });
+    await memberSessionRepository.deleteAllForMember(member._id, session);
     await auditRepository.log(
       {
         actorType: 'USER',

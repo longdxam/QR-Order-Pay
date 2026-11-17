@@ -85,7 +85,7 @@ export function StaffCashShift(): JSX.Element {
         {shift ? (
           <>
             <div>
-              <p className="font-semibold">{shift.code}</p>
+              <p className="font-semibold">Ca thu ngân đang mở</p>
               <p className="text-sm text-muted-foreground">
                 Mở bởi {shift.openedByName} lúc {new Date(shift.openedAt).toLocaleString('vi-VN')}
               </p>
@@ -94,7 +94,6 @@ export function StaffCashShift(): JSX.Element {
               <Stat label="Tiền đầu ca" value={vnd(shift.openingCash)} />
               <Stat label="Tiền mặt ghi nhận vào" value={vnd(cashReceived)} />
               <Stat label="Tiền mặt đã hoàn" value={vnd(cashRefunded)} />
-              <Stat label="Tiền mặt đảo ghi nhận" value={vnd(cashReversed)} />
               <Stat label="Tiền mặt dự kiến" value={vnd(expected)} />
               <Stat
                 label="Chuyển khoản"
@@ -116,13 +115,16 @@ export function StaffCashShift(): JSX.Element {
                 </ul>
               </div>
             ) : null}
-            <Input
-              type="number"
-              min="0"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              placeholder="Tiền mặt kiểm đếm"
-            />
+            <label className="block space-y-2 text-sm font-medium">
+              <span>Tiền mặt thực tế cuối ca</span>
+              <Input
+                type="number"
+                min="0"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="Nhập số tiền đã kiểm đếm"
+              />
+            </label>
             <Input
               value={note}
               onChange={(event) => setNote(event.target.value)}

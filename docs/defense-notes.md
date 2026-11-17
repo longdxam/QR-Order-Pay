@@ -1,5 +1,7 @@
 # Defense notes — câu hỏi thường gặp
 
+> Dữ liệu hiện tại dùng kiểm thử, không đại diện quán thật. Câu trả lời sẵn cho **17/29 đơn hủy, chỉ có tiền mặt và đánh giá demo đã dọn** ở [dữ liệu trình diễn và giải thích Dashboard](demo-data-defense.md), có số đối chiếu theo kỳ và biên bản archive/backup/restore.
+
 ## 1. Tại sao QR tĩnh mà vẫn "an toàn"?
 
 - QR cố định chứa token `qrs1` ký HMAC theo `tableId` và `staticQrEpoch`, không chứa JWT hay quyền của khách. Không đổi mỗi 60 giây; đóng/chuyển phiên không làm đổi QR in. Xem [quy tắc QR hiện hành](qr-prepayment.md).
@@ -60,8 +62,8 @@
 
 - Tách logic nghiệp vụ khỏi HTTP (controller) và DB (repository/model).
 - **Controller không bao giờ gọi Mongoose** và không mở transaction — `npm -w @may-cafe/server run lint` chạy `scripts/check-boundaries.ts` để chặn.
-- **Luồng tiền đi hoàn toàn qua repository:** `paymentService` chỉ dùng `orderRepository`, `paymentRepository`, `billRepository`, `cancelRequestRepository`… (model chỉ được `import type`). Script boundary chặn tái phạm; danh sách service “chỉ qua repository” chỉ được thêm, không bớt.
-- **Nói thẳng phần chưa làm:** nhiều service khác (kho, ca làm, quà tặng, Jukebox…) vẫn truy vấn Mongoose trực tiếp cho các truy vấn chỉ dùng một chỗ. Đây là lựa chọn thực dụng của một modular monolith, không phải “service chỉ nhận repository interface”. Muốn đổi sang PostgreSQL thì phải sửa cả các service đó, không chỉ repository.
+- **Mọi truy vấn MongoDB nằm trong `src/repositories/` (28 repository, từ 16/11/2026).** Service, middleware, realtime, routes chỉ được `import type` từ `models/`; `scripts/check-boundaries.ts` quét cả thư mục nên service mới cũng bị chặn, không còn danh sách ngoại lệ. Method repository đặt theo nghiệp vụ (`tableSessionRepository.claimCollection`, `stockRepository.reserve`, `voucherRepository.claimUse`…), giữ nguyên filter, `session` và option như trước khi tách; integration test và bảng route trước/sau giống hệt.
+- **Nói thẳng giới hạn:** repository vẫn trả Mongoose document, và một số service sửa field rồi gọi `doc.save({ session })` trong cùng transaction. Vì vậy đổi sang PostgreSQL vẫn phải viết lại repository và các chỗ sửa document đó; đây là ranh giới của một modular monolith, không phải “service chỉ nhận repository interface”.
 - Integration test chạy trên MongoMemoryReplSet thật (có transaction) thay vì mock repository, vì phần dễ sai nhất là transaction/optimistic lock.
 - UnitOfWork bọc `mongoose.startSession()` + `withTransaction`; session được truyền xuống repository/model trong cùng transaction.
 
@@ -78,7 +80,7 @@
   ```
 
 - Smoke Zen thật đã có kết quả ngày 06/10/2026: ba case trước chuyên hoá và một case kết hợp sau chuyên hoá trả `llm`; một case sau chuyên hoá timeout và fallback. Chưa đánh giá chất lượng tổng quát hoặc skill-vs-baseline. HTTP 401 ngày 22/09/2026 là kết quả lịch sử; xem [ai-evaluation.md](ai-evaluation.md).
-- MongoDB: luồng tiền (`paymentService`) đã tách khỏi Mongoose qua repository; các service khác còn dùng model trực tiếp nên đổi sang PostgreSQL cần sửa cả chúng (xem mục 9).
+- MongoDB: mọi truy vấn đã gom về repository; đổi sang PostgreSQL cần viết lại repository và các chỗ service lưu document đã đọc ra (xem mục 9).
 - Realtime: thay Socket.IO bằng SSE/WS nếu cần.
 
 ## 11. Bạn có dùng Next.js không? Tại sao chọn React SPA + Express?

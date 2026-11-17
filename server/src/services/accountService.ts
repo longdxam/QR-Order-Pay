@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Types } from 'mongoose';
-import { UserModel, type UserDoc } from '../models/User.js';
+import type { UserDoc } from '../models/User.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { refreshSessionRepository } from '../repositories/refreshSessionRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
@@ -74,18 +74,14 @@ export async function editAccount(id: string, input: unknown, actorId: string) {
   const passwordHash = data.password ? await hashPassword(data.password) : undefined;
   return unitOfWork.withTransaction(async (session) => {
     // Lock the actor as well as the target: two admins cannot concurrently remove each other.
-    const actor = await UserModel.findOneAndUpdate(
-      { _id: actorId, role: 'ADMIN', isActive: true },
-      { $inc: { __v: 1 } },
-      { new: true, session },
-    );
+    const actor = await userRepository.lockAdmin(actorId, session);
     if (!actor) throw new ForbiddenError();
     const user = await userRepository.findById(id, session);
     if (!user || user.isDeleted) throw new NotFoundError('Không tìm thấy tài khoản.');
     if (
       data.email &&
       data.email !== user.email &&
-      (await UserModel.exists({ email: data.email }).session(session))
+      (await userRepository.emailTaken(data.email, session))
     )
       throw new ConflictError('EMAIL_TAKEN', 'Email đã được sử dụng.');
     const revoke =
@@ -121,11 +117,7 @@ export async function editAccount(id: string, input: unknown, actorId: string) {
 export async function deleteEmployee(id: string, actorId: string) {
   if (!Types.ObjectId.isValid(id)) throw new ValidationError('Nhân viên không hợp lệ.');
   return unitOfWork.withTransaction(async (session) => {
-    const actor = await UserModel.findOneAndUpdate(
-      { _id: actorId, role: 'ADMIN', isActive: true },
-      { $inc: { __v: 1 } },
-      { new: true, session },
-    );
+    const actor = await userRepository.lockAdmin(actorId, session);
     if (!actor) throw new ForbiddenError();
     const user = await userRepository.findById(id, session);
     if (!user || user.isDeleted) throw new NotFoundError('Không tìm thấy nhân viên.');
@@ -164,10 +156,11 @@ export async function changePassword(id: string, input: unknown) {
     throw new ValidationError('Mật khẩu hiện tại không đúng.');
   const passwordHash = await hashPassword(data.newPassword);
   await unitOfWork.withTransaction(async (session) => {
-    const updated = await UserModel.findOneAndUpdate(
-      { _id: id, passwordHash: user.passwordHash, isActive: true },
-      { $set: { passwordHash }, $inc: { authVersion: 1 } },
-      { session },
+    const updated = await userRepository.replacePassword(
+      id,
+      user.passwordHash,
+      passwordHash,
+      session,
     );
     if (!updated)
       throw new ConflictError('ACCOUNT_CHANGED', 'Tài khoản vừa thay đổi. Vui lòng đăng nhập lại.');

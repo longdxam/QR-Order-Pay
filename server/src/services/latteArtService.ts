@@ -6,8 +6,8 @@ import {
   latteArtGenerateSchema,
   type LatteStyle,
 } from '@may-cafe/contracts';
-import { CupPhotoModel } from '../models/CupPhoto.js';
-import { TableSessionModel } from '../models/TableSession.js';
+import { cupPhotoRepository } from '../repositories/cupPhotoRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError.js';
@@ -73,28 +73,15 @@ export async function renderLatteArtVariants(source: Buffer) {
 export async function generateLatteArt(actor: PhotoActor, rawId: unknown, body: unknown) {
   const id = cupPhotoIdSchema.parse(rawId);
   latteArtGenerateSchema.parse(body);
-  if (
-    actor.tableSessionId &&
-    !(await TableSessionModel.exists({ _id: actor.tableSessionId, status: 'OPEN' }))
-  )
+  if (actor.tableSessionId && !(await tableSessionRepository.isOpen(actor.tableSessionId)))
     throw new ForbiddenError('Chỉ tạo latte art khi phiên bàn đang mở.');
-  const source = await CupPhotoModel.findOne({
-    _id: id,
-    owner: actor.owner,
-    expiresAt: { $gt: new Date() },
-  }).select('+data');
+  const source = await cupPhotoRepository.findLiveWithData(id, actor.owner);
   if (!source) throw new NotFoundError('Ảnh gốc không còn hoặc không thuộc bạn.');
   if (source.kind === 'LATTE_ART')
     throw new ValidationError('Chọn ảnh gốc để tạo ba kiểu latte art.');
   const requests = LATTE_STYLES.map((style) => `latte-art:v1:${id}:${style.id}`);
   const existing = async (session?: import('mongoose').ClientSession) =>
-    CupPhotoModel.find({
-      owner: actor.owner,
-      sourcePhotoId: id,
-      kind: 'LATTE_ART',
-      requestId: { $in: requests },
-      expiresAt: { $gt: new Date() },
-    }).session(session ?? null);
+    cupPhotoRepository.listLatteArt(actor.owner, id, requests, session);
   const response = (photos: Awaited<ReturnType<typeof existing>>) => ({
     sourceId: id,
     variants: LATTE_STYLES.map((style) =>
@@ -106,38 +93,30 @@ export async function generateLatteArt(actor: PhotoActor, rawId: unknown, body: 
   const rendered = await renderLatteArtVariants(source.data);
   return unitOfWork.withTransaction(async (session) => {
     await lockPhotoOwner(actor, session);
-    if (
-      !(await CupPhotoModel.exists({
-        _id: id,
-        owner: actor.owner,
-        expiresAt: { $gt: new Date() },
-      }).session(session))
-    )
+    if (!(await cupPhotoRepository.existsLive(id, actor.owner, session)))
       throw new NotFoundError('Ảnh gốc đã hết hạn. Hãy tải lại.');
     const raced = await existing(session);
     if (raced.length === 3) return response(raced);
     for (const result of rendered) {
       if (raced.some((photo) => photo.latteStyle === result.style)) continue;
-      await CupPhotoModel.create(
-        [
-          {
-            owner: actor.owner,
-            requestId: `latte-art:v1:${id}:${result.style}`,
-            sourceHash: crypto
-              .createHash('sha256')
-              .update(source.data)
-              .update(`latte-art:v1:${result.style}`)
-              .digest('hex'),
-            sourcePhotoId: id,
-            kind: 'LATTE_ART',
-            latteStyle: result.style,
-            data: result.data,
-            width: result.width,
-            height: result.height,
-            expiresAt: new Date(Date.now() + DAY),
-          },
-        ],
-        { session },
+      await cupPhotoRepository.create(
+        {
+          owner: actor.owner,
+          requestId: `latte-art:v1:${id}:${result.style}`,
+          sourceHash: crypto
+            .createHash('sha256')
+            .update(source.data)
+            .update(`latte-art:v1:${result.style}`)
+            .digest('hex'),
+          sourcePhotoId: id,
+          kind: 'LATTE_ART',
+          latteStyle: result.style,
+          data: result.data,
+          width: result.width,
+          height: result.height,
+          expiresAt: new Date(Date.now() + DAY),
+        },
+        session,
       );
     }
     await auditRepository.log(

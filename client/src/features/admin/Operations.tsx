@@ -203,8 +203,7 @@ export function AdminOperations(): JSX.Element {
                     <details className="mt-1 text-xs text-muted-foreground">
                       <summary className="cursor-pointer">Xem lỗi</summary>
                       <p className="mt-2 break-words">
-                        {item.eventType} · {item.aggregateType}/{item.aggregateId} ·{' '}
-                        {item.lastError}
+                        {item.eventType} · {item.aggregateType} · {item.lastError}
                       </p>
                     </details>
                   </div>
@@ -228,7 +227,7 @@ export function AdminOperations(): JSX.Element {
                     <details className="mt-1 text-xs text-muted-foreground">
                       <summary className="cursor-pointer">Xem lỗi</summary>
                       <p className="mt-2 break-words">
-                        {item.job.type} · {item.job.id} · {item.error}
+                        {item.job.type} · {item.error}
                       </p>
                     </details>
                   </div>

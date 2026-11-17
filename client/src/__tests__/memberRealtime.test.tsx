@@ -147,7 +147,7 @@ describe('member balance refresh after order activity', () => {
     ];
     emit('order.created');
     await screen.findByText('25 điểm');
-    await screen.findByText('Đổi điểm · MC01');
+    await screen.findByText('Đổi điểm');
     expect(mock.post).not.toHaveBeenCalled();
   });
 });

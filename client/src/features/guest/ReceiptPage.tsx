@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { GiftLabel } from '../../components/GiftLabel';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap, vnd, getErrorMessage } from '../../lib/api';
@@ -67,9 +68,9 @@ export function ReceiptPage(): JSX.Element {
             </header>
 
             {data.orders.map((order) => (
-              <section key={order._id} aria-label={`Đơn ${order.code}`}>
+              <section key={order._id} aria-label={orderLabel(order)}>
                 <div className="slip-rule mt-4" />
-                <p className="mt-4 text-sm font-semibold">Đơn {order.code}</p>
+                <p className="mt-4 text-sm font-semibold">{orderLabel(order)}</p>
                 <GiftLabel gift={order.gift} />
                 <ul className="mt-3 space-y-3">
                   {order.items.map((item, i) => (

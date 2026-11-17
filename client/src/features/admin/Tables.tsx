@@ -42,9 +42,7 @@ export function AdminTables(): JSX.Element {
               </span>
               <div className="flex-1">
                 <p className="font-display text-xl font-semibold">{table.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {table.code} · {table.capacity} chỗ
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{table.capacity} chỗ</p>
               </div>
               <Badge tone={table.isActive ? 'success' : 'danger'}>
                 {table.isActive ? 'Hoạt động' : 'Tạm khóa'}

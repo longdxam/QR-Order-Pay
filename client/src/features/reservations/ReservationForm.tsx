@@ -129,7 +129,7 @@ export function ReservationForm({
       </div>
       {success ? (
         <div role="status" className="mb-5 rounded-2xl border border-success/30 bg-success/10 p-4">
-          <p className="font-semibold">Đã giữ chỗ · {success.code}</p>
+          <p className="font-semibold">Đã giữ chỗ</p>
           <p className="mt-1 text-sm">
             {success.tableName} · {vnTime(success.startsAt)} · {success.partySize} khách
           </p>

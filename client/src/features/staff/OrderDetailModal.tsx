@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { useQuery } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -73,7 +74,7 @@ export function OrderDetailModal({ orderId, onClose }: Props): JSX.Element {
     <Modal
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={query.data ? `Đơn ${query.data.order.code}` : 'Chi tiết đơn'}
+      title={query.data ? orderLabel(query.data.order) : 'Chi tiết đơn'}
       className="max-w-2xl"
     >
       {query.isLoading && <Skeleton className="h-64" />}
@@ -92,9 +93,7 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
     <div className="space-y-4">
       <GiftLabel gift={order.gift} />
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="info">
-          {order.tableCode} · {order.tableName}
-        </Badge>
+        <Badge tone="info">{order.tableName}</Badge>
         <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
         <Badge tone={order.paymentStatus === 'PAID' ? 'success' : 'warning'}>
           {order.paymentStatus === 'PAID'
@@ -160,10 +159,6 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
             </li>
           ))}
         </ol>
-      </div>
-
-      <div className="text-xs text-muted-foreground">
-        Mã phiên: {order.tableSessionId.slice(-6)} · Thiết bị: {order.participantId}
       </div>
     </div>
   );

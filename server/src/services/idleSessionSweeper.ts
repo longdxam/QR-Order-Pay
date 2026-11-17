@@ -3,7 +3,7 @@ import { logger } from '../infrastructure/logger.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
-import { OrderModel } from '../models/Order.js';
+import { orderRepository } from '../repositories/orderRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { tableRepository } from '../repositories/tableRepository.js';
@@ -26,12 +26,7 @@ export async function sweepIdleSessions(now: Date = new Date()): Promise<number>
     const id = candidate._id.toString();
     try {
       const didClose = await unitOfWork.withTransaction(async (mongoSession) => {
-        const hasOrder = await OrderModel.exists({
-          $or: [
-            { tableSessionId: candidate._id, status: { $ne: 'CANCELLED' } },
-            { 'gift.recipientSessionId': candidate._id, status: { $nin: ['SERVED', 'CANCELLED'] } },
-          ],
-        }).session(mongoSession);
+        const hasOrder = await orderRepository.sessionHasLiveOrder(candidate._id, mongoSession);
         if (hasOrder) return false;
 
         const closed = await tableSessionRepository.updateStatus(

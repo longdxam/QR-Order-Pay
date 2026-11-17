@@ -137,9 +137,7 @@ export function StaffTables(): JSX.Element {
                 </span>
                 <div>
                   <p className="font-display text-xl font-semibold">{t.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t.code} · {t.capacity} chỗ
-                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t.capacity} chỗ</p>
                 </div>
               </div>
               <p className="border-t border-border pt-4 text-sm text-muted-foreground">
@@ -288,11 +286,7 @@ function SessionCard({
         <>
           <p className="font-semibold">Còn phải thu: {vnd(bill.data!.total)}</p>
           <p className="text-sm">Đã thu: {vnd(bill.data!.paidAmount)}</p>
-          {pending ? (
-            <p className="text-sm text-amber-700">
-              Còn đơn chưa phục vụ. Chỉ đóng phiên sau khi đã phục vụ hoặc hủy các đơn còn lại.
-            </p>
-          ) : null}
+          {pending ? <p className="text-sm text-amber-700">Còn đơn chưa phục vụ.</p> : null}
         </>
       )}
       <div className="flex flex-wrap gap-2">
@@ -353,7 +347,7 @@ function SessionCard({
             <option value="">Chọn bàn trống…</option>
             {emptyTables.map((value) => (
               <option key={value._id} value={value._id}>
-                {value.code} · {value.name}
+                {value.name}
               </option>
             ))}
           </select>
@@ -377,7 +371,7 @@ function SessionCard({
         <div className="space-y-4">
           {unpaid.map((o) => (
             <div key={o._id} className="border-b pb-2">
-              <p className="font-semibold">{o.code}</p>
+              <p className="font-semibold">Các món cần thanh toán</p>
               {o.items.map((it, i) => (
                 <p key={i} className="flex justify-between gap-3 text-sm">
                   <span>

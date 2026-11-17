@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -50,6 +50,62 @@ afterEach(() => {
 });
 
 describe('accounts, toppings and compact receipts', () => {
+  it('uses table and time to distinguish transfer targets while submitting the original order ID', async () => {
+    mock.get.mockResolvedValue(
+      response({
+        items: [
+          {
+            id: 'receipt-original',
+            amount: 35000,
+            method: 'CASH',
+            status: 'SUCCESS',
+            paidAt: '2026-11-16T02:00:00Z',
+            orders: [{ tableName: 'Bàn 01', code: 'MC-HIDDEN' }],
+          },
+        ],
+        total: 1,
+        corrections: [],
+        targets: [
+          {
+            _id: '507f1f77bcf86cd799439021',
+            code: 'MC-ONE',
+            tableName: 'Bàn 02',
+            createdAt: '2026-11-16T03:00:00Z',
+            total: 35000,
+            paidAmount: 0,
+          },
+          {
+            _id: '507f1f77bcf86cd799439022',
+            code: 'MC-TWO',
+            tableName: 'Bàn 02',
+            createdAt: '2026-11-16T03:05:00Z',
+            total: 35000,
+            paidAmount: 0,
+          },
+        ],
+      }),
+    );
+    mock.post.mockResolvedValue(response({}));
+    mount(<PaymentAccounting />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Điều chỉnh' }));
+    fireEvent.change(screen.getByLabelText('Loại điều chỉnh'), { target: { value: 'TRANSFER' } });
+    const targets = screen.getByLabelText('Đơn nhận khoản thu');
+    expect(screen.getByRole('option', { name: /Bàn 02.*10:00:00/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Bàn 02.*10:05:00/ })).toBeTruthy();
+    expect(screen.queryByText(/MC-HIDDEN|MC-ONE|MC-TWO|receipt-original/)).toBeNull();
+    fireEvent.change(targets, { target: { value: '507f1f77bcf86cd799439022' } });
+    fireEvent.change(screen.getByLabelText('Lý do'), {
+      target: { value: 'Chuyển khoản thu về đúng đơn' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi quản lý duyệt' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledWith('/staff/payments/receipt-original/corrections', {
+        kind: 'TRANSFER',
+        reason: 'Chuyển khoản thu về đúng đơn',
+        targetOrderId: '507f1f77bcf86cd799439022',
+      }),
+    );
+  });
   it('defaults to dine-in receipts and opens retired receipts only through the archive tab', async () => {
     mock.get.mockResolvedValue(response({ items: [], total: 0, corrections: [], targets: [] }));
     mount(<PaymentAccounting />);
@@ -176,7 +232,7 @@ describe('accounts, toppings and compact receipts', () => {
     );
   });
 
-  it('keeps order codes, collection time and payment ID inside collapsed receipt details', async () => {
+  it('keeps collection time inside details and replaces record codes with human context', async () => {
     mock.get.mockResolvedValue(
       response({
         items: [
@@ -195,10 +251,10 @@ describe('accounts, toppings and compact receipts', () => {
       }),
     );
     mount(<PaymentAccounting />);
-    const title = await screen.findByText('Bàn 01', { exact: true });
+    const title = (await screen.findAllByText('Bàn 01', { exact: true }))[0]!;
     expect(title.textContent).not.toContain('MC01');
-    const details = screen.getByText('Mã khoản thu: long-payment-id').closest('details')!;
-    expect(screen.getByText('Mã đơn: MC01').closest('details')).toBe(details);
+    const details = screen.getByText(/^Thu lúc/).closest('details')!;
+    expect(screen.queryByText(/long-payment-id|MC01/)).toBeNull();
     expect(screen.getByText(/^Thu lúc/).closest('details')).toBe(details);
     expect(details.open).toBe(false);
     fireEvent.click(screen.getByText('Chi tiết'));

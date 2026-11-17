@@ -28,6 +28,11 @@ export interface ITableRepository {
     id: string,
     update: Partial<{ name: string; capacity: number; isActive: boolean; publicTokenHash: string }>,
   ): Promise<TableDoc | null>;
+  lockActive(id: string, session: ClientSession): Promise<TableDoc | null>;
+  listAvailableFor(partySize: number, excludeIds: unknown[]): Promise<TableDoc[]>;
+  touchAdmission(id: unknown, session: ClientSession): Promise<void>;
+  listActiveExcept(id: unknown): Promise<TableDoc[]>;
+  findActive(id: string, session: ClientSession): Promise<TableDoc | null>;
 }
 
 export const tableRepository: ITableRepository = {
@@ -96,5 +101,29 @@ export const tableRepository: ITableRepository = {
       }
       return TableModel.findByIdAndUpdate(id, update, { new: true, session });
     });
+  },
+  async lockActive(id, session) {
+    return TableModel.findOneAndUpdate(
+      { _id: id, isActive: true },
+      { $inc: { admissionCount: 1 } },
+      { new: true, session },
+    );
+  },
+  /** Bàn đang dùng được, đủ chỗ, không nằm trong danh sách bận; bàn nhỏ nhất trước. */
+  async listAvailableFor(partySize, excludeIds) {
+    return TableModel.find({
+      isActive: true,
+      capacity: { $gte: partySize },
+      _id: { $nin: excludeIds },
+    }).sort({ capacity: 1, code: 1 });
+  },
+  async touchAdmission(id, session) {
+    await TableModel.updateOne({ _id: id }, { $inc: { admissionCount: 1 } }, { session });
+  },
+  async listActiveExcept(id) {
+    return TableModel.find({ isActive: true, _id: { $ne: id } }).sort({ code: 1 });
+  },
+  async findActive(id, session) {
+    return TableModel.findOne({ _id: id, isActive: true }).session(session);
   },
 };

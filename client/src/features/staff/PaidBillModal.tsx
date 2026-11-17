@@ -74,14 +74,12 @@ export function PaidBillModal({
         <div className="space-y-4">
           <header className="text-center">
             <h2 className="font-display text-2xl font-semibold">Fantastic Cafe</h2>
-            <p>
-              {bill.tableCode} · {tableName}
-            </p>
+            <p>{tableName}</p>
             <p className="text-sm">{new Date(bill.closedAt!).toLocaleString('vi-VN')}</p>
           </header>
           {bill.orders.map((order) => (
             <section key={order._id} className="space-y-2 border-t pt-3">
-              <h3 className="text-sm font-semibold">Đơn {order.code}</h3>
+              <h3 className="text-sm font-semibold">Các món đã đặt</h3>
               <GiftLabel gift={order.gift} />
               {order.items.map((item, index) => (
                 <div key={index} className="flex justify-between gap-3 text-sm break-inside-avoid">

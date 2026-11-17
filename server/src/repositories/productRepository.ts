@@ -90,6 +90,27 @@ export const productRepository = {
       { new: true, session: session ?? undefined },
     );
   },
+  async countInCategory(categoryId: string, session: ClientSession): Promise<number> {
+    return ProductModel.countDocuments({ categoryId }).session(session);
+  },
+  async moveCategory(fromId: string, toId: string, session: ClientSession): Promise<void> {
+    await ProductModel.updateMany(
+      { categoryId: fromId },
+      { $set: { categoryId: toId }, $inc: { version: 1 } },
+      { session },
+    );
+  },
+  async listUnarchived(): Promise<ProductDoc[]> {
+    return ProductModel.find({ isArchived: false });
+  },
+  /** Tăng inventoryVersion (không đổi updatedAt) để sửa công thức và đặt món xếp hàng với nhau. */
+  async lockInventory(id: string, session: ClientSession) {
+    return ProductModel.findOneAndUpdate(
+      { _id: id, isArchived: false },
+      { $inc: { inventoryVersion: 1 } },
+      { new: true, session, timestamps: false },
+    );
+  },
 };
 
 function escapeRegex(s: string): string {

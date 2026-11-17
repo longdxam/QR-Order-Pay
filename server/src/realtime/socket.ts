@@ -8,10 +8,10 @@ import { tableSessionRepository } from '../repositories/tableSessionRepository.j
 import type { RealtimeEventEnvelope, Role } from '@may-cafe/contracts';
 import { verifyAccessToken } from '../utils/crypto.js';
 import { GUEST_COOKIE } from '../middlewares/guest.js';
-import { UserModel } from '../models/User.js';
 import { socketConnected, socketDisconnected } from '../infrastructure/metrics.js';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { socketRedisClients } from '../infrastructure/redis.js';
+import { userRepository } from '../repositories/userRepository.js';
 
 interface ServerToClientEvents {
   'reservation.changed': (payload: RealtimeEventEnvelope) => void;
@@ -61,7 +61,7 @@ export function createSocketServer(
         if (config.trafficClass === 'guest') return next(new Error('UNAUTHENTICATED'));
         if (!token) return next(new Error('UNAUTHENTICATED'));
         const payload = verifyAccessToken(token);
-        const user = await UserModel.findById(payload.sub);
+        const user = await userRepository.findById(payload.sub);
         if (
           !user?.isActive ||
           !['STAFF', 'ADMIN'].includes(user.role) ||
@@ -116,7 +116,7 @@ export function createSocketServer(
         void (async () => {
           try {
             const payload = verifyAccessToken(socket.handshake.auth.accessToken as string);
-            const user = await UserModel.findById(data.userId);
+            const user = await userRepository.findById(data.userId as string);
             if (
               !user?.isActive ||
               user.role !== payload.role ||

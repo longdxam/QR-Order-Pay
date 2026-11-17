@@ -253,6 +253,11 @@ describe('payment safeguards', () => {
     expect(current.body.data.targets.map((order: { _id: string }) => order._id)).toEqual([
       currentTarget.id,
     ]);
+    expect(current.body.data.targets[0]).toMatchObject({
+      tableName: 'Bàn 01',
+      createdAt: currentTarget.createdAt.toISOString(),
+    });
+    expect(current.body.data.items[0].orders[0].createdAt).toBe(dineIn.createdAt.toISOString());
     const archive = await request(app).get('/api/v1/staff/payments?scope=retired').set(auth());
     expect(archive.status).toBe(200);
     expect(archive.body.data.total).toBe(2);

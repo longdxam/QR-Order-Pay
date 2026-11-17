@@ -1,5 +1,7 @@
 # Dữ liệu lịch sử để thử gợi ý nhân sự #11
 
+> **Đã lưu trữ ngày 16/11/2026.** Hai đơn mẫu 0đ cùng khoản thu/hóa đơn/phiên, bàn và món mẫu đã chuyển khỏi collection đang phục vụ giao diện sang `demoDataArchives`, giữ nguyên bản gốc và có phục hồi. Các số liệu dưới đây là kết quả lịch sử ngày 19/10, không phải trạng thái hiện tại. Import `--apply` trên bộ nạp cũ đã bị chặn để tránh đưa dữ liệu giả trở lại database quán. Xem [dọn dữ liệu và giải thích Dashboard](demo-data-defense.md).
+
 Ngày nạp: **19/10/2026**, theo yêu cầu kiểm tra và bổ sung dữ liệu của người dùng.
 
 ## Kết quả
@@ -30,19 +32,15 @@ Vào **Admin → Lịch ca & hiệu suất → Nhu cầu nhân sự → Gợi ý
 
 `scripts/setup-workforce-history-demo.mjs` dùng model đã biên dịch trong container local. Mặc định chỉ xem trước; `--apply` mới ghi. Nó kiểm lại số đơn và thêm đúng phần thiếu để đạt 20 đơn cùng ít nhất một khung có 3 mẫu, trong một transaction; không reset hoặc ghi đè dữ liệu đã có. Từ chối trùng định danh demo nhưng khác nội dung. Chạy lại sau lần nạp này đã xác nhận **0 đơn/khoản thu/hóa đơn/phiên mới**.
 
-PowerShell, từ thư mục dự án khi stack đang chạy:
+Lệnh đọc preview, giữ file UTF-8 khi chuyển vào container. Tránh pipe `Get-Content` vào native process trên Windows PowerShell vì encoding mặc định có thể biến dấu tiếng Việt thành `?`:
 
 ```powershell
 # Chỉ xem trước
-Get-Content -Raw -Encoding UTF8 scripts/setup-workforce-history-demo.mjs |
-  docker exec -i maycafe-production-server-internal-a-1 node --input-type=module -
-
-# Nạp phần còn thiếu sau khi đã có backup
-Get-Content -Raw -Encoding UTF8 scripts/setup-workforce-history-demo.mjs |
-  docker exec -i maycafe-production-server-internal-a-1 node --input-type=module - --apply
+docker cp scripts/setup-workforce-history-demo.mjs maycafe-production-server-internal-a-1:/app/workforce-history-preview.mjs
+docker exec maycafe-production-server-internal-a-1 node /app/workforce-history-preview.mjs
 ```
 
-Bộ nạp tính theo tuần hiện tại, nên khi dữ liệu cũ ra khỏi cửa sổ 4 tuần, cần xem trước lại trước khi quyết định nạp thêm. Không tự chạy định kỳ.
+Bộ nạp cũ tính theo tuần hiện tại; hiện chỉ được dùng đọc preview. Thử nghiệm thiếu/đủ 20 mẫu dùng MongoMemoryReplSet hoặc database tạm riêng, không bổ sung đơn giả vào database trình diễn đang chạy.
 
 Backup trước nạp: `.cache/maycafe-before-workforce-history-demo-20261019.archive.gz`. Báo cáo `.cache/workforce-history-demo-{preview,apply,rerun}.json`; kiểm tra trước `.cache/workforce-history-check-before.json`. Không lưu mật khẩu/token trong các báo cáo này.
 

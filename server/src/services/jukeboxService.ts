@@ -12,14 +12,14 @@ import {
   type JukeboxFeed,
   type JukeboxStaffFeed,
 } from '@may-cafe/contracts';
+import type { JukeboxStateDoc } from '../models/Jukebox.js';
 import {
-  JukeboxTrackModel,
-  JukeboxStateModel,
-  JukeboxVoteModel,
-  JukeboxActionModel,
-  type JukeboxStateDoc,
-} from '../models/Jukebox.js';
-import { TableSessionModel } from '../models/TableSession.js';
+  jukeboxActionRepository,
+  jukeboxStateRepository,
+  jukeboxTrackRepository,
+  jukeboxVoteRepository,
+} from '../repositories/jukeboxRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
@@ -32,16 +32,12 @@ interface JukeboxActor {
 const idSchema = z.string().regex(/^[a-f\d]{24}$/i);
 // Every mutation writes this singleton in the same transaction: catalog/vote/advance races serialize.
 async function lock(session: ClientSession) {
-  return (await JukeboxStateModel.findOneAndUpdate(
-    { _id: 'main' },
-    { $inc: { version: 1 } },
-    { session, new: true, upsert: true, setDefaultsOnInsert: true },
-  ))!;
+  return jukeboxStateRepository.lock(session);
 }
 const hash = (body: unknown) =>
   crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 async function replay(actor: string, requestId: string, body: unknown, session: ClientSession) {
-  const prior = await JukeboxActionModel.findOne({ actor, requestId }).session(session);
+  const prior = await jukeboxActionRepository.find(actor, requestId, session);
   if (prior && prior.hash !== hash(body))
     throw new ConflictError('JUKEBOX_CONFLICT', 'Mã yêu cầu đã được dùng cho thao tác khác.');
   return prior;
@@ -54,7 +50,7 @@ async function record(
   session: ClientSession,
   resultId?: string,
 ) {
-  await JukeboxActionModel.create([{ actor, requestId, hash: hash(body), resultId }], { session });
+  await jukeboxActionRepository.record({ actor, requestId, hash: hash(body), resultId }, session);
   await auditRepository.log(
     {
       actorType: actor.startsWith('user:') ? 'USER' : 'GUEST',
@@ -86,17 +82,14 @@ const trackView = (t: { _id: unknown; title: string; artist: string }) => ({
   artist: t.artist,
 });
 async function queue(session?: ClientSession) {
-  const tracks = await JukeboxTrackModel.find({ enabled: true })
-    .sort({ title: 1, _id: 1 })
-    .session(session ?? null);
-  const active = await TableSessionModel.distinct('_id', { status: 'OPEN' }).session(
-    session ?? null,
+  const tracks = await jukeboxTrackRepository.listEnabled(session);
+  const active = await tableSessionRepository.listOpenIds(session);
+  const votes = await jukeboxVoteRepository.listCounting(
+    active,
+    tracks.map((t) => t._id),
+    JUKEBOX_VOTES_PER_SESSION,
+    session,
   );
-  const votes = await JukeboxVoteModel.find({
-    tableSessionId: { $in: active },
-    trackId: { $in: tracks.map((t) => t._id) },
-    used: { $lt: JUKEBOX_VOTES_PER_SESSION },
-  }).session(session ?? null);
   const tally = new Map<string, { votes: number; first: number }>();
   for (const v of votes) {
     const key = String(v.trackId),
@@ -115,10 +108,10 @@ async function queue(session?: ClientSession) {
 }
 export async function jukeboxFeed(actor?: JukeboxActor): Promise<JukeboxFeed> {
   const [state, q, vote, table] = await Promise.all([
-    JukeboxStateModel.findById('main'),
+    jukeboxStateRepository.read(),
     queue(),
-    actor ? JukeboxVoteModel.findOne({ tableSessionId: actor.tableSessionId }) : null,
-    actor ? TableSessionModel.findById(actor.tableSessionId) : null,
+    actor ? jukeboxVoteRepository.findForSession(actor.tableSessionId) : null,
+    actor ? tableSessionRepository.findById(actor.tableSessionId) : null,
   ]);
   if (actor && (!table || table.status === 'CLOSED'))
     throw new ForbiddenError('Phiên bàn đã kết thúc.');
@@ -149,17 +142,11 @@ export async function voteJukebox(actor: JukeboxActor, input: unknown) {
     who = `table:${actor.tableSessionId}`,
     data = { kind: 'vote', ...body };
   await unitOfWork.withTransaction(async (session) => {
-    const table = await TableSessionModel.findOneAndUpdate(
-      { _id: actor.tableSessionId, status: 'OPEN' },
-      { $inc: { version: 1 } },
-      { session },
-    );
+    const table = await tableSessionRepository.touchOpen(actor.tableSessionId, session);
     if (!table) throw new ForbiddenError('Chỉ bình chọn khi phiên bàn đang mở.');
     const state = await lock(session);
     if (await replay(who, body.requestId, data, session)) return;
-    let vote = await JukeboxVoteModel.findOne({ tableSessionId: actor.tableSessionId }).session(
-      session,
-    );
+    let vote = await jukeboxVoteRepository.findForSession(actor.tableSessionId, session);
     if ((vote?.version ?? 0) !== body.expectedVersion)
       throw new ConflictError('JUKEBOX_CONFLICT', 'Bàn vừa đổi lựa chọn. Hãy tải lại.');
     if (body.trackId) {
@@ -167,10 +154,10 @@ export async function voteJukebox(actor: JukeboxActor, input: unknown) {
         throw new ConflictError('JUKEBOX_CONFLICT', 'Bàn đã dùng hết lượt bình chọn trong phiên.');
       if (state.current?.trackId === body.trackId)
         throw new ConflictError('JUKEBOX_CONFLICT', 'Bài này đang được chọn phát.');
-      if (!(await JukeboxTrackModel.exists({ _id: body.trackId, enabled: true }).session(session)))
+      if (!(await jukeboxTrackRepository.isEnabled(body.trackId, session)))
         throw new NotFoundError('Bài hát không còn mở bình chọn.');
     }
-    vote ??= new JukeboxVoteModel({ tableSessionId: actor.tableSessionId });
+    vote ??= jukeboxVoteRepository.newVote(actor.tableSessionId);
     if (String(vote.trackId ?? '') !== (body.trackId ?? ''))
       vote.selectedAt = body.trackId ? new Date() : null;
     vote.trackId = body.trackId as typeof vote.trackId;
@@ -181,7 +168,7 @@ export async function voteJukebox(actor: JukeboxActor, input: unknown) {
   return jukeboxFeed(actor);
 }
 export async function jukeboxCatalog() {
-  return (await JukeboxTrackModel.find().sort({ title: 1, _id: 1 })).map((t) => ({
+  return (await jukeboxTrackRepository.listAll()).map((t) => ({
     ...trackView(t),
     audioUrl: t.audioUrl,
     enabled: t.enabled,
@@ -198,12 +185,12 @@ export async function saveJukeboxTrack(userId: string, rawId: string | null, inp
       old = await replay(who, body.requestId, data, session);
     if (old) return { id: old.resultId };
     const track = id
-      ? await JukeboxTrackModel.findById(id).session(session)
-      : new JukeboxTrackModel();
+      ? await jukeboxTrackRepository.findById(id, session)
+      : jukeboxTrackRepository.newTrack();
     if (!track) throw new NotFoundError('Không tìm thấy bài hát.');
     if ((track.version ?? 0) !== body.expectedVersion)
       throw new ConflictError('JUKEBOX_CONFLICT', 'Bài hát vừa được sửa. Hãy tải lại.');
-    if (!id && (await JukeboxTrackModel.countDocuments().session(session)) >= 100)
+    if (!id && (await jukeboxTrackRepository.count(session)) >= 100)
       throw new ConflictError('JUKEBOX_CONFLICT', 'Danh sách tối đa 100 bài. Hãy sửa bài hiện có.');
     Object.assign(track, {
       title: body.title,
@@ -213,12 +200,7 @@ export async function saveJukeboxTrack(userId: string, rawId: string | null, inp
       version: body.expectedVersion + 1,
     });
     await track.save({ session });
-    if (!body.enabled)
-      await JukeboxVoteModel.updateMany(
-        { trackId: track._id },
-        { $set: { trackId: null, selectedAt: null }, $inc: { version: 1 } },
-        { session },
-      );
+    if (!body.enabled) await jukeboxVoteRepository.clearTrack(track._id, session);
     await record(who, body.requestId, data, state, session, track.id);
     return { id: track.id };
   });
@@ -234,7 +216,7 @@ function owns(state: JukeboxStateDoc | null, userId: string, deviceId: string) {
 export async function staffJukeboxFeed(userId: string, input: unknown): Promise<JukeboxStaffFeed> {
   const { deviceId } = jukeboxDeviceSchema.parse(input);
   const feed = await jukeboxFeed(),
-    state = await JukeboxStateModel.findById('main');
+    state = await jukeboxStateRepository.read();
   const owned = owns(state, userId, deviceId),
     until = state?.leaseUntil?.getTime() ?? 0;
   return {
@@ -289,14 +271,8 @@ export async function controlJukebox(
       throw new ConflictError('JUKEBOX_CONFLICT', 'Bài phát đã đổi. Hãy tải lại.');
     state.current = null;
     if (kind === 'next' || kind === 'play') {
-      const voters = await JukeboxVoteModel.distinct('tableSessionId', {
-        trackId: { $ne: null },
-      }).session(session);
-      await TableSessionModel.updateMany(
-        { _id: { $in: voters }, status: 'OPEN' },
-        { $inc: { version: 1 } },
-        { session },
-      );
+      const voters = await jukeboxVoteRepository.listVotingSessions(session);
+      await tableSessionRepository.touchOpenMany(voters, session);
       const q = await queue(session),
         next =
           kind === 'play' && 'trackId' in body
@@ -310,17 +286,12 @@ export async function controlJukebox(
           artist: next.artist,
           audioUrl: next.audioUrl,
         };
-        await JukeboxVoteModel.updateMany(
-          { _id: { $in: q.votes.filter((v) => String(v.trackId) === next.id).map((v) => v._id) } },
-          { $set: { trackId: null, selectedAt: null }, $inc: { used: 1, version: 1 } },
-          { session },
+        await jukeboxVoteRepository.consume(
+          q.votes.filter((v) => String(v.trackId) === next.id).map((v) => v._id),
+          session,
         );
         // A ballot parked in CHECKOUT cannot requeue the same already-selected song after reopen.
-        await JukeboxVoteModel.updateMany(
-          { trackId: next._id },
-          { $set: { trackId: null, selectedAt: null }, $inc: { version: 1 } },
-          { session },
-        );
+        await jukeboxVoteRepository.clearTrack(next._id, session);
       }
     }
     state.playbackVersion += 1;

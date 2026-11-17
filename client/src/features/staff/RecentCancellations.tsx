@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { getErrorMessage } from '../../lib/api';
 import { Card } from '../../components/ui/Card';
 import { ErrorState } from '../../components/ui/EmptyState';
@@ -27,9 +28,7 @@ export function RecentCancellations(): JSX.Element {
               .find((entry) => entry.to === 'CANCELLED');
             return (
               <Card key={order._id} className="space-y-2 border-danger/30 p-4">
-                <p className="font-semibold">
-                  {order.code} · {order.tableName}
-                </p>
+                <p className="font-semibold">{orderLabel(order)}</p>
                 <p className="text-sm">{order.cancelReason || 'Đơn đã hủy'}</p>
                 <p className="text-sm text-muted-foreground">
                   {order.items.map((item) => `${item.quantity} × ${item.nameSnapshot}`).join(', ')}

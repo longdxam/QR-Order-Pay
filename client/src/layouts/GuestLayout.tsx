@@ -1,21 +1,9 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import {
-  Coffee,
-  ShoppingBag,
-  ListChecks,
-  Sparkles,
-  LogOut,
-  BellRing,
-  ReceiptText,
-  QrCode,
-  Gift,
-  Music2,
-  MessageCircle,
-} from 'lucide-react';
+import { ShoppingBag, LogOut, BellRing, QrCode, MessageCircle } from 'lucide-react';
 import { useCart, cartTotals } from '../store/cart';
 import { api, unwrap, vnd, getErrorMessage } from '../lib/api';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { connectGuestSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/useToast';
@@ -26,11 +14,9 @@ import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
 import { useGifts } from '../features/gifts/useGifts';
 import { getSupportTelegramUrl } from '../lib/support';
 import '../features/guest/menu-showcase.css';
+import { GuestDock } from './GuestDock';
 
 const supportUrl = getSupportTelegramUrl();
-
-const dockItem =
-  'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50';
 
 export function GuestLayout(): JSX.Element {
   const navigate = useNavigate();
@@ -169,7 +155,7 @@ export function GuestLayout(): JSX.Element {
       )}
     >
       <header className="guest-header sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur print:hidden">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 lg:flex-nowrap lg:px-6">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 lg:px-6 min-[1200px]:flex-nowrap">
           <NavLink
             to="/menu"
             aria-label="Thực đơn Fantastic Cafe"
@@ -177,7 +163,7 @@ export function GuestLayout(): JSX.Element {
           >
             <CloudMark className="h-6 w-8 text-primary" />
           </NavLink>
-          <div className="min-w-[9rem] flex-1 leading-tight lg:w-[9.5rem] lg:flex-none">
+          <div className="min-w-[9rem] flex-1 leading-tight min-[1200px]:w-[9.5rem] min-[1200px]:flex-none">
             <p className="g-title text-lg">Fantastic Cafe</p>
             <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
               {activeSession ? (
@@ -208,7 +194,7 @@ export function GuestLayout(): JSX.Element {
           </div>
           <nav
             aria-label="Điều hướng chính"
-            className="guest-header-nav hidden min-w-0 flex-1 items-center gap-0 overflow-x-auto lg:flex [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+            className="guest-header-nav hidden min-w-0 flex-wrap items-center justify-center gap-0 lg:order-last lg:flex lg:basis-full min-[1200px]:order-none min-[1200px]:flex-1 min-[1200px]:basis-auto [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
             {[
               { to: '/menu', label: 'Thực đơn' },
@@ -227,7 +213,7 @@ export function GuestLayout(): JSX.Element {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    'shrink-0 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                    'shrink-0 whitespace-nowrap rounded-full px-2.5 py-2 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-card hover:text-foreground',
@@ -240,6 +226,7 @@ export function GuestLayout(): JSX.Element {
             {activeSession ? (
               <Button
                 variant="ghost"
+                className="px-2.5 text-xs"
                 onClick={() => callStaff.mutate()}
                 disabled={callStaff.isPending}
               >
@@ -251,7 +238,7 @@ export function GuestLayout(): JSX.Element {
                 href={supportHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold text-muted-foreground transition hover:bg-card hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-card hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <MessageCircle className="h-4 w-4" /> Hỗ trợ CSKH
               </a>
@@ -330,102 +317,16 @@ export function GuestLayout(): JSX.Element {
               <span className="font-semibold">Xem giỏ</span>
             </button>
           ) : null}
-          <nav
-            aria-label="Điều hướng chính"
-            className="guest-dock pointer-events-auto flex overflow-x-auto rounded-3xl border border-border bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden [&>*]:min-w-[4rem] [&>*]:shrink-0"
-          >
-            <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
-            <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />
-            {activeSession && (
-              <DockLink to="/jukebox" label="Chọn nhạc" icon={<Music2 className="h-5 w-5" />} />
-            )}
-            {activeSession && (
-              <DockLink
-                to="/gifts"
-                label={`Tặng quà${giftCount ? ` (${giftCount})` : ''}`}
-                icon={<Gift className="h-5 w-5" />}
-              />
-            )}
-            <DockLink
-              to={receiptAvailable ? '/receipt' : '/orders'}
-              label={receiptAvailable ? 'Hóa đơn' : 'Đơn của tôi'}
-              icon={
-                receiptAvailable ? (
-                  <ReceiptText className="h-5 w-5" />
-                ) : (
-                  <ListChecks className="h-5 w-5" />
-                )
-              }
-            />
-            {supportHref ? (
-              <a
-                href={supportHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
-              >
-                <MessageCircle className="h-5 w-5" />
-                Hỗ trợ CSKH
-              </a>
-            ) : null}
-            {activeSession ? (
-              <button
-                type="button"
-                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
-                onClick={() => callStaff.mutate()}
-                disabled={callStaff.isPending}
-              >
-                <BellRing className="h-5 w-5" />
-                Gọi nhân viên
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
-                onClick={() => navigate('/t')}
-              >
-                <QrCode className="h-5 w-5" />
-                Vào bàn
-              </button>
-            )}
-          </nav>
+          <GuestDock
+            active={!!activeSession}
+            receiptAvailable={!!receiptAvailable}
+            giftCount={giftCount}
+            supportHref={supportHref}
+            calling={callStaff.isPending}
+            onCallStaff={() => callStaff.mutate()}
+          />
         </div>
       </div>
     </div>
-  );
-}
-
-function DockLink({
-  to,
-  label,
-  icon,
-}: {
-  to: string;
-  label: string;
-  icon: ReactNode;
-}): JSX.Element {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        cn(
-          dockItem,
-          isActive ? 'font-semibold text-primary' : 'text-muted-foreground hover:text-foreground',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          {isActive ? (
-            <span
-              aria-hidden="true"
-              className="absolute left-1/2 top-0 h-1 w-8 -translate-x-1/2 rounded-b-full bg-primary"
-            />
-          ) : null}
-          {icon}
-          {label}
-        </>
-      )}
-    </NavLink>
   );
 }

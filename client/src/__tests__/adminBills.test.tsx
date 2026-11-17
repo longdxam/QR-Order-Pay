@@ -61,9 +61,11 @@ describe('invoice payment presentation', () => {
     mount(empty);
     expect(await screen.findByText('Không phát sinh thu tiền')).toBeTruthy();
     expect(screen.queryByText('Không rõ')).toBeNull();
-    expect(screen.getByText(/^Chốt:/).textContent).toContain('23:40:56');
+    expect(screen.getByRole('columnheader', { name: 'Chốt lúc' })).toBeTruthy();
+    expect(screen.getByText(/23:40:56/)).toBeTruthy();
+    expect(screen.queryByText(empty.invoiceCode)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Xem' }));
-    const dialog = await screen.findByRole('dialog', { name: empty.invoiceCode });
+    const dialog = await screen.findByRole('dialog', { name: 'Chi tiết hóa đơn' });
     expect(
       await within(dialog).findByText('Phiên được đóng khi chưa có món, không phát sinh thu tiền.'),
     ).toBeTruthy();
@@ -100,7 +102,7 @@ describe('invoice payment presentation', () => {
     mount({ ...empty, total: 35000, paidAmount: 35000 });
     expect(await screen.findByText('Thiếu thông tin phương thức')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Xem' }));
-    const dialog = await screen.findByRole('dialog', { name: empty.invoiceCode });
+    const dialog = await screen.findByRole('dialog', { name: 'Chi tiết hóa đơn' });
     expect(
       await within(dialog).findByText('Bản lưu hóa đơn chưa có thông tin phương thức thu tiền.'),
     ).toBeTruthy();

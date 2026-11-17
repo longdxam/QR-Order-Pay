@@ -165,11 +165,7 @@ function OriginalPhotoPicker({
           }}
         />
       </label>
-      {!photoId && (
-        <p className="text-xs text-muted-foreground">
-          JPEG/PNG/WebP · tối đa 4 MB. Cùng một ảnh cho mọi cốc trong dòng này.
-        </p>
-      )}
+      {!photoId && <p className="text-xs text-muted-foreground">JPEG/PNG/WebP</p>}
       {url && (
         <img
           src={url}

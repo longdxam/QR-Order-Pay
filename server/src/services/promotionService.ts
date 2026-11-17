@@ -7,8 +7,9 @@ import {
   benefitSelectionSchema,
   LOYALTY_RULES,
 } from '@may-cafe/contracts';
-import { VoucherModel, VoucherUseModel, type VoucherDoc } from '../models/Voucher.js';
-import { MemberModel, PointEntryModel } from '../models/Member.js';
+import type { VoucherDoc } from '../models/Voucher.js';
+import { voucherRepository, voucherUseRepository } from '../repositories/voucherRepository.js';
+import { memberRepository, pointEntryRepository } from '../repositories/memberRepository.js';
 import type { OrderDoc } from '../models/Order.js';
 import {
   ConflictError,
@@ -46,7 +47,7 @@ export function voucherDto(v: VoucherDoc) {
   });
 }
 export async function listVouchers() {
-  return { items: (await VoucherModel.find().sort({ createdAt: -1 }).limit(200)).map(voucherDto) };
+  return { items: (await voucherRepository.listRecent(200)).map(voucherDto) };
 }
 export async function saveVoucher(id: string | null, body: unknown, actorId: string) {
   const input = id ? voucherUpdateSchema.parse(body) : voucherCreateSchema.parse(body);
@@ -85,21 +86,17 @@ export async function saveVoucher(id: string | null, body: unknown, actorId: str
     return await unitOfWork.withTransaction(async (session) => {
       let voucher: VoucherDoc;
       if (id) {
-        const old = await VoucherModel.findById(id).session(session);
+        const old = await voucherRepository.findById(id, session);
         if (!old) throw new NotFoundError();
         if (old.usedCount > maxUses)
           throw new ValidationError('Tổng lượt không thể nhỏ hơn số lượt đang giữ/đã dùng.');
         if (old.code !== code)
           throw new ValidationError('Mã voucher không được thay đổi. Hãy tạo mã mới.');
-        const updated = await VoucherModel.findOneAndUpdate(
-          { _id: id, version: expectedVersion },
-          { $set: fields, $inc: { version: 1 } },
-          { new: true, session },
-        );
+        const updated = await voucherRepository.update(id, expectedVersion, fields, session);
         if (!updated) throw new ConflictError('CONFLICT', 'Voucher vừa được cập nhật.');
         voucher = updated;
       } else {
-        const [created] = await VoucherModel.create([fields], { session });
+        const created = await voucherRepository.create(fields, session);
         if (!created) throw new Error('Failed to create voucher');
         voucher = created;
       }
@@ -133,9 +130,7 @@ export async function priceBenefits(
   });
   const points = parsed.redeemPoints ?? 0;
   const member = selection.memberId
-    ? await MemberModel.findOne({ _id: selection.memberId, isActive: true }).session(
-        session ?? null,
-      )
+    ? await memberRepository.findActive(selection.memberId, session)
     : null;
   if (selection.memberId && !member)
     throw new UnauthorizedError('Tài khoản thành viên không khả dụng.');
@@ -153,9 +148,7 @@ export async function priceBenefits(
     maxRedeemPoints: 0,
   };
   if (parsed.voucherCode) {
-    const voucher = await VoucherModel.findOne({ code: parsed.voucherCode }).session(
-      session ?? null,
-    );
+    const voucher = await voucherRepository.findByCode(parsed.voucherCode, session);
     if (
       !voucher ||
       !voucher.isActive ||
@@ -173,11 +166,7 @@ export async function priceBenefits(
     if (voucher.usedCount >= voucher.maxUses)
       throw new ConflictError('VOUCHER_EXHAUSTED', 'Voucher đã hết lượt.');
     if (voucher.perMemberLimit && member) {
-      const used = await VoucherUseModel.countDocuments({
-        voucherId: voucher._id,
-        memberId: member._id,
-        state: { $ne: 'RELEASED' },
-      }).session(session ?? null);
+      const used = await voucherUseRepository.countByMember(voucher._id, member._id, session);
       if (used >= voucher.perMemberLimit)
         throw new ConflictError('VOUCHER_MEMBER_LIMIT', 'Bạn đã dùng hết lượt cho voucher này.');
     }
@@ -221,123 +210,94 @@ export async function reserveBenefits(
 ) {
   // All member orders take the same write lock as account changes/redemption, even when earning only.
   if (benefits.memberId) {
-    const member = await MemberModel.findOneAndUpdate(
-      { _id: benefits.memberId, isActive: true, points: { $gte: benefits.redeemedPoints } },
-      { $inc: { points: -benefits.redeemedPoints, version: 1 } },
-      { new: true, session },
+    const member = await memberRepository.spendPoints(
+      benefits.memberId,
+      benefits.redeemedPoints,
+      session,
     );
     if (!member)
       throw new ConflictError('POINTS_INSUFFICIENT', 'Thành viên hoặc số điểm vừa thay đổi.');
     if (benefits.redeemedPoints)
-      await PointEntryModel.create(
-        [
-          {
-            memberId: member._id,
-            orderId,
-            orderCode,
-            type: 'REDEEM',
-            points: -benefits.redeemedPoints,
-            balanceAfter: member.points,
-          },
-        ],
-        { session },
+      await pointEntryRepository.create(
+        {
+          memberId: member._id,
+          orderId,
+          orderCode,
+          type: 'REDEEM',
+          points: -benefits.redeemedPoints,
+          balanceAfter: member.points,
+        },
+        session,
       );
   }
   if (benefits.voucherId) {
-    const voucher = await VoucherModel.findOneAndUpdate(
-      {
-        _id: benefits.voucherId,
-        version: benefits.voucherVersion,
-        isActive: true,
-        $expr: { $lt: ['$usedCount', '$maxUses'] },
-      },
-      { $inc: { usedCount: 1 } },
-      { new: true, session },
+    const voucher = await voucherRepository.claimUse(
+      benefits.voucherId,
+      benefits.voucherVersion,
+      session,
     );
     if (!voucher)
       throw new ConflictError('VOUCHER_EXHAUSTED', 'Voucher vừa thay đổi hoặc hết lượt.');
     // The voucher write serializes concurrent checks for both global and per-member limits.
     if (voucher.perMemberLimit && benefits.memberId) {
-      const used = await VoucherUseModel.countDocuments({
-        voucherId: voucher._id,
-        memberId: benefits.memberId,
-        state: { $ne: 'RELEASED' },
-      }).session(session);
+      const used = await voucherUseRepository.countByMember(
+        voucher._id,
+        benefits.memberId,
+        session,
+      );
       if (used >= voucher.perMemberLimit)
         throw new ConflictError('VOUCHER_MEMBER_LIMIT', 'Bạn đã dùng hết lượt cho voucher này.');
     }
-    await VoucherUseModel.create(
-      [{ voucherId: voucher._id, memberId: benefits.memberId, orderId }],
-      { session },
+    await voucherUseRepository.create(
+      { voucherId: voucher._id, memberId: benefits.memberId, orderId },
+      session,
     );
   }
 }
 export async function settleOrderBenefits(order: OrderDoc, next: string, session: ClientSession) {
-  if (next === 'PREPARING')
-    await VoucherUseModel.updateOne(
-      { orderId: order._id, state: 'RESERVED' },
-      { $set: { state: 'CONSUMED' } },
-      { session },
-    );
+  if (next === 'PREPARING') await voucherUseRepository.consumeForOrder(order._id, session);
   if (next === 'CANCELLED') {
-    const use = await VoucherUseModel.findOneAndUpdate(
-      { orderId: order._id, state: 'RESERVED' },
-      { $set: { state: 'RELEASED' } },
-      { new: true, session },
-    );
-    if (use)
-      await VoucherModel.updateOne(
-        { _id: use.voucherId },
-        { $inc: { usedCount: -1 } },
-        { session },
-      );
+    const use = await voucherUseRepository.releaseForOrder(order._id, session);
+    if (use) await voucherRepository.returnUse(use.voucherId, session);
     if (
       order.memberId &&
       order.redeemedPoints &&
-      !(await PointEntryModel.exists({ orderId: order._id, type: 'RETURN' }).session(session))
+      !(await pointEntryRepository.exists(order._id, 'RETURN', session))
     ) {
-      const member = await MemberModel.findByIdAndUpdate(
+      const member = await memberRepository.addPoints(
         order.memberId,
-        { $inc: { points: order.redeemedPoints, version: 1 } },
-        { new: true, session },
+        order.redeemedPoints,
+        session,
       );
       if (!member) throw new Error('Order member missing');
-      await PointEntryModel.create(
-        [
-          {
-            memberId: member._id,
-            orderId: order._id,
-            orderCode: order.code,
-            type: 'RETURN',
-            points: order.redeemedPoints,
-            balanceAfter: member.points,
-          },
-        ],
-        { session },
-      );
-    }
-  }
-  if (next === 'SERVED' && order.paymentStatus === 'PAID' && order.memberId) {
-    if (await PointEntryModel.exists({ orderId: order._id, type: 'EARN' }).session(session)) return;
-    const points = Math.floor(order.total / LOYALTY_RULES.earnEveryVnd);
-    const member = await MemberModel.findByIdAndUpdate(
-      order.memberId,
-      { $inc: { points, version: 1 } },
-      { new: true, session },
-    );
-    if (!member) throw new Error('Order member missing');
-    await PointEntryModel.create(
-      [
+      await pointEntryRepository.create(
         {
           memberId: member._id,
           orderId: order._id,
           orderCode: order.code,
-          type: 'EARN',
-          points,
+          type: 'RETURN',
+          points: order.redeemedPoints,
           balanceAfter: member.points,
         },
-      ],
-      { session },
+        session,
+      );
+    }
+  }
+  if (next === 'SERVED' && order.paymentStatus === 'PAID' && order.memberId) {
+    if (await pointEntryRepository.exists(order._id, 'EARN', session)) return;
+    const points = Math.floor(order.total / LOYALTY_RULES.earnEveryVnd);
+    const member = await memberRepository.addPoints(order.memberId, points, session);
+    if (!member) throw new Error('Order member missing');
+    await pointEntryRepository.create(
+      {
+        memberId: member._id,
+        orderId: order._id,
+        orderCode: order.code,
+        type: 'EARN',
+        points,
+        balanceAfter: member.points,
+      },
+      session,
     );
     order.earnedPoints = points;
     await mongoose

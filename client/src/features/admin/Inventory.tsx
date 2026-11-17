@@ -231,9 +231,7 @@ export function AdminInventory(): JSX.Element {
                       Tồn: {number(m.onHandAfter)} · Đang giữ: {number(m.reservedAfter)} ·{' '}
                       {m.actorName} · {new Date(m.createdAt).toLocaleString('vi-VN')}
                     </p>
-                    {m.orderId && (
-                      <p className="break-all text-xs text-muted-foreground">Đơn: {m.orderId}</p>
-                    )}
+                    {m.orderId && <p className="text-xs text-muted-foreground">Gắn với đơn hàng</p>}
                   </div>
                 ))}
               </div>

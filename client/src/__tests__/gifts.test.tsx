@@ -185,6 +185,21 @@ async function choose() {
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 }
 describe('anonymous gift UI', () => {
+  it('places waiting incoming gifts ahead of newer sent history and the send composer without acting automatically', async () => {
+    mock.rows = [
+      row({ id: '507f1f77bcf86cd799439041', direction: 'SENT', status: 'ORDERED' }),
+      row(),
+    ];
+    mount();
+    const receive = await screen.findByRole('button', { name: 'Nhận quà' });
+    const sent = screen.getByRole('heading', { name: 'Tặng Bàn nhận' });
+    const composer = screen.getByRole('heading', { name: 'Gửi quà' });
+    expect(receive.compareDocumentPosition(sent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      receive.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(mock.post).not.toHaveBeenCalled();
+  });
   it('requires an active QR session even if a member could be signed in', async () => {
     mock.active = false;
     mount();
@@ -247,7 +262,7 @@ describe('anonymous gift UI', () => {
   it('shows sender table details only for invitations that opted in', async () => {
     mock.rows = [row({ showSenderTable: true, senderTable: { name: 'Bàn cửa sổ', code: 'B01' } })];
     mount();
-    await screen.findByText('Quà từ B01 · Bàn cửa sổ');
+    await screen.findByText('Quà từ Bàn cửa sổ');
     expect(screen.queryByText('Một món quà ẩn danh dành cho bàn bạn')).toBeNull();
     mock.rows = [
       row({ showSenderTable: false, senderTable: { name: 'Không được hiện', code: 'PRIVATE' } }),

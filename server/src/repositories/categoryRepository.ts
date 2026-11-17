@@ -35,4 +35,8 @@ export const categoryRepository = {
   async delete(id: string, session: ClientSession) {
     return CategoryModel.findByIdAndDelete(id, { session });
   },
+  /** Tăng version của danh mục trong transaction để chặn sửa/xóa đồng thời gây món mồ côi. */
+  async lock(id: string, session: ClientSession) {
+    return CategoryModel.findByIdAndUpdate(id, { $inc: { version: 1 } }, { new: true, session });
+  },
 };

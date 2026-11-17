@@ -1,12 +1,11 @@
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
-import { CancelRequestModel } from '../models/CancelRequest.js';
+import { cancelRequestRepository } from '../repositories/cancelRequestRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import type { OrderDoc } from '../models/Order.js';
 import { recordOrderRefund } from './orderRefundService.js';
-import { OrderModel } from '../models/Order.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { guardUnpaidCancellation } from './paymentClaimService.js';
 
@@ -25,29 +24,20 @@ export async function createCancelRequest(orderId: string, participantId: string
           'STATE_TRANSITION_INVALID',
           'Chỉ có thể yêu cầu hủy khi đơn đã xác nhận và chưa pha chế.',
         );
-      const existing = await CancelRequestModel.findOne({
-        orderId,
-        status: 'REQUESTED',
-      }).session(session);
+      const existing = await cancelRequestRepository.findPendingForOrder(orderId, session);
       if (existing) return existing;
       await assertNoPaymentCorrection(order.id, session);
-      const guarded = await OrderModel.updateOne(
-        { _id: order._id, version: order.version },
-        { $inc: { version: 1 } },
-        { session },
-      );
-      if (!guarded.modifiedCount) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
-      const [created] = await CancelRequestModel.create(
-        [
-          {
-            orderId: order._id,
-            tableSessionId: order.tableSessionId,
-            participantId,
-            reason,
-            status: 'REQUESTED',
-          },
-        ],
-        { session },
+      if (!(await orderRepository.bumpVersion(order, session)))
+        throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
+      const created = await cancelRequestRepository.create(
+        {
+          orderId: order._id,
+          tableSessionId: order.tableSessionId,
+          participantId,
+          reason,
+          status: 'REQUESTED',
+        },
+        session,
       );
       if (!created) throw new Error('Failed to create cancel request');
       await auditRepository.log(
@@ -77,11 +67,7 @@ export async function createCancelRequest(orderId: string, participantId: string
     });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      const raced = await CancelRequestModel.findOne({
-        orderId,
-        participantId,
-        status: 'REQUESTED',
-      });
+      const raced = await cancelRequestRepository.findPendingByParticipant(orderId, participantId);
       if (raced) return raced;
     }
     throw error;
@@ -89,9 +75,7 @@ export async function createCancelRequest(orderId: string, participantId: string
 }
 
 export async function listOpenCancelRequests() {
-  return CancelRequestModel.find({ status: 'REQUESTED' })
-    .sort({ createdAt: 1 })
-    .populate('orderId', 'code tableId status items total paidAmount version paymentStatus');
+  return cancelRequestRepository.listPendingWithOrders();
 }
 
 export async function decideCancelRequest(
@@ -104,7 +88,7 @@ export async function decideCancelRequest(
   refundMethod?: 'CASH' | 'BANK_TRANSFER' | 'OTHER',
 ) {
   return unitOfWork.withTransaction(async (session) => {
-    const request = await CancelRequestModel.findById(id).session(session);
+    const request = await cancelRequestRepository.findById(id, session);
     if (!request) throw new NotFoundError('Không tìm thấy yêu cầu hủy.');
     if (request.status !== 'REQUESTED' || request.version !== expectedVersion)
       throw new ConflictError('CONFLICT', 'Yêu cầu đã được nhân viên khác xử lý.');
@@ -126,18 +110,11 @@ export async function decideCancelRequest(
         throw new ForbiddenError('Cần xác nhận đã hoàn đủ tiền trước khi duyệt hủy.');
       await recordOrderRefund(order, actorId, request.reason, refundMethod, session);
     }
-    const updatedRequest = await CancelRequestModel.findOneAndUpdate(
-      { _id: id, status: 'REQUESTED', version: expectedVersion },
-      {
-        $set: {
-          status: decision,
-          decidedBy: actorId,
-          decidedAt: new Date(),
-          decisionNote: note ?? '',
-        },
-        $inc: { version: 1 },
-      },
-      { new: true, session },
+    const updatedRequest = await cancelRequestRepository.decide(
+      id,
+      expectedVersion,
+      { status: decision, decidedBy: actorId, decisionNote: note ?? '' },
+      session,
     );
     if (!updatedRequest) throw new ConflictError('CONFLICT', 'Yêu cầu đã được xử lý.');
     let updatedOrder = order;

@@ -124,7 +124,7 @@ describe('customer latte art selection and private export', () => {
   it('exports the chosen PNG with an exact retry and never opens label printing or claims a physical print', async () => {
     mount(<CupPrintPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Xem & xuất latte art' }));
-    fireEvent.load(await screen.findByAltText('Latte art MC-LATTE dòng 1'));
+    fireEvent.load(await screen.findByAltText('Latte art Cappuccino'));
     mock.post.mockRejectedValueOnce(new Error('lost response'));
     fireEvent.click(screen.getByRole('button', { name: 'Tải PNG cho máy in đồ uống' }));
     await screen.findByText('lost response');

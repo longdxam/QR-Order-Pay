@@ -44,26 +44,26 @@ export function TableDisplaySetup({
           if (!open) setQr(null);
         }}
         title={`QR tĩnh · ${tableName}`}
+        className="table-qr-modal"
       >
         {qr && (
-          <div className="space-y-4">
-            <p>
-              In mã này đặt tại bàn hoặc gửi link cho nhóm khách. QR giữ nguyên qua các phiên, không
-              đổi mỗi phút.
-            </p>
-            <img
-              src={qr.image}
-              alt={`QR vào ${tableName}`}
-              className="mx-auto w-full max-w-80 rounded-xl"
-            />
-            <input
-              aria-label="Link vào bàn"
-              readOnly
-              value={qr.url}
-              className="w-full rounded border p-2 text-sm"
-              onFocus={(e) => e.target.select()}
-            />
-            <div className="flex flex-wrap gap-2">
+          <>
+            <div className="min-h-0 space-y-3 overflow-y-auto">
+              <p className="text-sm text-muted-foreground">QR cố định dùng lại qua các phiên.</p>
+              <img
+                src={qr.image}
+                alt={`QR vào ${tableName}`}
+                className="mx-auto block h-auto w-full max-w-[min(18rem,38dvh)]"
+              />
+              <input
+                aria-label="Link vào bàn"
+                readOnly
+                value={qr.url}
+                className="w-full rounded border p-2 text-sm"
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-2 border-t pt-3 text-center text-sm sm:grid-cols-3">
               <a
                 className="rounded-xl bg-primary px-4 py-2 text-primary-foreground"
                 href={qr.image}
@@ -81,6 +81,7 @@ export function TableDisplaySetup({
               </a>
               <Button
                 variant="outline"
+                className="col-span-2 sm:col-span-1"
                 onClick={() => {
                   void navigator.clipboard
                     ?.writeText(qr.url)
@@ -91,8 +92,12 @@ export function TableDisplaySetup({
                 Sao chép link
               </Button>
             </div>
-            {message && <p role="status">{message}</p>}
-          </div>
+            {message && (
+              <p role="status" className="shrink-0 text-sm">
+                {message}
+              </p>
+            )}
+          </>
         )}
       </Modal>
     </>

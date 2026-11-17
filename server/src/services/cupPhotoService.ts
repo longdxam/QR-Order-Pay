@@ -12,9 +12,13 @@ import {
   type LatteStyle,
   type CupPrintOrder,
 } from '@may-cafe/contracts';
-import { CupPhotoModel, CupPhotoOwnerModel, CupPrintAttemptModel } from '../models/CupPhoto.js';
-import { OrderModel } from '../models/Order.js';
-import { TableSessionModel } from '../models/TableSession.js';
+import {
+  cupPhotoOwnerRepository,
+  cupPhotoRepository,
+  cupPrintAttemptRepository,
+} from '../repositories/cupPhotoRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import {
   AppError,
@@ -49,18 +53,10 @@ export function cupPhotoView(photo: {
 export async function lockPhotoOwner(actor: PhotoActor, session: ClientSession) {
   if (
     actor.tableSessionId &&
-    !(await TableSessionModel.findOneAndUpdate(
-      { _id: actor.tableSessionId, status: 'OPEN' },
-      { $inc: { version: 1 } },
-      { session },
-    ))
+    !(await tableSessionRepository.touchOpen(actor.tableSessionId, session))
   )
     throw new ForbiddenError('Chỉ xử lý ảnh khi phiên bàn đang mở.');
-  await CupPhotoOwnerModel.findOneAndUpdate(
-    { _id: actor.owner },
-    { $inc: { version: 1 }, $set: { expiresAt: new Date(Date.now() + 31 * DAY) } },
-    { upsert: true, session },
-  );
+  await cupPhotoOwnerRepository.lock(actor.owner, new Date(Date.now() + 31 * DAY), session);
 }
 let processing = 0;
 const formats: Record<string, string> = {
@@ -128,19 +124,11 @@ export async function uploadCupPhoto(
   return unitOfWork.withTransaction(async (session) => {
     if (
       actor.tableSessionId &&
-      !(await TableSessionModel.findOneAndUpdate(
-        { _id: actor.tableSessionId, status: 'OPEN' },
-        { $inc: { version: 1 } },
-        { session },
-      ))
+      !(await tableSessionRepository.touchOpen(actor.tableSessionId, session))
     )
       throw new ForbiddenError('Chỉ tải ảnh khi phiên bàn đang mở.');
-    await CupPhotoOwnerModel.findOneAndUpdate(
-      { _id: actor.owner },
-      { $inc: { version: 1 }, $set: { expiresAt: new Date(Date.now() + 31 * DAY) } },
-      { upsert: true, session },
-    );
-    const old = await CupPhotoModel.findOne({ owner: actor.owner, requestId }).session(session);
+    await cupPhotoOwnerRepository.lock(actor.owner, new Date(Date.now() + 31 * DAY), session);
+    const old = await cupPhotoRepository.findByRequest(actor.owner, requestId, session);
     if (old) {
       if (old.sourceHash !== sourceHash)
         throw new ConflictError('PHOTO_REPLAY', 'Yêu cầu tải ảnh đã dùng cho ảnh khác.');
@@ -154,24 +142,22 @@ export async function uploadCupPhoto(
       };
     }
     if (
-      (await CupPhotoModel.countDocuments({
-        owner: actor.owner,
-        kind: { $ne: 'LATTE_ART' },
-        createdAt: { $gt: new Date(Date.now() - DAY) },
-      }).session(session)) >= 20
+      (await cupPhotoRepository.countUploadsSince(
+        actor.owner,
+        new Date(Date.now() - DAY),
+        session,
+      )) >= 20
     )
       throw new ConflictError('PHOTO_LIMIT', 'Tối đa 20 ảnh trong 24 giờ.');
-    const [photo] = await CupPhotoModel.create(
-      [
-        {
-          owner: actor.owner,
-          requestId,
-          sourceHash,
-          ...result,
-          expiresAt: new Date(Date.now() + DAY),
-        },
-      ],
-      { session },
+    const photo = await cupPhotoRepository.createOne(
+      {
+        owner: actor.owner,
+        requestId,
+        sourceHash,
+        ...result,
+        expiresAt: new Date(Date.now() + DAY),
+      },
+      session,
     );
     await auditRepository.log(
       {
@@ -192,20 +178,12 @@ export async function uploadCupPhoto(
   });
 }
 export async function ownCupPhoto(actor: PhotoActor, id: unknown) {
-  const photo = await CupPhotoModel.findOne({
-    _id: cupPhotoIdSchema.parse(id),
-    owner: actor.owner,
-    expiresAt: { $gt: new Date() },
-  }).select('+data');
+  const photo = await cupPhotoRepository.findLiveWithData(cupPhotoIdSchema.parse(id), actor.owner);
   if (!photo) throw new NotFoundError('Ảnh không còn hoặc không thuộc bạn.');
   return photo.data;
 }
 export async function ownCupPhotoDetails(actor: PhotoActor, id: unknown) {
-  const photo = await CupPhotoModel.findOne({
-    _id: cupPhotoIdSchema.parse(id),
-    owner: actor.owner,
-    expiresAt: { $gt: new Date() },
-  });
+  const photo = await cupPhotoRepository.findLive(cupPhotoIdSchema.parse(id), actor.owner);
   if (!photo) throw new NotFoundError('Ảnh không còn hoặc không thuộc bạn.');
   return cupPhotoView(photo);
 }
@@ -219,37 +197,23 @@ export async function assertCupPhotos(
     ...new Set(items.flatMap((i) => (i.cupPhotoId ? [cupPhotoIdSchema.parse(i.cupPhotoId)] : []))),
   ];
   for (const id of ids) {
-    const filter = { _id: id, owner, expiresAt: { $gt: new Date() } };
     const photo = attach
-      ? await CupPhotoModel.findOneAndUpdate(
-          filter,
-          { $max: { expiresAt: new Date(Date.now() + 30 * DAY) } },
-          { session },
-        )
-      : await CupPhotoModel.findOne(filter).session(session ?? null);
+      ? await cupPhotoRepository.extendLive(id, owner, new Date(Date.now() + 30 * DAY), session)
+      : await cupPhotoRepository.findLive(id, owner, session);
     if (!photo)
       throw new ValidationError(
         'Ảnh đính kèm đã hết hạn hoặc không thuộc bạn. Chọn lại ảnh trong giỏ.',
       );
   }
 }
-const paid = {
-  paymentStatus: 'PAID',
-  status: { $in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED'] },
-};
 async function printItem(rawId: unknown, rawIndex: unknown, session?: ClientSession) {
   const id = cupPhotoIdSchema.parse(rawId),
     index = z.coerce.number().int().min(0).max(9999).parse(rawIndex);
-  const order = await OrderModel.findOne({ _id: id, ...paid }).session(session ?? null);
+  const order = await orderRepository.findPaidLive(id, session);
   const item = order?.items[index];
   if (!order || !item?.cupPhotoId)
     throw new NotFoundError('Chỉ in ảnh của món trong đơn đã thanh toán, còn hiệu lực.');
-  const photo = await CupPhotoModel.findOne({
-    _id: item.cupPhotoId,
-    expiresAt: { $gt: new Date() },
-  })
-    .select('+data')
-    .session(session ?? null);
+  const photo = await cupPhotoRepository.findPrintable(item.cupPhotoId, session);
   if (!photo) throw new NotFoundError('Ảnh đã hết hạn lưu trữ.');
   return { order, item, photo };
 }
@@ -258,18 +222,13 @@ export async function staffCupPhoto(id: unknown, index: unknown) {
 }
 export async function cupPrintFeed(rawPage: unknown) {
   const page = z.coerce.number().int().min(1).max(10000).default(1).parse(rawPage),
-    filter = { ...paid, 'items.cupPhotoId': { $type: 'objectId' } };
-  const total = await OrderModel.countDocuments(filter),
-    orders = await OrderModel.find(filter)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip((page - 1) * 20)
-      .limit(20);
+    { total, orders } = await orderRepository.pageWithCupPhotos(page);
   const result: CupPrintOrder[] = [];
   for (const order of orders) {
     const ids = order.items.flatMap((i) => (i.cupPhotoId ? [i.cupPhotoId] : []));
-    const photos = await CupPhotoModel.find({ _id: { $in: ids }, expiresAt: { $gt: new Date() } });
+    const photos = await cupPhotoRepository.listLive(ids);
     const available = new Map(photos.map((photo) => [photo.id, photo]));
-    const counts = await CupPrintAttemptModel.find({ orderId: order._id });
+    const counts = await cupPrintAttemptRepository.listForOrder(order._id);
     result.push({
       id: order.id,
       code: order.code,
@@ -320,7 +279,7 @@ async function requestCupOutput(
   const hash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
   // Unique journal also serializes replay; order write conflicts with cancellation/refund.
   const replay = async () => {
-    const old = await CupPrintAttemptModel.findOne({ userId, requestId: body.requestId });
+    const old = await cupPrintAttemptRepository.findByRequest(userId, body.requestId);
     if (old && old.hash !== hash)
       throw new ConflictError('PRINT_REPLAY', 'Yêu cầu in đã dùng cho nội dung khác.');
     return old;
@@ -337,8 +296,8 @@ async function requestCupOutput(
       assertOutputKind(photo.kind, body.paper);
       if (body.copies > item.quantity)
         throw new ValidationError('Số tem không vượt số cốc của dòng món.');
-      await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
-      const [attempt] = await CupPrintAttemptModel.create([{ userId, ...body, hash }], { session });
+      await orderRepository.touchVersion(order._id, session);
+      const attempt = await cupPrintAttemptRepository.create({ userId, ...body, hash }, session);
       await auditRepository.log(
         {
           actorType: 'USER',

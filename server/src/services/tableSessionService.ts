@@ -10,12 +10,10 @@ import {
 import { sha256, randomToken } from '../utils/crypto.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import type { TableSessionStatus } from '@may-cafe/contracts';
-import { OrderModel } from '../models/Order.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
-import { ServiceRequestModel } from '../models/ServiceRequest.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { config } from '../config/index.js';
-import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.js';
+import type { TableSessionDoc } from '../models/TableSession.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { verifyTableTicket } from './tableQrService.js';
 import { finalizeSessionBill } from './paymentService.js';
@@ -25,6 +23,7 @@ import {
   moveSessionReservation,
 } from './reservationGuards.js';
 import { assertGiftTransferAllowed } from './giftGuards.js';
+import { serviceRequestRepository } from '../repositories/serviceRequestRepository.js';
 
 /**
  * Single entry point for "this table must have a live session".
@@ -155,33 +154,18 @@ export async function transition(
         'Bàn đang được thu tiền. Hãy kết thúc thao tác thu tiền trước khi đổi trạng thái phiên.',
       );
     if (next === 'CLOSED') {
-      const unfinished = await OrderModel.exists({
-        tableSessionId: id,
-        status: { $nin: ['SERVED', 'CANCELLED'] },
-      }).session(mongoSession);
+      const unfinished = await orderRepository.hasUnfinished(id, mongoSession);
       if (unfinished)
         throw new ForbiddenError('Cần phục vụ hoặc hủy các đơn còn lại trước khi đóng phiên.');
-      const outstanding = await OrderModel.exists({
-        tableSessionId: id,
-        status: { $ne: 'CANCELLED' },
-        paymentStatus: 'UNPAID',
-      }).session(mongoSession);
+      const outstanding = await orderRepository.hasUnpaid(id, mongoSession);
       if (outstanding)
         throw new ForbiddenError('Cần xử lý và thanh toán hết đơn trước khi đóng phiên.');
       const bill = await finalizeSessionBill(result, closedBy, mongoSession);
-      await TableSessionModel.updateOne(
-        { _id: id },
-        { $set: { billId: bill.id } },
-        { session: mongoSession },
-      );
+      await tableSessionRepository.attachBill(id, bill.id, mongoSession);
       result.billId = bill._id;
       await tableRepository.invalidateQr(session.tableId.toString(), mongoSession);
       await guestSessionRepository.revokeByTableSession(id, mongoSession);
-      await ServiceRequestModel.updateMany(
-        { tableSessionId: id, status: 'OPEN' },
-        { $set: { status: 'RESOLVED', resolvedBy: closedBy, resolvedAt: new Date() } },
-        { session: mongoSession },
-      );
+      await serviceRequestRepository.resolveOpenBySession(id, closedBy, mongoSession);
     }
     await auditRepository.log(
       {
@@ -374,21 +358,13 @@ export async function transferSession(
     await moveSessionReservation(id, targetTableId, session);
     let moved;
     try {
-      moved = await TableSessionModel.findOneAndUpdate(
-        { _id: id, status: 'OPEN', version: expectedVersion },
-        {
-          $set: { tableId: target._id },
-          $inc: { version: 1 },
-          $push: {
-            tableTransfers: {
-              fromTableId: source.tableId,
-              toTableId: target._id,
-              by: actorId,
-              at: new Date(),
-            },
-          },
-        },
-        { new: true, session },
+      moved = await tableSessionRepository.moveToTable(
+        id,
+        expectedVersion,
+        source.tableId,
+        target._id,
+        actorId,
+        session,
       );
     } catch (error) {
       if ((error as { code?: number }).code === 11000)
@@ -398,11 +374,7 @@ export async function transferSession(
     if (!moved) throw new ConflictError('CONFLICT', 'Phiên vừa được cập nhật.');
     await tableRepository.invalidateQr(source.tableId.toString(), session);
     await tableRepository.invalidateQr(targetTableId, session);
-    await OrderModel.updateMany(
-      { tableSessionId: source._id },
-      { $set: { tableId: target._id } },
-      { session },
-    );
+    await orderRepository.moveSessionToTable(source._id, target._id, session);
     await auditRepository.log(
       {
         actorType: 'USER',

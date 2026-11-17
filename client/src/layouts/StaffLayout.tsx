@@ -185,15 +185,8 @@ export function StaffLayout(): JSX.Element {
 
   useNewOrderAlerts(user?.id, awaitingQuery.data?.items, notifyNewOrder);
   const notifyCancellation = useCallback(
-    (kind: 'cancelled' | 'requested', code?: string) => {
-      const title =
-        kind === 'cancelled'
-          ? code
-            ? `Đơn ${code} đã hủy`
-            : 'Đơn vừa được hủy'
-          : code
-            ? `Khách yêu cầu hủy đơn ${code}`
-            : 'Khách yêu cầu hủy đơn';
+    (kind: 'cancelled' | 'requested') => {
+      const title = kind === 'cancelled' ? 'Đơn vừa được hủy' : 'Khách yêu cầu hủy đơn';
       const description =
         kind === 'cancelled'
           ? 'Xem Đơn đã hủy gần đây tại KDS.'

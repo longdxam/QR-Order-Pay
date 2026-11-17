@@ -1,7 +1,8 @@
 import { Types, type ClientSession } from 'mongoose';
-import { GiftModel, type GiftDoc } from '../models/Gift.js';
-import { OrderModel } from '../models/Order.js';
-import { TableSessionModel } from '../models/TableSession.js';
+import type { GiftDoc } from '../models/Gift.js';
+import { giftRepository } from '../repositories/giftRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
@@ -46,11 +47,7 @@ export async function giftChanged(gift: GiftDoc, session: ClientSession) {
 
 export async function lockGiftSessions(ids: string[], session: ClientSession) {
   for (const id of [...new Set(ids)].sort()) {
-    const locked = await TableSessionModel.findOneAndUpdate(
-      { _id: id, status: 'OPEN' },
-      { $inc: { version: 1 } },
-      { session, new: true },
-    );
+    const locked = await tableSessionRepository.lockOpen(id, session);
     if (!locked)
       throw new ConflictError(
         'GIFT_SESSION_UNAVAILABLE',
@@ -67,7 +64,7 @@ export async function claimGiftForOrder(
   orderId: string,
   session: ClientSession,
 ) {
-  const gift = await GiftModel.findById(id).session(session);
+  const gift = await giftRepository.findById(id, session);
   if (!gift) throw new NotFoundError('Quà không tồn tại.');
   if (
     String(gift.senderSessionId) !== senderSessionId ||
@@ -98,7 +95,7 @@ export async function claimGiftForOrder(
   )
     throw new ConflictError('GIFT_ITEMS_CHANGED', 'Món phải đúng với quà bàn nhận đã đồng ý.');
   await lockGiftSessions([senderSessionId, String(gift.recipientSessionId)], session);
-  const recipient = await TableSessionModel.findById(gift.recipientSessionId).session(session);
+  const recipient = await tableSessionRepository.findById(String(gift.recipientSessionId), session);
   if (String(recipient?.tableId) !== String(gift.recipientTableId))
     throw new ConflictError('GIFT_SESSION_UNAVAILABLE', 'Bàn nhận đã thay đổi.');
   gift.status = 'ORDERED';
@@ -117,12 +114,7 @@ export async function claimGiftForOrder(
 }
 
 export async function assertNoIncomingGiftOrders(id: string, session: ClientSession) {
-  if (
-    await OrderModel.exists({
-      'gift.recipientSessionId': id,
-      status: { $nin: ['SERVED', 'CANCELLED'] },
-    }).session(session)
-  )
+  if (await orderRepository.hasUndeliveredGiftFor(id, session))
     throw new ConflictError(
       'GIFT_IN_PROGRESS',
       'Còn quà đang giao tới bàn. Hãy phục vụ hoặc hủy/hoàn hợp lệ trước khi đóng phiên.',
@@ -131,16 +123,8 @@ export async function assertNoIncomingGiftOrders(id: string, session: ClientSess
 export async function assertGiftTransferAllowed(id: string, session: ClientSession) {
   await assertNoIncomingGiftOrders(id, session);
   if (
-    (await OrderModel.exists({
-      tableSessionId: id,
-      gift: { $ne: null },
-      status: { $nin: ['SERVED', 'CANCELLED'] },
-    }).session(session)) ||
-    (await GiftModel.exists({
-      $or: [{ senderSessionId: id }, { recipientSessionId: id }],
-      status: { $in: ['PENDING', 'ACCEPTED'] },
-      expiresAt: { $gt: new Date() },
-    }).session(session))
+    (await orderRepository.hasUndeliveredGiftFrom(id, session)) ||
+    (await giftRepository.hasLiveInvitation(id, session))
   )
     throw new ConflictError(
       'GIFT_IN_PROGRESS',

@@ -1,9 +1,11 @@
 import type { ClientSession } from 'mongoose';
-import { PaymentCorrectionModel } from '../models/PaymentCorrection.js';
-import { PaymentModel, type PaymentDoc } from '../models/Payment.js';
-import { OrderModel, type OrderDoc } from '../models/Order.js';
-import { TableSessionModel } from '../models/TableSession.js';
-import { UserModel } from '../models/User.js';
+import type { PaymentDoc } from '../models/Payment.js';
+import type { OrderDoc } from '../models/Order.js';
+import { paymentCorrectionRepository } from '../repositories/paymentCorrectionRepository.js';
+import { paymentRepository } from '../repositories/paymentRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
+import { userRepository } from '../repositories/userRepository.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -17,12 +19,13 @@ import { outboxRepository } from '../repositories/outboxRepository.js';
 import { orderRealtimeEvents } from './orderService.js';
 
 export async function assertNoPaymentCorrection(orderId: string, session: ClientSession) {
-  const payments = await PaymentModel.find({ orderIds: orderId }).select('_id').session(session);
+  const payments = await paymentRepository.listIdsForOrder(orderId, session);
   if (
-    await PaymentCorrectionModel.exists({
-      status: 'REQUESTED',
-      $or: [{ paymentId: { $in: payments.map((p) => p._id) } }, { targetOrderId: orderId }],
-    }).session(session)
+    await paymentCorrectionRepository.hasPendingFor(
+      payments.map((p) => p._id),
+      orderId,
+      session,
+    )
   )
     throw new ConflictError(
       'PAYMENT_CORRECTION_PENDING',
@@ -34,17 +37,13 @@ async function guardSession(order: OrderDoc, session: ClientSession, allowClosed
   if (!order.tableSessionId) {
     if (order.pickup?.outcome !== 'ACTIVE' && !allowClosed)
       throw new ForbiddenError('Đơn mang đi đã kết thúc.');
-    await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
+    await orderRepository.touchVersion(order._id, session);
     return;
   }
-  const tableSession = await TableSessionModel.findOneAndUpdate(
-    {
-      _id: order.tableSessionId,
-      ...(allowClosed ? {} : { status: { $in: ['OPEN', 'CHECKOUT'] } }),
-      $or: [{ collectionExpiresAt: null }, { collectionExpiresAt: { $lte: new Date() } }],
-    },
-    { $inc: { version: 1 } },
-    { new: true, session },
+  const tableSession = await tableSessionRepository.lockForCorrection(
+    order.tableSessionId,
+    allowClosed,
+    session,
   );
   if (!tableSession)
     throw new ConflictError(
@@ -72,22 +71,22 @@ export async function requestPaymentCorrection(
 ) {
   try {
     return await unitOfWork.withTransaction(async (session) => {
-      const payment = await PaymentModel.findById(paymentId).session(session);
+      const payment = await paymentRepository.findById(paymentId, session);
       if (!payment) throw new NotFoundError('Khoản thu không tồn tại.');
       if (payment.status !== 'SUCCESS')
         throw new ConflictError('CONFLICT', 'Khoản thu đã hoàn hoặc đảo.');
       if (payment.orderIds.length !== 1)
         throw new ForbiddenError('Khoản thu cũ gộp nhiều đơn cần đối soát riêng.');
-      const order = await OrderModel.findById(payment.orderIds[0]).session(session);
+      const order = await orderRepository.findById(payment.orderIds[0]!, session);
       if (!order) throw new NotFoundError('Đơn không tồn tại.');
       await assertNoPaymentCorrection(order.id, session);
       if (input.kind !== 'METHOD') assertReversible(order);
       if (input.kind === 'METHOD' && input.method === payment.method)
         throw new ValidationError('Phương thức mới phải khác phương thức đã ghi.');
       await guardSession(order, session, input.kind === 'METHOD');
-      await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
+      await orderRepository.touchVersion(order._id, session);
       if (input.kind === 'TRANSFER') {
-        const target = await OrderModel.findById(input.targetOrderId).session(session);
+        const target = await orderRepository.findById(input.targetOrderId!, session);
         if (
           !target ||
           target.id === order.id ||
@@ -99,20 +98,18 @@ export async function requestPaymentCorrection(
           throw new ValidationError('Khoản thu vượt số tiền còn thiếu của đơn nhận.');
         await assertNoPaymentCorrection(target.id, session);
         await guardSession(target, session);
-        await OrderModel.updateOne({ _id: target._id }, { $inc: { version: 1 } }, { session });
+        await orderRepository.touchVersion(target._id, session);
       }
-      const actor = await UserModel.findById(actorId).session(session);
-      const [correction] = await PaymentCorrectionModel.create(
-        [
-          {
-            ...input,
-            paymentId,
-            paymentVersion: payment.version,
-            requestedBy: actorId,
-            requestedByName: actor?.name ?? 'Nhân viên',
-          },
-        ],
-        { session },
+      const actor = await userRepository.findById(actorId, session);
+      const correction = await paymentCorrectionRepository.create(
+        {
+          ...input,
+          paymentId,
+          paymentVersion: payment.version,
+          requestedBy: actorId,
+          requestedByName: actor?.name ?? 'Nhân viên',
+        },
+        session,
       );
       if (!correction) throw new Error('Failed to create payment correction');
       await auditRepository.log(
@@ -152,13 +149,13 @@ export async function decidePaymentCorrection(
   },
 ) {
   return unitOfWork.withTransaction(async (session) => {
-    const correction = await PaymentCorrectionModel.findById(id).session(session);
+    const correction = await paymentCorrectionRepository.findById(id, session);
     if (!correction) throw new NotFoundError('Yêu cầu không tồn tại.');
     if (correction.status !== 'REQUESTED' || correction.version !== input.expectedVersion)
       throw new ConflictError('CONFLICT', 'Yêu cầu đã được xử lý.');
     if (correction.requestedBy.toString() === actorId)
       throw new ForbiddenError('Người lập yêu cầu không được tự duyệt; cần quản lý khác kiểm tra.');
-    const payment = await PaymentModel.findById(correction.paymentId).session(session);
+    const payment = await paymentRepository.findById(correction.paymentId, session);
     if (!payment) throw new NotFoundError('Khoản thu không tồn tại.');
     if (input.approve) {
       if (payment.status !== 'SUCCESS' || payment.version !== correction.paymentVersion)
@@ -166,7 +163,7 @@ export async function decidePaymentCorrection(
           'CONFLICT',
           'Khoản thu đã thay đổi. Hãy từ chối yêu cầu cũ và lập lại.',
         );
-      const order = await OrderModel.findById(payment.orderIds[0]).session(session);
+      const order = await orderRepository.findById(payment.orderIds[0]!, session);
       if (!order) throw new NotFoundError('Đơn không tồn tại.');
       if (correction.kind !== 'METHOD') assertReversible(order);
       await guardSession(order, session, correction.kind === 'METHOD');
@@ -177,7 +174,7 @@ export async function decidePaymentCorrection(
       payment.refundShiftId = shift._id;
       payment.refundMethod = payment.method;
       payment.refundedAt = now;
-      payment.refundedBy = (await UserModel.findById(actorId).session(session))!._id;
+      payment.refundedBy = (await userRepository.findById(actorId, session))!._id;
       payment.refundReason = correction.reason;
       payment.reversalKind = correction.kind;
       payment.version += 1;
@@ -207,7 +204,7 @@ export async function decidePaymentCorrection(
         const target =
           correction.kind === 'METHOD'
             ? order
-            : await OrderModel.findById(correction.targetOrderId).session(session);
+            : await orderRepository.findById(correction.targetOrderId!, session);
         if (!target) throw new NotFoundError('Đơn nhận không tồn tại.');
         if (correction.kind === 'TRANSFER') {
           if (
@@ -233,28 +230,26 @@ export async function decidePaymentCorrection(
           await target.save({ session });
           await publish(target, session);
         }
-        const [replacement] = await PaymentModel.create(
-          [
-            {
-              tableSessionId: target.tableSessionId,
-              orderIds: [target._id],
-              amount: payment.amount,
-              method: correction.kind === 'METHOD' ? correction.method : payment.method,
-              status: 'SUCCESS',
-              shiftId: shift._id,
-              confirmedBy: actorId,
-              paidAt: now,
-              idempotencyKey: `correction:${correction.id}`,
-              note: correction.reason,
-              replacesPaymentId: payment._id,
-            },
-          ],
-          { session },
+        const replacement = await paymentRepository.create(
+          {
+            tableSessionId: target.tableSessionId,
+            orderIds: [target._id],
+            amount: payment.amount,
+            method: correction.kind === 'METHOD' ? correction.method : payment.method,
+            status: 'SUCCESS',
+            shiftId: shift._id,
+            confirmedBy: actorId,
+            paidAt: now,
+            idempotencyKey: `correction:${correction.id}`,
+            note: correction.reason,
+            replacesPaymentId: payment._id,
+          },
+          session,
         );
         correction.replacementPaymentId = replacement!._id;
       }
     }
-    const actor = await UserModel.findById(actorId).session(session);
+    const actor = await userRepository.findById(actorId, session);
     correction.status = input.approve ? 'APPROVED' : 'REJECTED';
     correction.decidedBy = actor!._id;
     correction.decidedByName = actor?.name ?? 'Quản lý';
@@ -301,15 +296,9 @@ export async function listPaymentAccounting(
   sessionId?: string,
   scope: 'current' | 'retired' | 'all' = 'current',
 ) {
-  const retiredOrderIds = await OrderModel.distinct('_id', {
-    fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] },
-  });
+  const retiredOrderIds = await orderRepository.listRetiredFulfillmentIds();
   const retiredPaymentIds =
-    scope === 'all'
-      ? []
-      : await PaymentModel.distinct('_id', {
-          orderIds: { $in: retiredOrderIds },
-        });
+    scope === 'all' ? [] : await paymentRepository.listIdsForOrders(retiredOrderIds);
   const paymentScope =
     scope === 'all' ? {} : { _id: { [scope === 'retired' ? '$in' : '$nin']: retiredPaymentIds } };
   const correctionScope =
@@ -318,43 +307,23 @@ export async function listPaymentAccounting(
       : { paymentId: { [scope === 'retired' ? '$in' : '$nin']: retiredPaymentIds } };
   const filter = { ...paymentScope, ...(sessionId ? { tableSessionId: sessionId } : {}) };
   const [payments, total, corrections, targets] = await Promise.all([
-    PaymentModel.find(filter)
-      .sort({ paidAt: -1, _id: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit),
-    PaymentModel.countDocuments(filter),
-    PaymentCorrectionModel.find(correctionScope)
-      .sort({ status: -1, createdAt: -1 })
-      .limit(200)
-      .lean(),
-    OrderModel.find({
-      _id: { $nin: retiredOrderIds },
-      status: 'AWAITING_PAYMENT',
-      paymentStatus: 'UNPAID',
-    })
-      .select('code tableId total paidAmount')
-      .limit(200)
-      .lean(),
+    paymentRepository.page(filter, page, limit),
+    paymentRepository.count(filter),
+    paymentCorrectionRepository.listRecent(correctionScope),
+    orderRepository.listTransferTargets(retiredOrderIds),
   ]);
-  const correctionPayments = await PaymentModel.find({
-    _id: { $in: corrections.map((c) => c.paymentId) },
-  });
+  const correctionPayments = await paymentRepository.listByIds(corrections.map((c) => c.paymentId));
   const allReceipts = [...payments, ...correctionPayments];
-  const orders = await OrderModel.find({
-    _id: {
-      $in: [
-        ...allReceipts.flatMap((p) => p.orderIds),
-        ...corrections.flatMap((c) => (c.targetOrderId ? [c.targetOrderId] : [])),
-      ],
-    },
-  })
-    .select('code tableId fulfillmentType')
-    .populate('tableId', 'name');
+  const orders = await orderRepository.listLabels([
+    ...allReceipts.flatMap((p) => p.orderIds),
+    ...corrections.flatMap((c) => (c.targetOrderId ? [c.targetOrderId] : [])),
+  ]);
   const names = new Map(
     orders.map((o) => [
       o.id,
       {
         code: o.code,
+        createdAt: o.createdAt,
         tableName:
           (o.tableId as unknown as { name?: string })?.name ??
           (o.fulfillmentType !== 'DINE_IN' ? 'Đơn lịch sử' : 'Bàn đã lưu trữ'),
@@ -379,6 +348,9 @@ export async function listPaymentAccounting(
         targetOrder: correction.targetOrderId ? names.get(String(correction.targetOrderId)) : null,
       };
     }),
-    targets,
+    targets: targets.map((order) => ({
+      ...order,
+      tableName: (order.tableId as unknown as { name?: string })?.name ?? 'Bàn đã lưu trữ',
+    })),
   };
 }

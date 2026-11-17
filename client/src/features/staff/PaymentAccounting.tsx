@@ -1,3 +1,4 @@
+import { orderLabel, recordTime } from '../../lib/recordLabels';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,13 +23,13 @@ interface Receipt {
   refundReason: string;
   reversalKind: string | null;
   replacesPaymentId: string | null;
-  orders: Array<{ code: string; tableName: string } | null>;
+  orders: Array<{ code: string; tableName: string; createdAt?: string } | null>;
 }
 interface Correction {
   _id: string;
   paymentId: string;
   receipt?: Receipt | null;
-  targetOrder?: { code: string; tableName: string } | null;
+  targetOrder?: { code: string; tableName: string; createdAt?: string } | null;
   kind: 'VOID' | 'METHOD' | 'TRANSFER';
   reason: string;
   method: PaymentMethod | null;
@@ -44,7 +45,14 @@ interface Accounting {
   items: Receipt[];
   total: number;
   corrections: Correction[];
-  targets: Array<{ _id: string; code: string; total: number; paidAmount?: number }>;
+  targets: Array<{
+    _id: string;
+    code: string;
+    tableName?: string;
+    createdAt?: string;
+    total: number;
+    paidAmount?: number;
+  }>;
 }
 const METHODS: Record<PaymentMethod, string> = {
   CASH: 'Tiền mặt',
@@ -70,15 +78,10 @@ function ReceiptDetails({ receipt }: { receipt: Receipt }): JSX.Element {
         Thu lúc {new Date(receipt.paidAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
       </p>
       <p className="mt-1">
-        Mã đơn:{' '}
-        {receipt.orders
-          .map((order) => order?.code)
-          .filter(Boolean)
-          .join(', ') || 'Đơn đã lưu trữ'}
+        {receipt.orders.map((order) => (order ? orderLabel(order) : 'Đơn đã lưu trữ')).join(', ')}
       </p>
-      <p className="mt-1 break-all">Mã khoản thu: {receipt.id}</p>
       {receipt.replacesPaymentId ? (
-        <p className="mt-1 break-all">Thay thế: {receipt.replacesPaymentId}</p>
+        <p className="mt-1">Đã thay thế khoản thu ghi trước đó</p>
       ) : null}
       {receipt.refundedAt ? (
         <p className="mt-1">
@@ -240,7 +243,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                 {item.receipt ? (
                   <ReceiptDetails receipt={item.receipt} />
                 ) : (
-                  <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                  <p className="mt-2">Khoản thu đã lưu trữ</p>
                 )}
               </details>
               <p className="text-sm">{item.reason}</p>
@@ -249,10 +252,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               ) : null}
               {item.targetOrderId ? (
                 <p className="break-all text-sm">
-                  Đơn nhận:{' '}
-                  {item.targetOrder
-                    ? `${item.targetOrder.tableName} · ${item.targetOrder.code}`
-                    : item.targetOrderId}
+                  Đơn nhận: {item.targetOrder ? orderLabel(item.targetOrder) : 'Đơn đã lưu trữ'}
                 </p>
               ) : null}
               {admin && item.requestedBy !== user?.id ? (
@@ -362,7 +362,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                 {item.receipt ? (
                   <ReceiptDetails receipt={item.receipt} />
                 ) : (
-                  <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+                  <p className="mt-2">Khoản thu đã lưu trữ</p>
                 )}
               </details>
             </Card>
@@ -378,7 +378,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
         <div className="space-y-4">
           <p>
             {selected ? vnd(selected.amount) : ''} ·{' '}
-            {selected?.orders.map((order) => order?.code).join(', ')}
+            {selected ? `${receiptLocation(selected)} · ${recordTime(selected.paidAt)}` : ''}
           </p>
           <label className="block">
             Loại điều chỉnh
@@ -421,7 +421,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                 <option value="">Chọn đơn đang chờ thanh toán</option>
                 {query.data?.targets.map((order) => (
                   <option key={order._id} value={order._id}>
-                    {order.code} · Còn thiếu {vnd(order.total - (order.paidAmount ?? 0))}
+                    {orderLabel(order)} · Còn thiếu {vnd(order.total - (order.paidAmount ?? 0))}
                   </option>
                 ))}
               </select>
@@ -467,7 +467,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
           {decision?.request.receipt ? (
             <p>
               {decision.request.receipt.orders
-                .map((order) => (order ? `${order.tableName} · ${order.code}` : ''))
+                .map((order) => (order ? orderLabel(order) : 'Đơn đã lưu trữ'))
                 .join(', ')}{' '}
               · {vnd(decision.request.receipt.amount)} · {METHODS[decision.request.receipt.method]}
             </p>
@@ -476,10 +476,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
             <p>Phương thức đúng: {METHODS[decision.request.method]}</p>
           ) : null}
           {decision?.request.targetOrder ? (
-            <p>
-              Chuyển sang {decision.request.targetOrder.tableName} ·{' '}
-              {decision.request.targetOrder.code}
-            </p>
+            <p>Chuyển sang {orderLabel(decision.request.targetOrder)}</p>
           ) : null}
           <label className="block">
             Ghi chú kiểm tra

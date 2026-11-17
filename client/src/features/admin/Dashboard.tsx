@@ -137,11 +137,6 @@ export function AdminDashboard(): JSX.Element {
         />
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Thực thu ròng = tiền đã thu − tiền đã hoàn + điều chỉnh. {data.orderCount} đơn có thu tiền;
-        thu trung bình {vnd(data.averageOrderValue)}/đơn.
-      </p>
-
       <BusinessReports data={data} />
 
       <Card className="overflow-x-auto p-5 sm:p-6">

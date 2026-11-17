@@ -37,11 +37,10 @@ export function BusinessReports({ data }: { data: DashboardOverview }): JSX.Elem
   return (
     <>
       <Card className="space-y-3 p-5">
-        <h3 className="font-display font-semibold">Đơn hàng & so sánh kỳ trước</h3>
+        <h3 className="font-display font-semibold">So sánh kỳ trước</h3>
         {previous ? (
           <p className="text-xs text-muted-foreground">
-            Kỳ trước cùng số ngày: {dateLabel(previous.from)} – {dateLabel(previous.to)}. Tiền theo
-            ngày thu/hoàn; đơn và hủy theo ngày tạo đơn, trạng thái hiện tại.
+            {dateLabel(previous.from)} – {dateLabel(previous.to)}
           </p>
         ) : null}
         <dl className="grid gap-4 sm:grid-cols-3">

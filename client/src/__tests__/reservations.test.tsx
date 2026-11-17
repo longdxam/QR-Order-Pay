@@ -88,7 +88,8 @@ beforeEach(() => {
       mock.member = member;
       return result({ member });
     }
-    if (mock.fail) throw { isAxiosError: true, message: 'Bàn vừa được đặt.', response: { status: mock.fail } };
+    if (mock.fail)
+      throw { isAxiosError: true, message: 'Bàn vừa được đặt.', response: { status: mock.fail } };
     return result({ reservation: row() });
   });
 });
@@ -124,7 +125,7 @@ describe('standalone reservation UI', () => {
     await choose();
     expect(mock.post).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận đặt bàn' }));
-    await screen.findByText('Đã giữ chỗ · DB-TEST');
+    await screen.findByText('Đã giữ chỗ');
     expect(mock.post.mock.calls[0]![0]).toBe('/reservations');
     expect(mock.post.mock.calls[0]![1]).toMatchObject({
       tableId,
@@ -158,7 +159,7 @@ describe('standalone reservation UI', () => {
     expect(screen.getByLabelText('Tên người đặt').matches(':disabled')).toBe(true);
     mock.fail = 0;
     fireEvent.click(retry);
-    await screen.findByText('Đã giữ chỗ · DB-TEST');
+    await screen.findByText('Đã giữ chỗ');
     expect(mock.post.mock.calls[1]![1]).toEqual(first);
     expect(sessionStorage.length).toBe(0);
   });

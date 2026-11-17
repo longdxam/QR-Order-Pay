@@ -108,9 +108,9 @@ server/src/
 ├── routes/                # REST endpoints: index.ts mount router theo domain (guest, menu, payment,
 │                          # serviceFloor, workforce, admin…); guards.ts (staffOnly/adminOnly),
 │                          # rateLimits.ts. Ma trận quyền kiểm ở __tests__/unit/routeAuthorization.test.ts
-├── controllers/           # HTTP I/O
-├── services/              # business rules
-├── repositories/          # Mongo access
+├── controllers/           # HTTP I/O (admin tách report/operations/catalog/people)
+├── services/              # business rules — không import Mongoose model (check-boundaries.ts)
+├── repositories/          # toàn bộ truy vấn MongoDB, method đặt theo nghiệp vụ
 ├── models/                # Mongoose schemas
 ├── providers/             # external integrations (AI)
 ├── realtime/              # Socket.IO setup + publishers

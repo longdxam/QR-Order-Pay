@@ -12,8 +12,6 @@ import {
 import type { OrderStatus } from '@may-cafe/contracts';
 import { randomShortCode } from '../utils/crypto.js';
 import type { OrderDoc } from '../models/Order.js';
-import { OrderModel } from '../models/Order.js';
-import { TableSessionModel } from '../models/TableSession.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import { priceOrderWithBenefits, validateQuote } from './orderPricingService.js';
@@ -132,18 +130,14 @@ async function createOrder(
           mongoSession,
         )
       : null;
-    const open = await TableSessionModel.findOneAndUpdate(
-      { _id: input.tableSessionId, status: 'OPEN' },
-      { $inc: { version: 1 } },
-      { session: mongoSession, new: true },
-    );
+    const open = await tableSessionRepository.lockOpen(input.tableSessionId, mongoSession);
     if (!open)
       throw new ForbiddenError('Phiên đang thanh toán hoặc đã đóng, không thể đặt thêm món.');
-    const awaiting = await OrderModel.countDocuments({
-      tableSessionId: input.tableSessionId,
-      participantId: input.participantId,
-      status: 'AWAITING_PAYMENT',
-    }).session(mongoSession);
+    const awaiting = await orderRepository.countAwaitingPayment(
+      input.tableSessionId,
+      input.participantId,
+      mongoSession,
+    );
     if (awaiting >= 3)
       throw new ForbiddenError(
         'Bạn có 3 đơn đang chờ thanh toán. Vui lòng thanh toán hoặc hủy đơn trước khi gọi thêm.',

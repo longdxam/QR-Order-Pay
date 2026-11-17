@@ -30,7 +30,8 @@ export function StaffServiceRequests(): JSX.Element {
 
   const listQuery = useQuery({
     queryKey: ['staff-service-requests'],
-    queryFn: async () => unwrap(await api.get<{ items: ServiceRequest[] }>('/staff/service-requests')),
+    queryFn: async () =>
+      unwrap(await api.get<{ items: ServiceRequest[] }>('/staff/service-requests')),
     refetchInterval: 8_000,
   });
 
@@ -39,7 +40,11 @@ export function StaffServiceRequests(): JSX.Element {
     if (!socket) return;
     const handler = () => {
       queryClient.invalidateQueries({ queryKey: ['staff-service-requests'] });
-      toast({ title: 'Có yêu cầu mới từ bàn', tone: 'info', onClick: () => navigate('/staff/service-requests') });
+      toast({
+        title: 'Có yêu cầu mới từ bàn',
+        tone: 'info',
+        onClick: () => navigate('/staff/service-requests'),
+      });
     };
     socket.on('serviceRequest.created', handler);
     return () => {
@@ -48,19 +53,29 @@ export function StaffServiceRequests(): JSX.Element {
   }, [queryClient, toast, navigate]);
 
   const resolve = useMutation({
-    mutationFn: async (id: string) => unwrap(await api.post(`/staff/service-requests/${id}/resolve`)),
+    mutationFn: async (id: string) =>
+      unwrap(await api.post(`/staff/service-requests/${id}/resolve`)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff-service-requests'] });
     },
-    onError: (err) => toast({ title: 'Không thể xử lý', description: getErrorMessage(err), tone: 'danger' }),
+    onError: (err) =>
+      toast({ title: 'Không thể xử lý', description: getErrorMessage(err), tone: 'danger' }),
   });
 
   if (listQuery.isLoading) return <p className="text-sm text-muted-foreground">Đang tải...</p>;
-  if (listQuery.isError) return <ErrorState message={getErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} />;
+  if (listQuery.isError)
+    return (
+      <ErrorState message={getErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} />
+    );
 
   const items = listQuery.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="Chưa có yêu cầu nào" description="Khi khách gọi nhân viên hoặc yêu cầu thanh toán, sẽ hiển thị tại đây." />;
+    return (
+      <EmptyState
+        title="Chưa có yêu cầu nào"
+        description="Khi khách gọi nhân viên hoặc yêu cầu thanh toán, sẽ hiển thị tại đây."
+      />
+    );
   }
 
   return (
@@ -73,7 +88,10 @@ export function StaffServiceRequests(): JSX.Element {
             <p className="mt-2 font-semibold">{r.tableName}</p>
             <p className="mt-2 text-sm">{r.note || 'Không có ghi chú.'}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {new Date(r.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · Phiên {r.tableSessionId.slice(-6)}
+              {new Date(r.createdAt).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </p>
           </div>
           <Button size="sm" onClick={() => resolve.mutate(r._id)} disabled={resolve.isPending}>
@@ -87,8 +105,11 @@ export function StaffServiceRequests(): JSX.Element {
 
 function labelType(t: ServiceRequest['type']): string {
   switch (t) {
-    case 'CALL_STAFF': return 'Gọi nhân viên';
-    case 'REQUEST_BILL': return 'Yêu cầu thanh toán';
-    case 'OTHER': return 'Khác';
+    case 'CALL_STAFF':
+      return 'Gọi nhân viên';
+    case 'REQUEST_BILL':
+      return 'Yêu cầu thanh toán';
+    case 'OTHER':
+      return 'Khác';
   }
 }

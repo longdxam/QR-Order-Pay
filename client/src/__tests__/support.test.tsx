@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../components/ui/Toast';
@@ -80,8 +80,10 @@ describe('GuestLayout CSKH link', () => {
       table: { id: 't', name: 'Bàn 01', code: 'B01' },
     };
     mount();
+    await screen.findByRole('link', { name: /Hỗ trợ CSKH/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm' }));
     const links = await screen.findAllByRole('link', { name: /Hỗ trợ CSKH/ });
-    expect(links).toHaveLength(2); // header nav (desktop) + dock (mobile)
+    expect(links).toHaveLength(1); // Modal keeps the background header out of the accessibility tree.
     for (const link of links) {
       expect(link.getAttribute('href')).toBe('https://t.me/cafe_sky_cskh_bot');
       expect(link.getAttribute('target')).toBe('_blank');
@@ -92,6 +94,8 @@ describe('GuestLayout CSKH link', () => {
   it('stays available after the session ended while a receipt exists', async () => {
     mock.session = { active: false, receiptAvailable: true };
     mount();
-    expect(await screen.findAllByRole('link', { name: /Hỗ trợ CSKH/ })).toHaveLength(2);
+    await screen.findByRole('link', { name: /Hỗ trợ CSKH/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm' }));
+    expect(await screen.findAllByRole('link', { name: /Hỗ trợ CSKH/ })).toHaveLength(1);
   });
 });

@@ -21,6 +21,16 @@ export interface IBillRepository {
     session?: ClientSession | null,
   ): Promise<{ bill: BillDoc; created: boolean }>;
   findBySession(tableSessionId: string, session?: ClientSession | null): Promise<BillDoc | null>;
+  listHistory(
+    query: Record<string, unknown>,
+    page: number,
+    limit: number,
+  ): Promise<{ items: Array<Record<string, unknown>>; total: number }>;
+  findHistory(
+    query: { _id: string } | { invoiceCode: string },
+  ): Promise<Record<string, unknown> | null>;
+  findByPickupOrder(orderId: unknown, session: ClientSession): Promise<BillDoc | null>;
+  createPickupBill(data: Record<string, unknown>, session: ClientSession): Promise<BillDoc>;
 }
 
 export const billRepository: IBillRepository = {
@@ -124,5 +134,28 @@ export const billRepository: IBillRepository = {
     session?: ClientSession | null,
   ): Promise<BillDoc | null> {
     return BillModel.findOne({ tableSessionId }, null, { session: session ?? undefined });
+  },
+  /** Lịch sử hóa đơn mới nhất trước, không kèm danh sách paymentIds. */
+  async listHistory(query: Record<string, unknown>, page: number, limit: number) {
+    const [items, total] = await Promise.all([
+      BillModel.find(query)
+        .sort({ closedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select('-paymentIds')
+        .lean(),
+      BillModel.countDocuments(query),
+    ]);
+    return { items, total };
+  },
+  async findHistory(query: { _id: string } | { invoiceCode: string }) {
+    return BillModel.findOne(query).select('-paymentIds').lean();
+  },
+  async findByPickupOrder(orderId, session) {
+    return BillModel.findOne({ pickupOrderId: orderId }).session(session);
+  },
+  async createPickupBill(data, session) {
+    const [bill] = await BillModel.create([data], { session });
+    return bill!;
   },
 };

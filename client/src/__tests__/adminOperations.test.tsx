@@ -100,7 +100,7 @@ it('shows serving activity first and keeps technical metrics in a closed disclos
   expect(await screen.findByText('Không có tác vụ lỗi cần thử lại.')).toBeTruthy();
   const details = screen.getByText('Chi tiết kỹ thuật').closest('details');
   expect(details?.hasAttribute('open')).toBe(false);
-  expect(details?.contains(screen.getByRole('heading', { name: 'Máy chủ internal-a' }))).toBe(true);
+  expect(details?.contains(screen.getByRole('heading', { name: 'Máy chủ hiện tại' }))).toBe(true);
 });
 
 it('does not report an empty failure list as successful when the request fails', async () => {

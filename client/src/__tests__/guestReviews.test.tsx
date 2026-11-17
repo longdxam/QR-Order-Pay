@@ -97,7 +97,7 @@ describe('reviews per completed order while the table remains open', () => {
     orders.push(order('B'));
     await qc.invalidateQueries({ queryKey: ['my-orders'] });
     fireEvent.click(await screen.findByRole('button', { name: 'Đánh giá đơn' }));
-    expect(screen.getByRole('combobox', { name: 'Số sao cho đơn B' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: /Số sao cho Đơn hàng/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Gửi đánh giá' }));
     await screen.findByText('Bạn đã đánh giá 5/5 sao');
     expect(screen.getByText('Bạn đã đánh giá 4/5 sao')).toBeTruthy();

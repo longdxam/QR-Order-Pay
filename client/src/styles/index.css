@@ -51,6 +51,23 @@ body {
 html {
   scroll-padding-top: 7rem;
 }
+
+.table-qr-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.table-qr-modal > .modal-header {
+  flex-shrink: 0;
+}
+.table-qr-modal > .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
 ::selection {
   background: rgb(var(--c-primary) / 0.16);
 }

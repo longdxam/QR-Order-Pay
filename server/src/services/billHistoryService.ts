@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { NotFoundError, ValidationError } from '../errors/AppError.js';
-import { BillModel } from '../models/Bill.js';
+import { billRepository } from '../repositories/billRepository.js';
 
 export interface BillHistoryFilters {
   q?: string;
@@ -70,15 +70,7 @@ export async function listBillHistory(filters: BillHistoryFilters) {
   if (filters.from) range.$gte = localBoundary(filters.from);
   if (filters.to) range.$lt = new Date(localBoundary(filters.to).getTime() + 86_400_000);
   if (range.$gte || range.$lt) query.closedAt = range;
-  const [items, total] = await Promise.all([
-    BillModel.find(query)
-      .sort({ closedAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .select('-paymentIds')
-      .lean(),
-    BillModel.countDocuments(query),
-  ]);
+  const { items, total } = await billRepository.listHistory(query, page, limit);
   return {
     items: items.map((item) => serializeBillSummary(item as unknown as RawBill)),
     page,
@@ -89,7 +81,7 @@ export async function listBillHistory(filters: BillHistoryFilters) {
 
 export async function getBillHistory(id: string) {
   const query = mongoose.isValidObjectId(id) ? { _id: id } : { invoiceCode: id };
-  const bill = await BillModel.findOne(query).select('-paymentIds').lean();
+  const bill = await billRepository.findHistory(query);
   if (!bill) throw new NotFoundError('Không tìm thấy hóa đơn.');
   return serializeBill(bill as unknown as RawBill);
 }

@@ -8,11 +8,14 @@ import type {
   IngredientDto,
   RecipeDto,
 } from '@may-cafe/contracts';
-import { IngredientModel, type IngredientDoc } from '../models/Ingredient.js';
-import { RecipeModel } from '../models/Recipe.js';
-import { StockMovementModel } from '../models/StockMovement.js';
-import { ProductModel } from '../models/Product.js';
-import { ToppingModel } from '../models/Topping.js';
+import type { IngredientDoc } from '../models/Ingredient.js';
+import {
+  ingredientRepository,
+  recipeRepository,
+  stockMovementRepository,
+} from '../repositories/inventoryRepository.js';
+import { productRepository } from '../repositories/productRepository.js';
+import { toppingRepository } from '../repositories/toppingRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
@@ -72,10 +75,10 @@ function duplicate(error: unknown): boolean {
 }
 
 export async function inventoryOverview() {
-  const ingredients = await IngredientModel.find().sort({ name: 1 });
-  const recipes = await RecipeModel.find().sort({ updatedAt: -1 });
-  const products = await ProductModel.find({ isArchived: false });
-  const toppings = await ToppingModel.find({ isArchived: false });
+  const ingredients = await ingredientRepository.listByName();
+  const recipes = await recipeRepository.listRecent();
+  const products = await productRepository.listUnarchived();
+  const toppings = await toppingRepository.listUnarchived();
   // Separate response copies allow showing manual and ingredient-based status side by side.
   const effective = await applyInventoryAvailability(
     products.map((p) => p.toObject()),
@@ -127,9 +130,9 @@ export async function createIngredient(input: IngredientCreateInput, actorId: st
   const code = input.code ?? `NL_${id.toHexString().toUpperCase()}`;
   try {
     return await unitOfWork.withTransaction(async (session) => {
-      const [ingredient] = await IngredientModel.create(
-        [{ ...input, _id: id, code, lowStockThreshold: stockUnits(input.lowStockThreshold) }],
-        { session },
+      const ingredient = await ingredientRepository.create(
+        { ...input, _id: id, code, lowStockThreshold: stockUnits(input.lowStockThreshold) },
+        session,
       );
       if (!ingredient) throw new Error('Failed to create ingredient');
       await log(
@@ -150,18 +153,17 @@ export async function createIngredient(input: IngredientCreateInput, actorId: st
 
 export async function updateIngredient(id: string, input: IngredientUpdateInput, actorId: string) {
   const result = await unitOfWork.withTransaction(async (session) => {
-    const ingredient = await IngredientModel.findOneAndUpdate(
-      { _id: id, version: input.expectedVersion, ...(!input.isActive ? { reserved: 0 } : {}) },
+    const ingredient = await ingredientRepository.update(
+      id,
+      input.expectedVersion,
+      !input.isActive,
       {
-        $set: {
-          name: input.name,
-          isActive: input.isActive,
-          lowStockThreshold: stockUnits(input.lowStockThreshold),
-          ...(input.unitCost !== undefined ? { unitCost: input.unitCost } : {}),
-        },
-        $inc: { version: 1 },
+        name: input.name,
+        isActive: input.isActive,
+        lowStockThreshold: stockUnits(input.lowStockThreshold),
+        ...(input.unitCost !== undefined ? { unitCost: input.unitCost } : {}),
       },
-      { new: true, session },
+      session,
     );
     if (!ingredient)
       throw new ConflictError(
@@ -198,7 +200,7 @@ export async function moveStock(id: string, input: StockMovementInput, actorId: 
     )
     .digest('hex');
   const replay = async () => {
-    const movement = await StockMovementModel.findOne({ idempotencyKey: input.idempotencyKey });
+    const movement = await stockMovementRepository.findByIdempotency(input.idempotencyKey);
     if (!movement) return null;
     if (movement.requestHash !== requestHash)
       throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã thao tác kho đã dùng cho nội dung khác.');
@@ -208,7 +210,7 @@ export async function moveStock(id: string, input: StockMovementInput, actorId: 
   if (existing) return existing;
   try {
     const result = await unitOfWork.withTransaction(async (session) => {
-      const current = await IngredientModel.findById(id).session(session);
+      const current = await ingredientRepository.findById(id, session);
       if (!current) throw new NotFoundError('Nguyên liệu không tồn tại.');
       if (current.version !== input.expectedVersion)
         throw new ConflictError(
@@ -230,29 +232,23 @@ export async function moveStock(id: string, input: StockMovementInput, actorId: 
           'INSUFFICIENT_STOCK',
           'Nguyên liệu đã ngừng dùng hoặc tồn sau thao tác thấp hơn lượng đang giữ cho đơn.',
         );
-      const ingredient = await IngredientModel.findOneAndUpdate(
-        { _id: id, version: current.version },
-        { $set: { onHand }, $inc: { version: 1 } },
-        { new: true, session },
-      );
+      const ingredient = await ingredientRepository.setOnHand(id, current.version, onHand, session);
       if (!ingredient) throw new ConflictError('CONFLICT', 'Tồn kho vừa thay đổi.');
-      const [movement] = await StockMovementModel.create(
-        [
-          {
-            ingredientId: id,
-            ingredientName: current.name,
-            unit: current.unit,
-            type: input.type,
-            quantity: onHand - current.onHand,
-            onHandAfter: onHand,
-            reservedAfter: current.reserved,
-            actorId,
-            reason: input.reason,
-            idempotencyKey: input.idempotencyKey,
-            requestHash,
-          },
-        ],
-        { session },
+      const movement = await stockMovementRepository.create(
+        {
+          ingredientId: id,
+          ingredientName: current.name,
+          unit: current.unit,
+          type: input.type,
+          quantity: onHand - current.onHand,
+          onHandAfter: onHand,
+          reservedAfter: current.reserved,
+          actorId,
+          reason: input.reason,
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+        },
+        session,
       );
       await log(
         actorId,
@@ -285,19 +281,10 @@ export async function lockInventoryTarget(
   id: string,
   session: ClientSession,
 ) {
-  const options = { new: true, session, timestamps: false };
   const target =
     type === 'PRODUCT'
-      ? await ProductModel.findOneAndUpdate(
-          { _id: id, isArchived: false },
-          { $inc: { inventoryVersion: 1 } },
-          options,
-        )
-      : await ToppingModel.findOneAndUpdate(
-          { _id: id, isArchived: false },
-          { $inc: { inventoryVersion: 1 } },
-          options,
-        );
+      ? await productRepository.lockInventory(id, session)
+      : await toppingRepository.lockInventory(id, session);
   if (!target) throw new NotFoundError('Món hoặc topping không còn tồn tại.');
   return target;
 }
@@ -320,15 +307,11 @@ export async function saveRecipe(
       ),
     ].sort();
     for (const ingredientId of ids) {
-      const ingredient = await IngredientModel.findOneAndUpdate(
-        { _id: ingredientId, ...(input.enabled ? { isActive: true } : {}) },
-        { $inc: { version: 1 } },
-        { new: true, session },
-      );
+      const ingredient = await ingredientRepository.lock(ingredientId, input.enabled, session);
       if (!ingredient)
         throw new ValidationError('Công thức chứa nguyên liệu không tồn tại hoặc đã ngừng dùng.');
     }
-    const current = await RecipeModel.findOne({ targetType: type, targetId: id }).session(session);
+    const current = await recipeRepository.findForTarget(type, id, session);
     if ((current?.version ?? 0) !== input.expectedVersion)
       throw new ConflictError('CONFLICT', 'Công thức vừa được thay đổi. Hãy tải lại.');
     const convert = (lines: RecipeSaveInput['components']) =>
@@ -348,7 +331,7 @@ export async function saveRecipe(
     if (current) {
       current.set(data);
       await current.save({ session });
-    } else await RecipeModel.create([{ ...data, targetType: type, targetId: id }], { session });
+    } else await recipeRepository.create({ ...data, targetType: type, targetId: id }, session);
     await log(
       actorId,
       'inventory.recipeSaved',
@@ -365,12 +348,7 @@ export async function saveRecipe(
 
 export async function listStockMovements(page: number, ingredientId?: string) {
   const filter = ingredientId ? { ingredientId } : {};
-  const total = await StockMovementModel.countDocuments(filter);
-  const movements = await StockMovementModel.find(filter)
-    .sort({ createdAt: -1, _id: -1 })
-    .skip((page - 1) * 30)
-    .limit(30)
-    .populate<{ actorId: { name: string } | null }>('actorId', 'name');
+  const { total, movements } = await stockMovementRepository.page(filter, page);
   return {
     total,
     page,

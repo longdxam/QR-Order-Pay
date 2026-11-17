@@ -1,30 +1,35 @@
-import { anomalyDashboardResponseSchema, type AnomalyAlert, type AnomalyDashboardResponse, type AnomalyEvaluation } from '@may-cafe/contracts';
+import {
+  anomalyDashboardResponseSchema,
+  type AnomalyAlert,
+  type AnomalyDashboardResponse,
+  type AnomalyEvaluation,
+} from '@may-cafe/contracts';
 import { config } from '../config/index.js';
 import { getHttpObservations } from '../infrastructure/metrics.js';
 import { getSharedHttpObservations } from '../infrastructure/sharedHttpMetrics.js';
 import { isRedisReady } from '../infrastructure/redis.js';
 import { logger } from '../infrastructure/logger.js';
-import { AnomalyAlertModel, type AnomalyAlertDoc } from '../models/AnomalyAlert.js';
-import { OrderModel } from '../models/Order.js';
+import type { AnomalyAlertDoc } from '../models/AnomalyAlert.js';
 import { isValidObjectId } from 'mongoose';
 import { evaluateAnomalies, type OrderSignal } from './anomalyDetector.js';
 import { explainAnomaly, fallbackExplanation } from './anomalyExplanationService.js';
+import { anomalyAlertRepository } from '../repositories/anomalyAlertRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
 
 let latestEvaluations: AnomalyEvaluation[] = [];
 let lastRunAt: Date | null = null;
 
 export async function runAnomalyDetection(now = new Date()): Promise<AnomalyEvaluation[]> {
-  const baselineStart = new Date(now.getTime() - (Math.max(1, config.anomaly.windowMinutes) + Math.max(1, config.anomaly.baselineMinutes)) * 60_000);
+  const baselineStart = new Date(
+    now.getTime() -
+      (Math.max(1, config.anomaly.windowMinutes) + Math.max(1, config.anomaly.baselineMinutes)) *
+        60_000,
+  );
   const [http, rawOrders] = await Promise.all([
-    isRedisReady() ? getSharedHttpObservations(baselineStart, now) : Promise.resolve(getHttpObservations(baselineStart)),
-    OrderModel.find({
-      'pickup.outcome': { $ne: 'NO_SHOW' },
-      $or: [
-        { createdAt: { $gte: baselineStart } },
-        { 'statusHistory.at': { $gte: baselineStart } },
-        { status: 'PREPARING' },
-      ],
-    }).select('createdAt status statusHistory').lean(),
+    isRedisReady()
+      ? getSharedHttpObservations(baselineStart, now)
+      : Promise.resolve(getHttpObservations(baselineStart)),
+    orderRepository.listStatusTimelineSince(baselineStart),
   ]);
   const orders: OrderSignal[] = rawOrders.map((order) => {
     const history = order.statusHistory ?? [];
@@ -72,7 +77,7 @@ export function startAnomalyScheduler(): () => void {
 }
 
 export async function anomalyDashboard(): Promise<AnomalyDashboardResponse> {
-  const alerts = await AnomalyAlertModel.find().sort({ lastDetectedAt: -1 }).limit(50).lean();
+  const alerts = await anomalyAlertRepository.listRecent(50);
   return anomalyDashboardResponseSchema.parse({
     observedAt: new Date().toISOString(),
     lastRunAt: lastRunAt?.toISOString() ?? null,
@@ -86,25 +91,33 @@ export async function anomalyDashboard(): Promise<AnomalyDashboardResponse> {
   });
 }
 
-export async function updateAnomalyStatus(id: string, status: 'ACKNOWLEDGED' | 'CLOSED', userId: string): Promise<AnomalyAlert | null> {
+export async function updateAnomalyStatus(
+  id: string,
+  status: 'ACKNOWLEDGED' | 'CLOSED',
+  userId: string,
+): Promise<AnomalyAlert | null> {
   if (!isValidObjectId(id)) return null;
   const now = new Date();
-  const update = status === 'ACKNOWLEDGED'
-    ? { status, acknowledgedAt: now, acknowledgedBy: userId }
-    : { status, closedAt: now, closedBy: userId };
+  const update =
+    status === 'ACKNOWLEDGED'
+      ? { status, acknowledgedAt: now, acknowledgedBy: userId }
+      : { status, closedAt: now, closedBy: userId };
   const allowedStatuses = status === 'ACKNOWLEDGED' ? ['OPEN'] : ['OPEN', 'ACKNOWLEDGED'];
-  const alert = await AnomalyAlertModel.findOneAndUpdate({ _id: id, status: { $in: allowedStatuses } }, update, { new: true }).lean();
+  const alert = await anomalyAlertRepository.transition(id, allowedStatuses, update);
   return alert ? serializeAlert(alert) : null;
 }
 
-export async function persistAnomalyAlert(evaluation: AnomalyEvaluation, now: Date, allowLiveExplanation: boolean): Promise<boolean> {
+export async function persistAnomalyAlert(
+  evaluation: AnomalyEvaluation,
+  now: Date,
+  allowLiveExplanation: boolean,
+): Promise<boolean> {
   const cooldownStart = new Date(now.getTime() - config.anomaly.cooldownMinutes * 60_000);
-  const existing = await AnomalyAlertModel.findOne({
-    detector: evaluation.detector,
-    target: evaluation.target,
-    status: { $in: ['OPEN', 'ACKNOWLEDGED'] },
-    lastDetectedAt: { $gte: cooldownStart },
-  }).sort({ lastDetectedAt: -1 });
+  const existing = await anomalyAlertRepository.findOpenSince(
+    evaluation.detector,
+    evaluation.target,
+    cooldownStart,
+  );
   const values = evaluationValues(evaluation, now);
   if (existing) {
     Object.assign(existing, values);
@@ -112,9 +125,11 @@ export async function persistAnomalyAlert(evaluation: AnomalyEvaluation, now: Da
     return false;
   }
 
-  const explanation = allowLiveExplanation ? await explainAnomaly(evaluation) : fallbackExplanation(evaluation);
+  const explanation = allowLiveExplanation
+    ? await explainAnomaly(evaluation)
+    : fallbackExplanation(evaluation);
   try {
-    await AnomalyAlertModel.create({
+    await anomalyAlertRepository.create({
       bucketKey: `${evaluation.detector}:${evaluation.target}:${evaluation.windowStart}`,
       ...values,
       firstDetectedAt: now,
@@ -145,9 +160,12 @@ function evaluationValues(evaluation: AnomalyEvaluation, now: Date) {
   };
 }
 
-function serializeAlert(alert: Pick<AnomalyAlertDoc, keyof AnomalyAlertDoc> | Record<string, unknown>): AnomalyAlert {
+function serializeAlert(
+  alert: Pick<AnomalyAlertDoc, keyof AnomalyAlertDoc> | Record<string, unknown>,
+): AnomalyAlert {
   const raw = alert as unknown as Record<string, unknown>;
-  const date = (key: string): string | null => raw[key] ? new Date(raw[key] as string | Date).toISOString() : null;
+  const date = (key: string): string | null =>
+    raw[key] ? new Date(raw[key] as string | Date).toISOString() : null;
   return {
     id: String(raw._id),
     detector: raw.detector as AnomalyAlert['detector'],
@@ -158,7 +176,10 @@ function serializeAlert(alert: Pick<AnomalyAlertDoc, keyof AnomalyAlertDoc> | Re
     windowEnd: date('windowEnd')!,
     observedValue: Number(raw.observedValue),
     thresholdValue: Number(raw.thresholdValue),
-    baselineValue: raw.baselineValue === null || raw.baselineValue === undefined ? null : Number(raw.baselineValue),
+    baselineValue:
+      raw.baselineValue === null || raw.baselineValue === undefined
+        ? null
+        : Number(raw.baselineValue),
     sampleCount: Number(raw.sampleCount),
     baselineSampleCount: Number(raw.baselineSampleCount),
     method: String(raw.method),

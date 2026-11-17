@@ -38,4 +38,14 @@ export const toppingRepository = {
       { new: true, session: session ?? undefined },
     );
   },
+  async listUnarchived() {
+    return ToppingModel.find({ isArchived: false });
+  },
+  async lockInventory(id: string, session: ClientSession) {
+    return ToppingModel.findOneAndUpdate(
+      { _id: id, isArchived: false },
+      { $inc: { inventoryVersion: 1 } },
+      { new: true, session, timestamps: false },
+    );
+  },
 };

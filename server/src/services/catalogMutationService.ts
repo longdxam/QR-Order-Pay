@@ -7,8 +7,6 @@ import { toppingRepository } from '../repositories/toppingRepository.js';
 import type { ClientSession } from 'mongoose';
 import { Types } from 'mongoose';
 import { NotFoundError, ConflictError, ValidationError } from '../errors/AppError.js';
-import { CategoryModel } from '../models/Category.js';
-import { ProductModel } from '../models/Product.js';
 import { invalidatePublicMenuCache } from './menuService.js';
 
 type CatalogKind = 'Product' | 'Category' | 'Topping';
@@ -57,11 +55,7 @@ async function mutation<T>(
 async function guardCategory(id: unknown, session: ClientSession) {
   if (typeof id !== 'string' || !Types.ObjectId.isValid(id))
     throw new ValidationError('Danh mục không hợp lệ.');
-  const category = await CategoryModel.findByIdAndUpdate(
-    id,
-    { $inc: { version: 1 } },
-    { new: true, session },
-  );
+  const category = await categoryRepository.lock(id, session);
   if (!category) throw new NotFoundError('Danh mục không tồn tại.');
   return category;
 }
@@ -110,7 +104,7 @@ export function deleteCategory(id: string, reassignTo: unknown, actorId: string)
     const category = await guardCategory(id, session);
     if (reassignTo === id) throw new ValidationError('Danh mục nhận phải khác danh mục bị xóa.');
     if (reassignTo !== undefined) await guardCategory(reassignTo, session);
-    const count = await ProductModel.countDocuments({ categoryId: id }).session(session);
+    const count = await productRepository.countInCategory(id, session);
     if (count > 0 && reassignTo === undefined)
       throw new ConflictError(
         'CATEGORY_NOT_EMPTY',
@@ -118,11 +112,7 @@ export function deleteCategory(id: string, reassignTo: unknown, actorId: string)
         { productCount: count },
       );
     if (count > 0) {
-      await ProductModel.updateMany(
-        { categoryId: id },
-        { $set: { categoryId: reassignTo }, $inc: { version: 1 } },
-        { session },
-      );
+      await productRepository.moveCategory(id, reassignTo as string, session);
       await auditRepository.log(
         {
           actorType: 'USER',

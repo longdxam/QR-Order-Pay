@@ -59,7 +59,7 @@ export function LatteArtExport({
       downloads.current.add(url);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `latte-${order.code}-line-${item.index + 1}.png`;
+      link.download = `latte-${item.name.replace(/[^\p{L}\p{N} -]/gu, '').trim() || 'mon-da-chon'}.png`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -86,9 +86,7 @@ export function LatteArtExport({
       className="space-y-4 rounded-2xl border-2 border-primary bg-card p-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">
-          Latte art {order.code} · dòng {item.index + 1}
-        </h2>
+        <h2 className="text-xl font-semibold">Xem trước latte art</h2>
         <Button variant="outline" disabled={busy} onClick={onClose}>
           Đóng xem trước
         </Button>
@@ -105,7 +103,7 @@ export function LatteArtExport({
         <div className="latte-foam-preview max-w-80">
           <img
             src={preview.url}
-            alt={`Latte art ${order.code} dòng ${item.index + 1}`}
+            alt={`Latte art ${item.name}`}
             onLoad={() => setLoaded(true)}
             onError={() => {
               setLoaded(false);

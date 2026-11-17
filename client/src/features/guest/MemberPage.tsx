@@ -104,8 +104,7 @@ export function MemberPage(): JSX.Element {
                         ? 'Tích điểm'
                         : entry.type === 'REDEEM'
                           ? 'Đổi điểm'
-                          : 'Hoàn điểm'}{' '}
-                      · {entry.orderCode}
+                          : 'Hoàn điểm'}
                     </p>
                     <time>{new Date(entry.createdAt).toLocaleString('vi-VN')}</time>
                   </div>

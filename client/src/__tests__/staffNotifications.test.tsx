@@ -188,7 +188,7 @@ describe('staff notifications', () => {
       expect(qc.getQueryData(['staff-cancelled-orders'])).toEqual({ items: rows }),
     );
     expect(mock.toast).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ title: 'Đơn NEW01 đã hủy' }),
+      expect.objectContaining({ title: 'Đơn vừa được hủy' }),
     );
     expect(mock.browser).toHaveBeenCalledOnce();
     expect(mock.sound).toHaveBeenCalledExactlyOnceWith('request');
@@ -201,7 +201,7 @@ describe('staff notifications', () => {
     });
     await waitFor(() => expect(mock.toast).toHaveBeenCalledTimes(2));
     expect(mock.toast).toHaveBeenLastCalledWith(
-      expect.objectContaining({ title: 'Đơn MISSED01 đã hủy' }),
+      expect.objectContaining({ title: 'Đơn vừa được hủy' }),
     );
   });
 
@@ -246,7 +246,7 @@ describe('staff notifications', () => {
     });
     await screen.findByText('KDS: 1');
     expect(mock.toast).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ title: 'Khách yêu cầu hủy đơn REQ01' }),
+      expect.objectContaining({ title: 'Khách yêu cầu hủy đơn' }),
     );
     rows = [];
     act(() => {
@@ -290,14 +290,14 @@ describe('staff notifications', () => {
     const retry = await screen.findByRole('button', { name: /thử lại/i });
     fail = false;
     fireEvent.click(retry);
-    await screen.findByText('CUP01 · Bàn 01');
+    await screen.findByText('Bàn 01');
     expect(screen.getByText('Khách hủy')).toBeTruthy();
     expect(screen.getByText('2 × Cappuccino')).toBeTruthy();
     expect(screen.getByText('Chưa thu tiền')).toBeTruthy();
     view.unmount();
     qc.clear();
     render(tree());
-    await screen.findByText('CUP01 · Bàn 01');
+    await screen.findByText('Bàn 01');
     expect(mock.get).toHaveBeenLastCalledWith('/staff/orders', { params: { status: 'CANCELLED' } });
   });
 

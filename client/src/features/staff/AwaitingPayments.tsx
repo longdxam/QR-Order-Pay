@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { GiftLabel } from '../../components/GiftLabel';
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -39,9 +40,6 @@ export function AwaitingPayments(): JSX.Element {
           Chờ thanh toán ({query.data?.items?.length ?? 0})
         </h2>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Ghi đúng số tiền thực nhận. Chỉ đơn đã thu đủ mới xuất hiện ở KDS.
-      </p>
       {query.isError ? (
         <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />
       ) : query.isLoading ? (
@@ -136,9 +134,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
   });
   return (
     <Card className="space-y-3 p-4">
-      <p className="font-semibold">
-        {order.tableName} · {order.code}
-      </p>
+      <p className="font-semibold">{orderLabel(order)}</p>
       <GiftLabel gift={order.gift} />
       <ul className="text-sm">
         {order.items.map((item, index) => (
@@ -187,7 +183,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
           variant="outline"
           disabled={payment.isPending || cancel.isPending || (order.paidAmount ?? 0) > 0}
           onClick={() => {
-            if (window.confirm(`Hủy đơn chưa thanh toán ${order.code}?`)) cancel.mutate();
+            if (window.confirm(`Hủy đơn chưa thanh toán ${orderLabel(order)}?`)) cancel.mutate();
           }}
         >
           Hủy đơn
@@ -198,7 +194,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
         onOpenChange={(value) => {
           if (!payment.isPending && !uncertain) setOpen(value);
         }}
-        title={`Nhận tiền · ${order.code}`}
+        title={`Nhận tiền · ${orderLabel(order)}`}
       >
         <div className="space-y-4">
           <p>

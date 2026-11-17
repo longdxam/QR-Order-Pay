@@ -1,6 +1,6 @@
 import { ForbiddenError, NotFoundError } from '../errors/AppError.js';
-import { OrderModel } from '../models/Order.js';
-import { ReviewModel } from '../models/Review.js';
+import { orderRepository } from '../repositories/orderRepository.js';
+import { reviewRepository } from '../repositories/reviewRepository.js';
 import { billRepository } from '../repositories/billRepository.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
@@ -13,7 +13,7 @@ export async function buildParticipantReceipt(tableSessionId: string, participan
 
   const [bill, reviews] = await Promise.all([
     billRepository.findBySession(tableSessionId),
-    ReviewModel.find({ tableSessionId, participantId }).lean(),
+    reviewRepository.listByParticipant(tableSessionId, participantId),
   ]);
   const reviewByOrder = new Map(
     reviews.map((review) => [
@@ -41,9 +41,7 @@ export async function buildParticipantReceipt(tableSessionId: string, participan
 
   const [table, orders] = await Promise.all([
     tableRepository.findById(tableSession.tableId.toString()),
-    OrderModel.find({ tableSessionId, participantId, paymentStatus: 'PAID', status: 'SERVED' })
-      .sort({ createdAt: 1 })
-      .lean(),
+    orderRepository.listServedPaidForParticipant(tableSessionId, participantId),
   ]);
   const serialized = orders.map((order) =>
     serializeOrder(order._id.toString(), order, reviewByOrder),

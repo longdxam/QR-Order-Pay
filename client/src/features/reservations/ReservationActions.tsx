@@ -56,7 +56,7 @@ export function ReservationActions({
   return (
     <Modal
       open
-      title={`${staff ? 'Xử lý' : 'Hủy'} ${r.code}`}
+      title={staff ? 'Xử lý lịch đặt' : 'Hủy lịch đặt'}
       onOpenChange={(o) => {
         if (!o && !submit.isPending) onClose();
       }}

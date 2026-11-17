@@ -1,3 +1,4 @@
+import { orderLabel } from '../../lib/recordLabels';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
@@ -60,6 +61,8 @@ interface CancelRequest {
   orderId: {
     _id: string;
     code: string;
+    createdAt?: string;
+    tableId?: { name?: string } | null;
     status: string;
     paymentStatus: string;
     total: number;
@@ -251,7 +254,13 @@ export function StaffKDS(): JSX.Element {
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warning/10 p-2 text-sm"
               >
                 <span>
-                  <strong>{request.orderId.code}</strong> · {request.reason}
+                  <strong>
+                    {orderLabel({
+                      tableName: request.orderId.tableId?.name,
+                      createdAt: request.orderId.createdAt,
+                    })}
+                  </strong>{' '}
+                  · {request.reason}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -325,7 +334,7 @@ export function StaffKDS(): JSX.Element {
                         if (order.paymentStatus === 'PAID') {
                           if (
                             window.confirm(
-                              `Chỉ xác nhận sau khi đã hoàn ${vnd(order.total)} bằng TIỀN MẶT. Hủy đơn ${order.code} và ghi nhận đã hoàn đủ tiền?`,
+                              `Chỉ xác nhận sau khi đã hoàn ${vnd(order.total)} bằng TIỀN MẶT. Hủy đơn ${orderLabel(order)} và ghi nhận đã hoàn đủ tiền?`,
                             )
                           )
                             refund.mutate(order);
@@ -374,7 +383,7 @@ function OrderCard({
     <Card className={`p-3 space-y-2 ${isLate ? 'border-danger/60' : ''}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-display font-semibold">{order.code}</p>
+          <p className="font-display font-semibold">{orderLabel(order)}</p>
           <p className="font-semibold text-primary">
             {order.gift ? `Bàn trả tiền: ${order.tableName}` : order.tableName}
           </p>
@@ -449,7 +458,7 @@ function OrderCard({
           disabled={busy}
           className="w-full"
           onClick={() => {
-            if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel();
+            if (window.confirm(`Hủy đơn ${orderLabel(order)}?`)) onCancel();
           }}
         >
           {order.paymentStatus === 'PAID' ? 'Hủy & xác nhận đã hoàn tiền' : 'Hủy đơn'}

@@ -202,9 +202,7 @@ function ReservationWorkspace({
                         </span>
                       </div>
                       <p className="text-lg font-semibold">{vnTime(r.startsAt)}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Đến {vnTime(r.endsAt)} · {r.code}
-                      </p>
+                      <p className="text-sm text-muted-foreground">Đến {vnTime(r.endsAt)}</p>
                       <p className="text-sm">
                         {r.name} · {r.phone}
                       </p>

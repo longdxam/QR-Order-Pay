@@ -2,11 +2,12 @@ import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { z } from 'zod';
 import { giftCreateSchema, giftActionSchema, type GiftView } from '@may-cafe/contracts';
-import { GiftModel, type GiftDoc } from '../models/Gift.js';
-import { TableSessionModel } from '../models/TableSession.js';
-import { TableModel } from '../models/Table.js';
-import { GuestSessionModel } from '../models/GuestSession.js';
-import { OrderModel } from '../models/Order.js';
+import type { GiftDoc } from '../models/Gift.js';
+import { giftRepository } from '../repositories/giftRepository.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
+import { tableRepository } from '../repositories/tableRepository.js';
+import { guestSessionRepository } from '../repositories/guestSessionRepository.js';
+import { orderRepository } from '../repositories/orderRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { priceOrderItems } from './orderPricingService.js';
@@ -19,21 +20,16 @@ export interface GiftActor {
   participantId: string;
 }
 const WINDOW_MS = 5 * 60000;
-const active = () => ({ status: { $in: ['PENDING', 'ACCEPTED'] }, expiresAt: { $gt: new Date() } });
 
 export async function giftTables(actor: GiftActor) {
-  const source = await TableSessionModel.findOne({ _id: actor.tableSessionId, status: 'OPEN' });
+  const source = await tableSessionRepository.findOpen(actor.tableSessionId);
   if (!source) throw new ForbiddenError('Vui lòng vào bàn đang mở để gửi quà.');
-  const sessions = await TableSessionModel.find({ status: 'OPEN', _id: { $ne: source._id } });
-  const tables = await TableModel.find({ isActive: true, _id: { $ne: source.tableId } }).sort({
-    code: 1,
-  });
+  const sessions = await tableSessionRepository.listOpenExcept(source._id);
+  const tables = await tableRepository.listActiveExcept(source.tableId);
   const byTable = new Map(sessions.map((s) => [String(s.tableId), s]));
-  const guests = await GuestSessionModel.distinct('tableSessionId', {
-    tableSessionId: { $in: sessions.map((s) => s._id) },
-    revokedAt: null,
-    expiresAt: { $gt: new Date() },
-  });
+  const guests = await guestSessionRepository.listSessionsWithLiveGuests(
+    sessions.map((s) => s._id),
+  );
   const occupied = new Set(guests.map(String));
   return {
     items: tables.map((t) => {
@@ -61,7 +57,7 @@ export async function createGift(actor: GiftActor, raw: unknown) {
     .digest('hex');
   const owner = { senderSessionId: actor.tableSessionId, senderParticipantId: actor.participantId };
   const replay = async () => {
-    const old = await GiftModel.findOne({ ...owner, requestId: input.requestId });
+    const old = await giftRepository.findByRequest(owner, input.requestId);
     if (old && old.requestHash !== requestHash)
       throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Yêu cầu đã dùng cho quà khác.');
     return old ? viewGift(old, actor) : null;
@@ -73,40 +69,32 @@ export async function createGift(actor: GiftActor, raw: unknown) {
       if (input.recipientSessionId === actor.tableSessionId)
         throw new ForbiddenError('Chọn một bàn khác.');
       await lockGiftSessions([actor.tableSessionId, input.recipientSessionId], session);
-      const source = await TableSessionModel.findById(actor.tableSessionId).session(session);
+      const source = await tableSessionRepository.findById(actor.tableSessionId, session);
       const senderTable = showSenderTable
-        ? await TableModel.findById(source!.tableId).session(session)
+        ? await tableRepository.findById(String(source!.tableId), session)
         : null;
       if (showSenderTable && !senderTable) throw new NotFoundError('Bàn gửi không tồn tại.');
-      const target = await TableSessionModel.findOne({
-        _id: input.recipientSessionId,
-        tableId: input.recipientTableId,
-        status: 'OPEN',
-      }).session(session);
-      const table = await TableModel.findOne({
-        _id: input.recipientTableId,
-        isActive: true,
-      }).session(session);
-      const guest = await GuestSessionModel.exists({
-        tableSessionId: input.recipientSessionId,
-        revokedAt: null,
-        expiresAt: { $gt: new Date() },
-      }).session(session);
+      const target = await tableSessionRepository.findOpenAtTable(
+        input.recipientSessionId,
+        input.recipientTableId,
+        session,
+      );
+      const table = await tableRepository.findActive(input.recipientTableId, session);
+      const guest = await guestSessionRepository.hasLiveGuest(input.recipientSessionId, session);
       if (!target || !table || !guest)
         throw new ConflictError(
           'GIFT_SESSION_UNAVAILABLE',
           'Bàn nhận chưa có khách hoặc vừa thay đổi.',
         );
-      const recent = await GiftModel.countDocuments({
-        ...owner,
-        createdAt: { $gt: new Date(Date.now() - 10 * 60000) },
-      }).session(session);
+      const recent = await giftRepository.countSentSince(
+        owner,
+        new Date(Date.now() - 10 * 60000),
+        session,
+      );
       if (
         recent >= 5 ||
-        (await GiftModel.countDocuments({ ...owner, ...active() }).session(session)) >= 3 ||
-        (await GiftModel.countDocuments({ recipientSessionId: target._id, ...active() }).session(
-          session,
-        )) >= 5
+        (await giftRepository.countLive(owner, session)) >= 3 ||
+        (await giftRepository.countLive({ recipientSessionId: target._id }, session)) >= 5
       )
         throw new ConflictError('GIFT_LIMIT', 'Đã đủ lời mời đang chờ. Vui lòng thử lại sau.');
       const priced = await priceOrderItems(input.items, session);
@@ -116,26 +104,24 @@ export async function createGift(actor: GiftActor, raw: unknown) {
         session,
         true,
       );
-      const [gift] = await GiftModel.create(
-        [
-          {
-            ...owner,
-            ...input,
-            requestHash,
-            senderTableName: senderTable?.name ?? null,
-            senderTableCode: senderTable?.code ?? null,
-            recipientTableName: table.name,
-            recipientTableCode: table.code,
-            expiresAt: new Date(Date.now() + WINDOW_MS),
-            items: input.items.map((i, index) => ({
-              ...i,
-              name: priced.items[index]!.nameSnapshot,
-              variantName: priced.items[index]!.variantNameSnapshot,
-              toppingNames: priced.items[index]!.toppingNamesSnapshot,
-            })),
-          },
-        ],
-        { session },
+      const gift = await giftRepository.create(
+        {
+          ...owner,
+          ...input,
+          requestHash,
+          senderTableName: senderTable?.name ?? null,
+          senderTableCode: senderTable?.code ?? null,
+          recipientTableName: table.name,
+          recipientTableCode: table.code,
+          expiresAt: new Date(Date.now() + WINDOW_MS),
+          items: input.items.map((i, index) => ({
+            ...i,
+            name: priced.items[index]!.nameSnapshot,
+            variantName: priced.items[index]!.variantNameSnapshot,
+            toppingNames: priced.items[index]!.toppingNamesSnapshot,
+          })),
+        },
+        session,
       );
       await giftChanged(gift!, session);
       return viewGift(gift!, actor);
@@ -195,23 +181,16 @@ export async function listGifts(actor: GiftActor, raw: unknown) {
       { recipientSessionId: actor.tableSessionId },
     ],
   };
-  const gifts = await GiftModel.find(filter)
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * 30)
-    .limit(30);
-  const orders = await OrderModel.find({
-    _id: { $in: gifts.flatMap((g) => (g.orderId ? [g.orderId] : [])) },
-  }).select('status');
+  const gifts = await giftRepository.page(filter, page);
+  const orders = await orderRepository.listStatuses(
+    gifts.flatMap((g) => (g.orderId ? [g.orderId] : [])),
+  );
   const statuses = new Map(orders.map((o) => [o.id, o.status]));
-  const incomingCount = await GiftModel.countDocuments({
-    recipientSessionId: actor.tableSessionId,
-    status: 'PENDING',
-    expiresAt: { $gt: new Date() },
-  });
+  const incomingCount = await giftRepository.countIncoming(actor.tableSessionId);
   return {
     items: gifts.map((g) => viewGift(g, actor, statuses.get(String(g.orderId)) ?? null)),
     page,
-    total: await GiftModel.countDocuments(filter),
+    total: await giftRepository.count(filter),
     incomingCount,
   };
 }
@@ -220,7 +199,7 @@ export async function decideGift(actor: GiftActor, id: string, raw: unknown) {
   const input = giftActionSchema.parse(raw);
   await expireGifts();
   return unitOfWork.withTransaction(async (session) => {
-    const gift = await GiftModel.findById(id).session(session);
+    const gift = await giftRepository.findById(id, session);
     if (!gift) throw new NotFoundError('Quà không tồn tại.');
     const sender =
       String(gift.senderSessionId) === actor.tableSessionId &&
@@ -262,21 +241,16 @@ export async function decideGift(actor: GiftActor, id: string, raw: unknown) {
 }
 
 export async function expireGifts() {
-  const candidates = await GiftModel.find({ status: { $in: ['PENDING', 'ACCEPTED'] } })
-    .sort({ expiresAt: 1 })
-    .limit(200);
+  const candidates = await giftRepository.listOpenByExpiry();
   let count = 0;
   for (const candidate of candidates)
     await unitOfWork.withTransaction(async (session) => {
-      const gift = await GiftModel.findOne({
-        _id: candidate._id,
-        status: { $in: ['PENDING', 'ACCEPTED'] },
-      }).session(session);
+      const gift = await giftRepository.findOpen(candidate._id, session);
       if (!gift) return;
-      const open = await TableSessionModel.countDocuments({
-        _id: { $in: [gift.senderSessionId, gift.recipientSessionId] },
-        status: 'OPEN',
-      }).session(session);
+      const open = await tableSessionRepository.countOpen(
+        [gift.senderSessionId, gift.recipientSessionId],
+        session,
+      );
       if (gift.expiresAt.getTime() > Date.now() && open === 2) return;
       gift.status = 'EXPIRED';
       gift.version++;

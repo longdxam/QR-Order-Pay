@@ -1,9 +1,8 @@
 import type { ClientSession } from 'mongoose';
 import mongoose from 'mongoose';
-import { PaymentModel } from '../models/Payment.js';
+import { paymentRepository } from '../repositories/paymentRepository.js';
 import type { OrderDoc } from '../models/Order.js';
-import { OrderModel } from '../models/Order.js';
-import { TableSessionModel } from '../models/TableSession.js';
+import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
@@ -11,7 +10,7 @@ import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { ensureOpenShift } from './cashShiftService.js';
 import { orderRealtimeEvents } from './orderService.js';
-import { CancelRequestModel } from '../models/CancelRequest.js';
+import { cancelRequestRepository } from '../repositories/cancelRequestRepository.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { clearCommittedPaymentClaim } from './paymentClaimService.js';
 
@@ -24,24 +23,12 @@ export async function recordOrderRefund(
   session: ClientSession,
 ) {
   await assertNoPaymentCorrection(order.id, session);
-  const active = !order.tableSessionId || await TableSessionModel.findOneAndUpdate(
-    {
-      _id: order.tableSessionId,
-      status: { $ne: 'CLOSED' },
-      $or: [
-        { collectionExpiresAt: null },
-        { collectionExpiresAt: { $lte: new Date() } },
-        { collectionOwner: actorId },
-      ],
-    },
-    { $inc: { version: 1 } },
-    { new: true, session },
-  );
+  const active =
+    !order.tableSessionId ||
+    (await tableSessionRepository.lockForRefund(order.tableSessionId, actorId, session));
   if (!active)
     throw new ForbiddenError('Phiên đã đóng hoặc bàn đang được nhân viên khác thu tiền.');
-  const payments = await PaymentModel.find({ orderIds: order._id, status: 'SUCCESS' }).session(
-    session,
-  );
+  const payments = await paymentRepository.listSuccessfulForOrder(order._id, session);
   const collected = order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0);
   if (
     !payments.length ||
@@ -74,8 +61,9 @@ export async function recordOrderRefund(
     );
   }
   await orderRepository.setPaymentStatus([order.id], 'REFUNDED', session);
-  await OrderModel.updateOne({ _id: order._id }, { $set: { paidAmount: 0 } }, { session });
-  if (order.tableSessionId) await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
+  await orderRepository.clearPaidAmount(order._id, session);
+  if (order.tableSessionId)
+    await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
 }
 
 export async function refundAndCancelOrder(
@@ -110,10 +98,7 @@ export async function refundAndCancelOrder(
       session,
     );
     if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
-    const requests = await CancelRequestModel.find({
-      orderId: order._id,
-      status: 'REQUESTED',
-    }).session(session);
+    const requests = await cancelRequestRepository.listPendingForOrder(order._id, session);
     for (const request of requests) {
       request.status = 'APPROVED';
       request.decidedBy = new mongoose.Types.ObjectId(actorId);
