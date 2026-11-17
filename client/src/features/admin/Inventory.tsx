@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IngredientDto, StockMovementDto } from '@may-cafe/contracts';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useToast } from '../../components/ui/useToast';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { Field } from './inventory/Field';
 import { number, selectClass, unitLabel, type Overview } from './inventory/shared';
@@ -38,6 +39,18 @@ export function AdminInventory(): JSX.Element {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+  const { toast } = useToast();
+  const removeIngredient = useMutation({
+    mutationFn: async (ingredient: IngredientDto) =>
+      api.delete(`/admin/inventory/ingredients/${ingredient.id}`),
+    onSuccess: () => {
+      refresh();
+      toast({ title: 'Đã xóa nguyên liệu', tone: 'success' });
+    },
+    onError: (error) =>
+      toast({ title: 'Chưa xóa được', description: getErrorMessage(error), tone: 'danger' }),
+  });
   const query = useQuery({
     queryKey: ['admin-inventory'],
     queryFn: async () => unwrap<Overview>(await api.get('/admin/inventory')),
@@ -64,8 +77,11 @@ export function AdminInventory(): JSX.Element {
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />;
   const data = query.data!;
   const normalizedSearch = normalizeIngredientName(search.trim());
-  const visibleIngredients = data.ingredients.filter((ingredient) =>
-    normalizeIngredientName(ingredient.name).includes(normalizedSearch),
+  const inactiveCount = data.ingredients.filter((ingredient) => !ingredient.isActive).length;
+  const visibleIngredients = data.ingredients.filter(
+    (ingredient) =>
+      (showInactive || ingredient.isActive) &&
+      normalizeIngredientName(ingredient.name).includes(normalizedSearch),
   );
   return (
     <div className="space-y-5">
@@ -124,6 +140,16 @@ export function AdminInventory(): JSX.Element {
             <p className="text-sm text-muted-foreground" role="status">
               {visibleIngredients.length} / {data.ingredients.length} nguyên liệu
             </p>
+            {inactiveCount > 0 ? (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={showInactive}
+                  onChange={(event) => setShowInactive(event.target.checked)}
+                />
+                Hiện nguyên liệu ngừng dùng ({inactiveCount})
+              </label>
+            ) : null}
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {data.ingredients.length === 0 && (
@@ -177,6 +203,24 @@ export function AdminInventory(): JSX.Element {
                   <Button size="sm" variant="outline" onClick={() => setIngredientForm(i)}>
                     Sửa
                   </Button>
+                  {i.onHand === 0 && i.reserved === 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-danger"
+                      disabled={removeIngredient.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Xóa hẳn nguyên liệu "${i.name}"? Chỉ xóa được nguyên liệu chưa từng nhập/xuất kho và chưa nằm trong công thức nào; nếu đã dùng, hãy chọn Ngừng dùng.`,
+                          )
+                        )
+                          removeIngredient.mutate(i);
+                      }}
+                    >
+                      Xóa
+                    </Button>
+                  ) : null}
                 </div>
               </Card>
             ))}

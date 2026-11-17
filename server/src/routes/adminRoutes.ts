@@ -10,6 +10,7 @@ export const adminRoutes = Router();
 adminRoutes.get('/admin/inventory', ...adminOnly, inventory.overview);
 adminRoutes.post('/admin/inventory/ingredients', ...adminOnly, inventory.createIngredient);
 adminRoutes.patch('/admin/inventory/ingredients/:id', ...adminOnly, inventory.updateIngredient);
+adminRoutes.delete('/admin/inventory/ingredients/:id', ...adminOnly, inventory.deleteIngredient);
 adminRoutes.post('/admin/inventory/ingredients/:id/movements', ...adminOnly, inventory.moveStock);
 adminRoutes.get('/admin/inventory/movements', ...adminOnly, inventory.movements);
 adminRoutes.put('/admin/inventory/recipes/:type/:id', ...adminOnly, inventory.saveRecipe);

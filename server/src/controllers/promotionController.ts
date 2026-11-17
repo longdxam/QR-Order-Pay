@@ -75,6 +75,7 @@ export const createVoucher = handler(
   async (req) => ({ voucher: await promotions.saveVoucher(null, req.body, req.user!.id) }),
   201,
 );
+export const deleteVoucher = handler((req) => promotions.deleteVoucher(id(req), req.user!.id));
 export const updateVoucher = handler(async (req) => ({
   voucher: await promotions.saveVoucher(id(req), req.body, req.user!.id),
 }));

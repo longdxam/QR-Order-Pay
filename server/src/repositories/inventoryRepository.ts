@@ -43,6 +43,10 @@ export const ingredientRepository = {
       { new: true, session },
     );
   },
+  /** Xóa hẳn chỉ khi tồn và phần giữ đều bằng 0 (điều kiện kiểm tra lại ngay lúc xóa). */
+  async deleteEmpty(id: string, session: ClientSession) {
+    return IngredientModel.findOneAndDelete({ _id: id, onHand: 0, reserved: 0 }, { session });
+  },
   async listAll(session?: ClientSession | null) {
     return IngredientModel.find({})
       .session(session ?? null)
@@ -51,6 +55,15 @@ export const ingredientRepository = {
 };
 
 export const recipeRepository = {
+  /** Có công thức nào (bật hay tắt, nền hay theo size) dùng nguyên liệu này không. */
+  async usesIngredient(ingredientId: string, session: ClientSession): Promise<boolean> {
+    return !!(await RecipeModel.exists({
+      $or: [
+        { 'components.ingredientId': ingredientId },
+        { 'variants.components.ingredientId': ingredientId },
+      ],
+    }).session(session));
+  },
   async listRecent() {
     return RecipeModel.find().sort({ updatedAt: -1 });
   },
@@ -104,6 +117,9 @@ export const stockRepository = {
 };
 
 export const stockMovementRepository = {
+  async existsForIngredient(ingredientId: string, session: ClientSession): Promise<boolean> {
+    return !!(await StockMovementModel.exists({ ingredientId }).session(session));
+  },
   async findByIdempotency(idempotencyKey: string) {
     return StockMovementModel.findOne({ idempotencyKey });
   },

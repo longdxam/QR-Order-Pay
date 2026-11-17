@@ -37,6 +37,7 @@ export const updateIngredient = handler(async (req) => ({
     req.user!.id,
   ),
 }));
+export const deleteIngredient = handler((req) => inventory.deleteIngredient(id(req), req.user!.id));
 export const moveStock = handler((req) =>
   inventory.moveStock(id(req), stockMovementRequestSchema.parse(req.body), req.user!.id),
 );

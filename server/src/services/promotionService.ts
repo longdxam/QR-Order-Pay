@@ -49,6 +49,39 @@ export function voucherDto(v: VoucherDoc) {
 export async function listVouchers() {
   return { items: (await voucherRepository.listRecent(200)).map(voucherDto) };
 }
+/**
+ * Xóa hẳn voucher chưa từng gắn với đơn nào. Voucher đã dùng (kể cả đã trả lượt khi hủy đơn) phải
+ * giữ để đơn và hóa đơn cũ đối chiếu được, chỉ được Tạm dừng. Đặt đơn ghi `usedCount` vào chính
+ * voucher nên transaction này xung đột thay vì xóa song song với lượt dùng mới.
+ */
+export async function deleteVoucher(id: string, actorId: string) {
+  await unitOfWork.withTransaction(async (session) => {
+    const voucher = await voucherRepository.findById(id, session);
+    if (!voucher) throw new NotFoundError('Voucher không tồn tại.');
+    if (
+      voucher.usedCount !== 0 ||
+      (await voucherUseRepository.existsForVoucher(id, session)) ||
+      !(await voucherRepository.deleteUnused(id, session))
+    )
+      throw new ConflictError(
+        'VOUCHER_IN_USE',
+        'Voucher đã được dùng trong đơn nên không xóa được. Hãy chọn Tạm dừng.',
+      );
+    await auditRepository.log(
+      {
+        actorType: 'USER',
+        actorId,
+        action: 'voucher.deleted',
+        entityType: 'Voucher',
+        entityId: id,
+        metadata: { code: voucher.code },
+      },
+      session,
+    );
+  });
+  return { id };
+}
+
 export async function saveVoucher(id: string | null, body: unknown, actorId: string) {
   const input = id ? voucherUpdateSchema.parse(body) : voucherCreateSchema.parse(body);
   const expectedVersion = 'expectedVersion' in input ? input.expectedVersion : undefined;

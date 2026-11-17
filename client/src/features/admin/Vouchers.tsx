@@ -21,6 +21,15 @@ export function AdminVouchers(): JSX.Element {
     queryKey: ['admin-vouchers'],
     queryFn: async () => unwrap<{ items: VoucherDto[] }>(await http.get('/admin/vouchers')),
   });
+  const [deleteError, setDeleteError] = useState('');
+  const remove = useMutation({
+    mutationFn: async (voucher: VoucherDto) => http.delete(`/admin/vouchers/${voucher.id}`),
+    onSuccess: () => {
+      setDeleteError('');
+      qc.invalidateQueries({ queryKey: ['admin-vouchers'] });
+    },
+    onError: (e) => setDeleteError(getErrorMessage(e)),
+  });
   const save = useMutation({
     mutationFn: async (body: unknown) =>
       editing && editing !== 'new'
@@ -76,6 +85,11 @@ export function AdminVouchers(): JSX.Element {
           Tạo voucher
         </Button>
       </div>
+      {deleteError ? (
+        <p role="alert" className="text-sm text-danger">
+          {deleteError}
+        </p>
+      ) : null}
       {query.isError ? (
         <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />
       ) : query.isPending ? (
@@ -126,6 +140,23 @@ export function AdminVouchers(): JSX.Element {
               >
                 Sửa voucher
               </Button>
+              {v.usedCount === 0 ? (
+                <Button
+                  variant="ghost"
+                  className="text-danger"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Xóa hẳn voucher ${v.code}? Chỉ xóa được voucher chưa từng dùng trong đơn nào; nếu đã dùng, hãy Tạm dừng.`,
+                      )
+                    )
+                      remove.mutate(v);
+                  }}
+                >
+                  Xóa voucher
+                </Button>
+              ) : null}
             </article>
           ))}
         </div>

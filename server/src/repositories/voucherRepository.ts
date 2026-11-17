@@ -38,12 +38,20 @@ export const voucherRepository = {
       { new: true, session },
     );
   },
+  /** Xóa hẳn chỉ khi chưa có lượt nào đang giữ/đã dùng (kiểm tra lại ngay lúc xóa). */
+  async deleteUnused(id: string, session: ClientSession) {
+    return VoucherModel.findOneAndDelete({ _id: id, usedCount: 0 }, { session });
+  },
   async returnUse(id: unknown, session: ClientSession): Promise<void> {
     await VoucherModel.updateOne({ _id: id }, { $inc: { usedCount: -1 } }, { session });
   },
 };
 
 export const voucherUseRepository = {
+  /** Voucher đã từng gắn với đơn nào chưa (kể cả lượt đã trả lại khi hủy đơn). */
+  async existsForVoucher(voucherId: string, session: ClientSession): Promise<boolean> {
+    return !!(await VoucherUseModel.exists({ voucherId }).session(session));
+  },
   /** Số lượt thành viên đã dùng voucher (không tính lượt đã trả lại). */
   async countByMember(voucherId: unknown, memberId: unknown, session?: ClientSession | null) {
     return VoucherUseModel.countDocuments({

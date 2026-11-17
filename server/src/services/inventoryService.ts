@@ -187,6 +187,33 @@ export async function updateIngredient(id: string, input: IngredientUpdateInput,
   return result;
 }
 
+/**
+ * Xóa hẳn nguyên liệu chưa từng dùng: chưa có biến động kho nào, không nằm trong công thức nào và
+ * tồn bằng 0. Nguyên liệu đã dùng phải giữ để lịch sử kho và đơn cũ còn đúng, chỉ được Ngừng dùng.
+ * Nhập/xuất kho, lưu công thức và giữ kho đều ghi vào chính nguyên liệu, nên transaction này xung
+ * đột và thử lại thay vì xóa song song với các thao tác đó.
+ */
+export async function deleteIngredient(id: string, actorId: string) {
+  await unitOfWork.withTransaction(async (session) => {
+    const ingredient = await ingredientRepository.findById(id, session);
+    if (!ingredient) throw new NotFoundError('Nguyên liệu không tồn tại.');
+    const used =
+      ingredient.onHand !== 0 ||
+      ingredient.reserved !== 0 ||
+      (await stockMovementRepository.existsForIngredient(id, session)) ||
+      (await recipeRepository.usesIngredient(id, session));
+    if (used || !(await ingredientRepository.deleteEmpty(id, session)))
+      throw new ConflictError(
+        'INGREDIENT_IN_USE',
+        'Nguyên liệu đã có lịch sử kho hoặc đang nằm trong công thức nên không xóa được. Hãy chọn Ngừng dùng.',
+      );
+    await log(actorId, 'inventory.ingredientDeleted', id, { name: ingredient.name }, session);
+    await inventoryChanged(id, ingredient.version + 1, session);
+  });
+  await invalidatePublicMenuCache();
+  return { id };
+}
+
 export async function moveStock(id: string, input: StockMovementInput, actorId: string) {
   const requestHash = createHash('sha256')
     .update(

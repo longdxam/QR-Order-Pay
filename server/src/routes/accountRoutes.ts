@@ -30,3 +30,4 @@ accountRoutes.get('/admin/members/:id/points', ...adminOnly, promotion.memberPoi
 accountRoutes.get('/admin/vouchers', ...adminOnly, promotion.vouchers);
 accountRoutes.post('/admin/vouchers', ...adminOnly, promotion.createVoucher);
 accountRoutes.patch('/admin/vouchers/:id', ...adminOnly, promotion.updateVoucher);
+accountRoutes.delete('/admin/vouchers/:id', ...adminOnly, promotion.deleteVoucher);
