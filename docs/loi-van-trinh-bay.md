@@ -13,17 +13,17 @@ Em xin trình bày kiến trúc, thiết kế và các chức năng chung của 
 
 ## 2. Kiến trúc tổng thể
 
-Frontend dùng React, Vite và TypeScript. Backend dùng Express, TypeScript và MongoDB. Realtime dùng Socket.IO, Redis lo giới hạn tần suất và hàng đợi. Mã nguồn là một monorepo gồm client, server và packages/contracts. Phần contracts chứa schema Zod dùng chung cho hai phía, nên frontend và backend luôn kiểm tra dữ liệu theo cùng một định nghĩa.
+*(Mở ảnh docs/hinh-trinh-bay/1-cong-nghe-va-cac-tang.png.)* Frontend dùng React, Vite và TypeScript. Backend dùng Express, TypeScript và MongoDB. Realtime dùng Socket.IO, Redis lo giới hạn tần suất và hàng đợi. Mã nguồn là một monorepo gồm client, server và packages/contracts. Phần contracts chứa schema Zod dùng chung cho hai phía, nên frontend và backend luôn kiểm tra dữ liệu theo cùng một định nghĩa.
 
 *(Mở docs/so-do-kien-truc.html, chỉ vào sơ đồ.)* Hệ thống chạy bằng Docker Compose. Nginx tách ba cổng: khách đi vào cụm Guest API, nhân viên và quản lý đi vào cụm Internal API, mỗi cụm hai instance. Nhờ vậy lúc quán đông, truy cập của khách không làm chậm màn hình thu tiền và pha chế. Ngoài ra có ba worker chạy nền, lo tác vụ theo lịch, phát sự kiện realtime và tạo báo cáo. MongoDB chạy replica set để dùng transaction, vì đặt đơn, thu tiền và giữ kho phải cùng thành công hoặc cùng thất bại.
 
-*(Mở VS Code.)* Backend chia bốn tầng: route lo xác thực và phân quyền, controller đọc request, service chứa nghiệp vụ, repository là nơi duy nhất truy vấn MongoDB. Lint có bước kiểm tra ranh giới, gọi thẳng database sai tầng là báo lỗi.
+*(Quay lại ảnh 1, chỉ cột bên phải.)* Backend chia bốn tầng: route lo xác thực và phân quyền, controller đọc request, service chứa nghiệp vụ, repository là nơi duy nhất truy vấn MongoDB. Lint có bước kiểm tra ranh giới, gọi thẳng database sai tầng là báo lỗi.
 
-Với realtime, nhóm em dùng transactional outbox. Sự kiện được ghi vào database trong cùng transaction với đơn hàng, rồi worker mới phát qua Socket.IO. Đơn đã lưu thì chắc chắn sự kiện sẽ được phát, kể cả khi server gặp sự cố giữa chừng.
+*(Mở ảnh 2-transactional-outbox.png.)* Với realtime, nhóm em dùng transactional outbox. Sự kiện được ghi vào database trong cùng transaction với đơn hàng, rồi worker mới phát qua Socket.IO. Đơn đã lưu thì chắc chắn sự kiện sẽ được phát, kể cả khi server gặp sự cố giữa chừng.
 
 ## 3. Nguyên tắc thiết kế
 
-Có ba nguyên tắc chính. Một là backend là nguồn sự thật: giá, trạng thái và quyền đều do server quyết định, giá client gửi lên bị bỏ qua. Hai là lưu bản chụp: đơn lưu tên và giá tại lúc đặt, hóa đơn chốt rồi không sửa được, nên đổi giá sau này không ảnh hưởng hóa đơn cũ. Ba là chống trùng và tranh chấp: đặt đơn và thu tiền có Idempotency-Key nên bấm hai lần vẫn chỉ tạo một bản ghi; mỗi đơn có version nên hai nhân viên cùng cập nhật thì chỉ một người thành công.
+*(Mở ảnh 3-nguyen-tac-thiet-ke.png.)* Có ba nguyên tắc chính. Một là backend là nguồn sự thật: giá, trạng thái và quyền đều do server quyết định, giá client gửi lên bị bỏ qua. Hai là lưu bản chụp: đơn lưu tên và giá tại lúc đặt, hóa đơn chốt rồi không sửa được, nên đổi giá sau này không ảnh hưởng hóa đơn cũ. Ba là chống trùng và tranh chấp: đặt đơn và thu tiền có Idempotency-Key nên bấm hai lần vẫn chỉ tạo một bản ghi; mỗi đơn có version nên hai nhân viên cùng cập nhật thì chỉ một người thành công.
 
 ## 4. Đăng nhập và phân quyền
 
@@ -61,7 +61,7 @@ Thứ nhất là quản lý bàn và phiên phục vụ: xem bàn nào đang có
 
 *(Đăng nhập cổng 8082.)* Quản trị viên làm việc trên cổng 8082, lo phần quản lý và theo dõi.
 
-*(Mở trang Nhân viên.)* Về con người: quản trị viên tạo tài khoản nhân viên, đổi vai trò, khóa hoặc xóa tài khoản. Tài khoản bị khóa không làm mới được phiên đăng nhập, và quản trị viên không tự khóa chính mình được.
+*(Mở trang Nhân viên.)* Về con người: quản trị viên tạo tài khoản nhân viên, đổi vai trò, khóa hoặc xóa tài khoản. Tài khoản bị khóa không làm mới được phiên đăng nhập, và quản trị viên không tự khóa chính mình được. Riêng tài khoản quản trị thì chỉ chủ quán, tức tài khoản quản trị đầu tiên, mới được tạo, sửa, khóa hay đổi mật khẩu; quản trị viên khác chỉ quản lý được nhân viên, nên không ai chiếm được quyền của chủ quán.
 
 *(Mở Danh mục, Món, Topping.)* Về thực đơn: quản trị viên quản lý danh mục, món và topping. Mỗi món có ảnh, nhiều size với giá riêng, và thông tin caffeine, sữa dùng cho bộ lọc và AI. Topping gắn được vào nhiều món. Món đã bán được lưu trữ thay vì xóa để không hỏng hóa đơn cũ, và tắt hay bật món thì khách thấy ngay.
 
@@ -79,7 +79,7 @@ Thứ nhất là quản lý bàn và phiên phục vụ: xem bàn nào đang có
 
 Tiếp theo em trình bày chức năng quản lý kho nguyên liệu theo công thức, hay còn gọi là BOM hoặc recipe.
 
-*(Mở Admin, Kho & công thức, tab Nguyên liệu.)* Quản lý khai báo nguyên liệu như cà phê hạt, sữa tươi, đường, kèm đơn vị gram, mililit hoặc cái, và một ngưỡng cảnh báo sắp hết. Mỗi lần nhập hàng, xuất hao hụt hay kiểm kê đều bắt buộc ghi lý do. Thao tác có idempotency key nên mạng lỗi bấm lại cũng không bị ghi hai lần.
+*(Mở Admin, Kho & công thức, tab Nguyên liệu.)* Quản lý khai báo nguyên liệu như cà phê hạt, sữa tươi, đường, kèm đơn vị gram, mililit hoặc cái, và một ngưỡng cảnh báo sắp hết. Mỗi lần nhập hàng, xuất hao hụt hay kiểm kê đều bắt buộc ghi lý do. Thao tác có idempotency key nên mạng lỗi bấm lại cũng không bị ghi hai lần. Nguyên liệu nhập nhầm, chưa từng nhập xuất kho và chưa nằm trong công thức nào thì xóa hẳn được; nguyên liệu đã dùng chỉ được ngừng dùng để giữ lịch sử kho.
 
 *(Mở tab Công thức, chọn một món.)* Với mỗi món và mỗi topping, quản lý khai báo định lượng cho một phần, ví dụ một ly cà phê sữa cần 20 gram cà phê và 30 mililit sữa đặc. Công thức nền dùng chung cho mọi size; size nào khác định lượng thì khai báo công thức riêng để thay thế. Topping cộng thêm định lượng của chính nó.
 
@@ -93,7 +93,7 @@ Tiếp theo em trình bày chức năng quản lý kho nguyên liệu theo công
 
 Chức năng tiếp theo là mã giảm giá và tích điểm thành viên.
 
-*(Mở Admin, trang Voucher, tạo một mã.)* Quản lý tạo voucher giảm số tiền cố định hoặc theo phần trăm, kèm các điều kiện: giá trị đơn tối thiểu, mức giảm tối đa, thời gian hiệu lực, tổng số lượt dùng, và có thể yêu cầu phải là thành viên hoặc giới hạn số lượt cho mỗi thành viên. Quản lý cũng chọn voucher có được dùng kèm điểm hay không.
+*(Mở Admin, trang Voucher, tạo một mã.)* Quản lý tạo voucher giảm số tiền cố định hoặc theo phần trăm, kèm các điều kiện: giá trị đơn tối thiểu, mức giảm tối đa, thời gian hiệu lực, tổng số lượt dùng, và có thể yêu cầu phải là thành viên hoặc giới hạn số lượt cho mỗi thành viên. Quản lý cũng chọn voucher có được dùng kèm điểm hay không. Voucher chưa ai dùng thì xóa được; voucher đã dùng trong đơn chỉ được tạm dừng để hóa đơn cũ vẫn đối chiếu được.
 
 *(Bên khách, mở trang Thành viên, đăng ký.)* Khách đăng ký thành viên bằng tên, số điện thoại và mật khẩu. Số điện thoại viết dạng 0 hay +84 đều được quy về cùng một tài khoản. Nhóm em không dùng SMS, nên số điện thoại đóng vai trò tên đăng nhập. Mật khẩu băm bằng bcrypt; nhập sai sáu lần thì tài khoản bị khóa đăng nhập 15 phút.
 

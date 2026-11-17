@@ -4,6 +4,13 @@ Cập nhật: 17/11/2026.
 
 > **Quy tắc đang áp dụng:** Quán dùng **QR cố định ký HMAC `qrs1`**, in/dùng lại qua các phiên; không đổi mỗi 60 giây. [QR hiện hành](docs/qr-prepayment.md) thay thế thiết kế QR động ghi ngày 12/10 bên dưới. Mỗi mục có ngày trong memory là lịch sử, không tự đại diện cho trạng thái hiện tại. Các tính năng đã gỡ xem [phạm vi hiện hành](docs/retired-features.md).
 
+## Chủ quán, cấp lại khóa QR chỉ Admin, xóa nguyên liệu/voucher chưa dùng — 18/11/2026
+
+- User chọn cả 4 hướng đề xuất. **Chủ quán** = ADMIN còn hoạt động tạo sớm nhất (`userRepository.ownerId`, hiện là admin@maycafe.vn), tính lúc chạy, không thêm field/migration. Chỉ chủ quán tạo/sửa/khóa/đổi mật khẩu tài khoản ADMIN và cấp quyền ADMIN; admin khác chỉ quản lý STAFF (403 FORBIDDEN). Không ai khóa/hạ quyền/xóa được chủ quán (tự khóa/hạ đã bị chặn từ trước, xóa chỉ áp dụng STAFF) nên chủ quán không đổi. `GET /admin/users` trả `isOwner`; trang Nhân viên hiện nhãn Chủ quán, ẩn thao tác trên tài khoản quản trị và lựa chọn vai trò ADMIN với admin thường.
+- **Cấp lại khóa QR chỉ ADMIN:** bỏ hẳn route `POST /staff/tables/:id/display` (giữ bất biến mọi `/staff` cho STAFF+ADMIN trong routeAuthorization test); client chỉ gọi `/admin/tables/:id/rotate-token`, nút chỉ hiện khi `admin`. Cập nhật qr-prepayment, defense-notes.
+- **Xóa nguyên liệu** `DELETE /admin/inventory/ingredients/:id`: chỉ khi chưa có StockMovement, không nằm trong công thức nào (nền hoặc size, bật hay tắt) và onHand=reserved=0; còn lại 409 `INGREDIENT_IN_USE`. Trang Kho có nút Xóa (khi tồn/giữ = 0) và ô "Hiện nguyên liệu ngừng dùng" (mặc định ẩn). **Xóa voucher** `DELETE /admin/vouchers/:id`: chỉ khi usedCount=0 và chưa có VoucherUse nào (kể cả RELEASED); còn lại 409 `VOUCHER_IN_USE`. Cả hai có audit, chạy trong transaction; nhập/xuất kho, lưu công thức, giữ kho và claim voucher đều ghi vào chính tài liệu nên xung đột thay vì xóa song song.
+- Test: accounts 10/10 (thêm case chủ quán), deleteUnused 5/5 mới, prepaidQr 32/32, tableQrRotate 3/3; toàn bộ server 440 case (lượt đầu 439/440 do route `/staff` adminOnly vi phạm bất biến, đã sửa bằng cách bỏ route, chạy lại 2 file liên quan 38/38), client 229/229, lint/boundaries/typecheck đạt. Chưa deploy, chưa commit.
+
 ## Cấp lại khóa QR, hero món bán chạy, gọn tab Lịch ca — 17/11/2026
 
 - **Cấp lại khóa QR:** hộp "Xem QR tĩnh" (Admin + Staff) có nút **Cấp lại khóa (vô hiệu QR cũ)** có `window.confirm`, gọi API sẵn có (`/admin/tables/:id/rotate-token`, Staff `/staff/tables/:id/display`) tăng `staticQrEpoch` rồi tự nạp QR mới. Khách đang ngồi giữ phiên. Test `tableQrRotate.test.tsx` 3/3.
