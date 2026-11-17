@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sơ đồ kiến trúc</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F8F7F5; --panel: #FFFFFF; --ink: #2B211B; --muted: #6E6259;
+    --brand: #84583B; --brand-soft: #F1E7DF; --line: #8C7B70;
+    --guest: #2F6F8F; --guest-soft: #E3F0F6;
+    --internal: #84583B; --internal-soft: #F3E8DF;
+    --data: #3F7A4A; --data-soft: #E4F1E6;
+    --worker: #6B5B95; --worker-soft: #ECE8F4;
+    --border: #DDD3CB;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1B1714; --panel: #25201C; --ink: #F2ECE7; --muted: #B5A89E;
+      --brand: #D2A27F; --brand-soft: #3A2D24; --line: #A8998E;
+      --guest: #7CC0DE; --guest-soft: #1F3340;
+      --internal: #D2A27F; --internal-soft: #3A2D24;
+      --data: #8FCB99; --data-soft: #213326;
+      --worker: #B5A6E0; --worker-soft: #2C2740;
+      --border: #3E3530;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1B1714; --panel: #25201C; --ink: #F2ECE7; --muted: #B5A89E;
+    --brand: #D2A27F; --brand-soft: #3A2D24; --line: #A8998E;
+    --guest: #7CC0DE; --guest-soft: #1F3340;
+    --internal: #D2A27F; --internal-soft: #3A2D24;
+    --data: #8FCB99; --data-soft: #213326;
+    --worker: #B5A6E0; --worker-soft: #2C2740;
+    --border: #3E3530;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  body { font-family: "Be Vietnam Pro", system-ui, sans-serif; color: var(--ink);
+         display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  svg { width: 100%; max-width: 1600px; height: auto; max-height: calc(100vh - 32px); }
+  text { fill: var(--ink); font-family: inherit; }
+  .title { font-size: 34px; font-weight: 700; }
+  .subtitle { font-size: 18px; fill: var(--muted); }
+  .h { font-size: 21px; font-weight: 700; }
+  .t { font-size: 16px; fill: var(--muted); }
+  .port { font-size: 17px; font-weight: 700; }
+  .lbl { font-size: 14px; fill: var(--muted); }
+  .box { fill: var(--panel); stroke: var(--border); stroke-width: 1.5; }
+  .guest { fill: var(--guest-soft); stroke: var(--guest); stroke-width: 2; }
+  .internal { fill: var(--internal-soft); stroke: var(--internal); stroke-width: 2; }
+  .data { fill: var(--data-soft); stroke: var(--data); stroke-width: 2; }
+  .worker { fill: var(--worker-soft); stroke: var(--worker); stroke-width: 2; }
+  .nginx { fill: var(--brand-soft); stroke: var(--brand); stroke-width: 2; }
+  .inner { fill: var(--panel); stroke: var(--border); stroke-width: 1.2; }
+  .wire { stroke: var(--line); stroke-width: 2.2; fill: none; }
+  .wire.dash { stroke-dasharray: 7 6; }
+  .arrowhead { fill: var(--line); }
+  .accent-g { fill: var(--guest); } .accent-i { fill: var(--internal); }
+  .accent-d { fill: var(--data); } .accent-w { fill: var(--worker); }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1600 900" role="img" aria-labelledby="t d">
+  <title id="t">Sơ đồ kiến trúc Fantastic Cafe</title>
+  <desc id="d">Ba cổng Khách, Nhân viên, Quản lý đi qua Nginx tới hai cụm API Guest và Internal, dùng chung MongoDB replica set và Redis; ba worker chạy nền.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+  </defs>
+
+  <text x="60" y="68" class="title">Kiến trúc hệ thống Fantastic Cafe</text>
+  <text x="60" y="102" class="subtitle">Chạy bằng Docker Compose · modular monolith: nhiều process, chung một mã nguồn và dữ liệu</text>
+
+  <!-- Column 1: users -->
+  <text x="60" y="150" class="lbl">NGƯỜI DÙNG</text>
+  <rect x="60" y="195" width="290" height="120" rx="14" class="guest"/>
+  <text x="80" y="230" class="h">Khách</text>
+  <text x="80" y="258" class="t">Điện thoại quét QR tại bàn</text>
+  <text x="80" y="284" class="t">Link public: Cloudflare Tunnel</text>
+
+  <rect x="60" y="425" width="290" height="95" rx="14" class="internal"/>
+  <text x="80" y="460" class="h">Nhân viên</text>
+  <text x="80" y="488" class="t">Thu tiền, KDS, bàn &amp; phiên</text>
+
+  <rect x="60" y="555" width="290" height="95" rx="14" class="internal"/>
+  <text x="80" y="590" class="h">Quản lý</text>
+  <text x="80" y="618" class="t">Danh mục, báo cáo, vận hành</text>
+
+  <!-- Column 2: nginx -->
+  <text x="400" y="150" class="lbl">CỔNG VÀO</text>
+  <rect x="400" y="170" width="270" height="505" rx="16" class="nginx"/>
+  <text x="420" y="205" class="h">Nginx (web)</text>
+  <text x="420" y="231" class="t">Phục vụ giao diện React</text>
+  <rect x="420" y="245" width="230" height="44" rx="10" class="inner"/>
+  <text x="438" y="273" class="port">:8080  cổng Khách</text>
+  <rect x="420" y="450" width="230" height="44" rx="10" class="inner"/>
+  <text x="438" y="478" class="port">:8081  cổng Nhân viên</text>
+  <rect x="420" y="580" width="230" height="44" rx="10" class="inner"/>
+  <text x="438" y="608" class="port">:8082  cổng Quản lý</text>
+  <text x="420" y="345" class="t">Mỗi cổng chỉ mở đúng</text>
+  <text x="420" y="369" class="t">API của mình; gọi sai</text>
+  <text x="420" y="393" class="t">cổng trả về 404</text>
+
+  <!-- user -> nginx -->
+  <path d="M350 267 H418" class="wire" marker-end="url(#arr)"/>
+  <path d="M350 472 H418" class="wire" marker-end="url(#arr)"/>
+  <path d="M350 602 H418" class="wire" marker-end="url(#arr)"/>
+
+  <!-- Column 3: API clusters -->
+  <text x="760" y="150" class="lbl">API · EXPRESS + SOCKET.IO</text>
+  <rect x="760" y="170" width="310" height="215" rx="16" class="guest"/>
+  <text x="780" y="205" class="h">Cụm Guest API</text>
+  <rect x="780" y="222" width="270" height="62" rx="10" class="inner"/>
+  <text x="798" y="250" class="port">Guest API A</text>
+  <text x="798" y="272" class="lbl">HTTP + WebSocket</text>
+  <rect x="780" y="298" width="270" height="62" rx="10" class="inner"/>
+  <text x="798" y="326" class="port">Guest API B</text>
+  <text x="798" y="348" class="lbl">HTTP + WebSocket</text>
+
+  <rect x="760" y="445" width="310" height="215" rx="16" class="internal"/>
+  <text x="780" y="480" class="h">Cụm Internal API</text>
+  <rect x="780" y="497" width="270" height="62" rx="10" class="inner"/>
+  <text x="798" y="525" class="port">Internal API A</text>
+  <text x="798" y="547" class="lbl">HTTP + WebSocket</text>
+  <rect x="780" y="573" width="270" height="62" rx="10" class="inner"/>
+  <text x="798" y="601" class="port">Internal API B</text>
+  <text x="798" y="623" class="lbl">HTTP + WebSocket</text>
+
+  <!-- nginx -> api -->
+  <path d="M650 267 H758" class="wire" marker-end="url(#arr)"/>
+  <path d="M650 472 H700 V540 H758" class="wire" marker-end="url(#arr)"/>
+  <path d="M650 602 H700 V540" class="wire"/>
+  
+
+  <!-- Column 4: data -->
+  <text x="1170" y="150" class="lbl">DỮ LIỆU</text>
+  <rect x="1170" y="170" width="370" height="200" rx="16" class="data"/>
+  <text x="1190" y="208" class="h">MongoDB replica set</text>
+  <text x="1190" y="240" class="t">Dữ liệu nghiệp vụ: đơn, khoản thu, kho…</text>
+  <text x="1190" y="268" class="t">Transaction: đặt đơn, thu tiền, giữ kho</text>
+  <text x="1190" y="296" class="t">cùng thành công hoặc cùng thất bại</text>
+  <text x="1190" y="330" class="t">Outbox sự kiện + audit log</text>
+
+  <rect x="1170" y="425" width="370" height="170" rx="16" class="data"/>
+  <text x="1190" y="463" class="h">Redis</text>
+  <text x="1190" y="495" class="t">Giới hạn tần suất truy cập</text>
+  <text x="1190" y="523" class="t">Hàng đợi job (báo cáo, realtime)</text>
+  <text x="1190" y="551" class="t">Phát Socket.IO tới mọi API</text>
+
+  <!-- api -> data bus -->
+  <path d="M1070 277 H1115" class="wire"/>
+  <path d="M1070 552 H1115" class="wire"/>
+  <path d="M1115 277 V552" class="wire"/>
+  <path d="M1115 300 H1168" class="wire" marker-end="url(#arr)"/>
+  <path d="M1115 510 H1168" class="wire" marker-end="url(#arr)"/>
+
+  <!-- Workers -->
+  <text x="760" y="880" class="lbl">WORKER CHẠY NỀN</text>
+  <rect x="760" y="735" width="250" height="115" rx="14" class="worker"/>
+  <text x="780" y="770" class="h">Scheduler</text>
+  <text x="780" y="798" class="t">Tác vụ theo lịch, tự đóng</text>
+  <text x="780" y="822" class="t">phiên bị bỏ quên</text>
+
+  <rect x="1025" y="735" width="250" height="115" rx="14" class="worker"/>
+  <text x="1045" y="770" class="h">Realtime</text>
+  <text x="1045" y="798" class="t">Đọc outbox trong MongoDB,</text>
+  <text x="1045" y="822" class="t">phát sự kiện qua Redis</text>
+
+  <rect x="1290" y="735" width="250" height="115" rx="14" class="worker"/>
+  <text x="1310" y="770" class="h">Report</text>
+  <text x="1310" y="798" class="t">Tạo báo cáo CSV</text>
+  <text x="1310" y="822" class="t">không làm chậm API</text>
+
+  <!-- workers -> data -->
+  <path d="M885 735 V705 H1415 V735" class="wire"/>
+  <path d="M1150 735 V705" class="wire"/>
+  <path d="M1355 705 V597" class="wire" marker-end="url(#arr)"/>
+  <path d="M1415 705 H1570 V270 H1542" class="wire" marker-end="url(#arr)"/>
+
+  <!-- key points -->
+  <rect x="60" y="705" width="610" height="145" rx="14" class="box"/>
+  <text x="80" y="740" class="h">Điểm chính</text>
+  <circle cx="88" cy="770" r="5" class="accent-g"/>
+  <text x="102" y="776" class="t">Khách và nội bộ tách hai cụm API: quán đông không làm</text>
+  <text x="102" y="798" class="t">chậm màn hình thu tiền và pha chế</text>
+  <circle cx="88" cy="826" r="5" class="accent-d"/>
+  <text x="102" y="832" class="t">Đơn hàng và sự kiện ghi chung một transaction (outbox)</text>
+</svg>
+</body>
+</html>
