@@ -18,6 +18,7 @@ const FIELD_LABELS: Record<string, string> = {
   endsAt: 'Thời gian kết thúc',
   partySize: 'Số khách',
   message: 'Lời nhắn',
+  title: 'Tên bài',
 };
 
 const VIETNAMESE = /[à-ỹÀ-Ỹđ]/;
