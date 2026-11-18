@@ -387,12 +387,11 @@ function OrderCard({
   return (
     <Card className={`overflow-hidden p-0 ${isLate ? 'border-danger/60' : ''}`}>
       <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
-        <div className="min-w-0 space-y-0.5">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <p className="font-display text-lg font-semibold leading-tight">
             {order.gift ? `Bàn trả tiền: ${order.tableName}` : order.tableName}
           </p>
           <p className="text-xs text-muted-foreground">Đặt lúc {placedAt}</p>
-          <GiftLabel gift={order.gift} />
           {order.items.some((i) => i.hasCupPhoto) && (
             <Link to="/staff/cup-prints" className="text-xs font-semibold underline">
               Có ảnh · Mở thiết kế cốc
@@ -414,6 +413,11 @@ function OrderCard({
           {isLate ? `Quá hạn ${ageMin}′` : `${ageMin} phút`}
         </Badge>
       </div>
+      {order.gift ? (
+        <div className="px-4 pb-2">
+          <GiftLabel gift={order.gift} />
+        </div>
+      ) : null}
       <ul className="divide-y divide-border border-y border-border">
         {order.items.map((it, idx) => {
           const modifiers = itemModifiers(it.sugarLevel, it.iceLevel);
