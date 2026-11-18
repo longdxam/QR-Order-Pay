@@ -243,6 +243,7 @@ export function AdminUsers(): JSX.Element {
                 className="mt-1"
                 required
                 type="email"
+                autoComplete="off"
                 maxLength={254}
                 value={editing.email}
                 onChange={(event) => setEditing({ ...editing, email: event.target.value })}
@@ -323,6 +324,7 @@ export function AdminUsers(): JSX.Element {
       </Modal>
       <Modal open={creating} onOpenChange={(o) => !o && setCreating(false)} title="Thêm nhân viên">
         <form
+          autoComplete="off"
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
@@ -343,6 +345,7 @@ export function AdminUsers(): JSX.Element {
             <Input
               required
               type="email"
+              autoComplete="off"
               className="mt-1"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -355,6 +358,7 @@ export function AdminUsers(): JSX.Element {
               minLength={8}
               maxLength={72}
               type="password"
+              autoComplete="new-password"
               className="mt-1"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -388,6 +392,7 @@ export function AdminUsers(): JSX.Element {
         title={`Đặt lại mật khẩu: ${pwdFor?.name ?? ''}`}
       >
         <form
+          autoComplete="off"
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
@@ -404,6 +409,7 @@ export function AdminUsers(): JSX.Element {
           <Input
             name="password"
             type="password"
+            autoComplete="new-password"
             required
             minLength={8}
             maxLength={72}

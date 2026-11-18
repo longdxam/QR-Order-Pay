@@ -4,6 +4,13 @@ Cập nhật: 17/11/2026.
 
 > **Quy tắc đang áp dụng:** Quán dùng **QR cố định ký HMAC `qrs1`**, in/dùng lại qua các phiên; không đổi mỗi 60 giây. [QR hiện hành](docs/qr-prepayment.md) thay thế thiết kế QR động ghi ngày 12/10 bên dưới. Mỗi mục có ngày trong memory là lịch sử, không tự đại diện cho trạng thái hiện tại. Các tính năng đã gỡ xem [phạm vi hiện hành](docs/retired-features.md).
 
+## Điều chỉnh khoản thu chờ duyệt không còn khóa đơn; tắt autofill form Nhân viên — 18/11/2026
+
+- User thấy bất tiện: yêu cầu điều chỉnh khoản thu của Staff đang chờ Admin (DB lúc đó có 1 METHOD "Kiểm tra lại") khóa cả thu tiền, hủy/yêu cầu hủy, hoàn tiền, chuyển KDS và đóng phiên. User chọn **không chặn gì cả**. Bỏ `assertNoPaymentCorrection` khỏi orderService (khách hủy, Staff chuyển trạng thái), cancelRequestService, orderRefundService, paymentService (thu tiền, đóng phiên/chốt bill); chỉ giữ trong `requestPaymentCorrection` để không có hai yêu cầu chờ cùng khoản. An toàn vì `applyPaymentCorrection` đã kiểm tra lại payment version, đơn nguồn chưa pha (VOID/TRANSFER), phiên mở và đơn nhận còn dư nợ; yêu cầu cũ bị từ chối (403/409), Admin Bỏ điều chỉnh. Test mới trong prepaidQr: VOID chờ → KDS CONFIRMED/PREPARING 200 → duyệt 403, khoản thu giữ SUCCESS; TRANSFER chờ → thu đủ đơn nhận → duyệt 409. Bỏ 2 assertion cũ kiểm `PAYMENT_CORRECTION_PENDING`. Server toàn bộ 441/441, lint đạt. Cập nhật payment-safeguards.
+- Form Thêm/Sửa nhân viên và Đặt lại mật khẩu bị trình duyệt tự điền tài khoản admin đã lưu: thêm `autoComplete="off"` (email/form) và `new-password` (mật khẩu). Client 229/229.
+- Lỗi 422 do Zod giờ ghi rõ lý do thay cho "Dữ liệu chưa hợp lệ.": `server/src/utils/validationMessage.ts` gộp tối đa 3 lỗi (mỗi trường một lỗi), ưu tiên thông báo tiếng Việt viết trong schema, còn lại dịch lỗi mặc định Zod kèm tên trường (`details` giữ nguyên). Schema đăng ký thành viên trong contracts có thông báo riêng cho thiếu/ngắn/dài tên, SĐT (định dạng 03/05/07/08/09 hoặc +84) và mật khẩu. Unit test mới 2/2; server 443/443, client 229/229.
+- Chưa deploy, chưa commit.
+
 ## Chủ quán, cấp lại khóa QR chỉ Admin, xóa nguyên liệu/voucher chưa dùng — 18/11/2026
 
 - User chọn cả 4 hướng đề xuất. **Chủ quán** = ADMIN còn hoạt động tạo sớm nhất (`userRepository.ownerId`, hiện là admin@maycafe.vn), tính lúc chạy, không thêm field/migration. Chỉ chủ quán tạo/sửa/khóa/đổi mật khẩu tài khoản ADMIN và cấp quyền ADMIN; admin khác chỉ quản lý STAFF (403 FORBIDDEN). Không ai khóa/hạ quyền/xóa được chủ quán (tự khóa/hạ đã bị chặn từ trước, xóa chỉ áp dụng STAFF) nên chủ quán không đổi. `GET /admin/users` trả `isOwner`; trang Nhân viên hiện nhãn Chủ quán, ẩn thao tác trên tài khoản quản trị và lựa chọn vai trò ADMIN với admin thường.
