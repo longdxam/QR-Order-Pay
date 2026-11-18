@@ -18,6 +18,12 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { orderRealtimeEvents } from './orderService.js';
 
+/**
+ * Chỉ dùng khi lập yêu cầu mới: mỗi khoản thu/đơn chỉ có một yêu cầu chờ duyệt. Yêu cầu đang chờ
+ * KHÔNG chặn thu tiền, hoàn tiền, hủy hay chuyển trạng thái đơn; lúc duyệt `applyPaymentCorrection`
+ * kiểm tra lại phiên bản khoản thu, đơn nguồn chưa pha và đơn nhận còn dư nợ, nên yêu cầu đã cũ
+ * bị từ chối thay vì làm sai tiền.
+ */
 export async function assertNoPaymentCorrection(orderId: string, session: ClientSession) {
   const payments = await paymentRepository.listIdsForOrder(orderId, session);
   if (

@@ -11,7 +11,6 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError
 import { ensureOpenShift } from './cashShiftService.js';
 import { orderRealtimeEvents } from './orderService.js';
 import { cancelRequestRepository } from '../repositories/cancelRequestRepository.js';
-import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { clearCommittedPaymentClaim } from './paymentClaimService.js';
 
 // Records a refund already made manually; never initiates a bank transfer.
@@ -22,7 +21,6 @@ export async function recordOrderRefund(
   method: 'CASH' | 'BANK_TRANSFER' | 'OTHER',
   session: ClientSession,
 ) {
-  await assertNoPaymentCorrection(order.id, session);
   const active =
     !order.tableSessionId ||
     (await tableSessionRepository.lockForRefund(order.tableSessionId, actorId, session));

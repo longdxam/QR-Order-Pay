@@ -6,7 +6,6 @@ import { orderRepository } from '../repositories/orderRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import type { OrderDoc } from '../models/Order.js';
 import { recordOrderRefund } from './orderRefundService.js';
-import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { guardUnpaidCancellation } from './paymentClaimService.js';
 
 export async function createCancelRequest(orderId: string, participantId: string, reason: string) {
@@ -26,7 +25,6 @@ export async function createCancelRequest(orderId: string, participantId: string
         );
       const existing = await cancelRequestRepository.findPendingForOrder(orderId, session);
       if (existing) return existing;
-      await assertNoPaymentCorrection(order.id, session);
       if (!(await orderRepository.bumpVersion(order, session)))
         throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
       const created = await cancelRequestRepository.create(

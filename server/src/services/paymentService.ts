@@ -23,7 +23,6 @@ import { ensureOpenShift } from './cashShiftService.js';
 import { Types, type ClientSession } from 'mongoose';
 import { orderRealtimeEvents } from './orderService.js';
 import { guardPaymentClaim, clearCommittedPaymentClaim } from './paymentClaimService.js';
-import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { settleOrderBenefits } from './promotionService.js';
 
 export interface ConfirmOrderPaymentInput {
@@ -62,7 +61,6 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
       if (!order) throw new NotFoundError('Đơn không tồn tại.');
       if (order.pickup && order.pickup.outcome !== 'ACTIVE')
         throw new ConflictError('CONFLICT', 'Đơn mang đi đã kết thúc.');
-      await assertNoPaymentCorrection(order.id, session);
       if (await cancelRequestRepository.hasPending({ orderId: order._id }, session))
         throw new ConflictError(
           'CANCEL_REQUEST_PENDING',
@@ -157,7 +155,6 @@ export async function finalizeSessionBill(
   if (!table) throw new NotFoundError('Bàn không tồn tại.');
   const cashier = staffId ? await userRepository.findById(staffId, session) : null;
   const orders = await orderRepository.listBySession(tableSession.id, session);
-  for (const order of orders) await assertNoPaymentCorrection(order.id, session);
   const payments = await paymentRepository.listBySession(tableSession.id, session);
   const { bill } = await billRepository.finalize(
     {
@@ -240,7 +237,6 @@ async function settleSession(input: ConfirmPaymentInput) {
     }
 
     const allOrders = await orderRepository.listBySession(input.tableSessionId, session);
-    for (const order of allOrders) await assertNoPaymentCorrection(order.id, session);
     if (allOrders.some((o) => !['SERVED', 'CANCELLED'].includes(o.status))) {
       throw new ValidationError(
         'Còn món chưa phục vụ. Hãy hoàn tất hoặc hủy đơn hợp lệ trước khi thu tiền.',

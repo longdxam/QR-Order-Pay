@@ -507,14 +507,6 @@ describe('payment safeguards', () => {
     const created = await correction(payment._id, 'VOID');
     expect(created.status).toBe(201);
     expect((await correction(payment._id, 'VOID')).status).toBe(409);
-    expect(
-      (
-        await request(app)
-          .patch(`/api/v1/staff/orders/${id}/status`)
-          .set(auth())
-          .send({ status: 'CONFIRMED' })
-      ).body.error.code,
-    ).toBe('PAYMENT_CORRECTION_PENDING');
     expect((await decision(created.body.data._id, auth())).status).toBe(403);
     const admin = await person('ADMIN');
     const secondAdmin = await person('ADMIN');
@@ -581,6 +573,33 @@ describe('payment safeguards', () => {
     expect(shift.body.data.shift.reversalsByMethod.CASH.total).toBe(35000);
   });
 
+  it('does not freeze the order while a correction waits; stale corrections are refused on approval', async () => {
+    const id = (await place(cookieOf(await join()))).body.data.order._id;
+    const payment = (await receive(id)).body.data.payment;
+    const voided = await correction(payment._id, 'VOID');
+    expect(voided.status).toBe(201);
+    const move = (status: string) =>
+      request(app).patch(`/api/v1/staff/orders/${id}/status`).set(auth()).send({ status });
+    expect((await move('CONFIRMED')).status).toBe(200);
+    expect((await move('PREPARING')).status).toBe(200);
+    const admin = await person('ADMIN');
+    const late = await decision(voided.body.data._id, admin.headers);
+    expect(late.status).toBe(403);
+    expect((await PaymentModel.findById(payment._id))!.status).toBe('SUCCESS');
+    expect((await OrderModel.findById(id))!.status).toBe('PREPARING');
+
+    const cookie = cookieOf(await join());
+    const source = (await place(cookie)).body.data.order._id;
+    const target = (await place(cookie)).body.data.order._id;
+    const sourcePayment = (await receive(source)).body.data.payment;
+    const moved = await correction(sourcePayment._id, 'TRANSFER', { targetOrderId: target });
+    expect(moved.status).toBe(201);
+    expect((await receive(target)).status).toBe(201);
+    const stale = await decision(moved.body.data._id, admin.headers);
+    expect(stale.status).toBe(409);
+    expect((await OrderModel.findById(source))!.paymentStatus).toBe('PAID');
+  });
+
   it('moves a mistaken receipt to the right order atomically and keeps net revenue unchanged', async () => {
     const cookie = cookieOf(await join());
     const source = (await place(cookie)).body.data.order._id;
@@ -588,7 +607,6 @@ describe('payment safeguards', () => {
     const payment = (await receive(source)).body.data.payment;
     const created = await correction(payment._id, 'TRANSFER', { targetOrderId: target });
     expect(created.status).toBe(201);
-    expect((await receive(target)).body.error.code).toBe('PAYMENT_CORRECTION_PENDING');
     const admin = await person('ADMIN');
     expect((await decision(created.body.data._id, admin.headers)).status).toBe(200);
     expect((await OrderModel.findById(source))!.toObject()).toMatchObject({

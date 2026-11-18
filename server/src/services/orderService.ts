@@ -16,7 +16,6 @@ import { tableSessionRepository } from '../repositories/tableSessionRepository.j
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import { priceOrderWithBenefits, validateQuote } from './orderPricingService.js';
 import { reserveBenefits } from './promotionService.js';
-import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { guardUnpaidCancellation } from './paymentClaimService.js';
 import mongoose from 'mongoose';
 import { reserveOrderInventory } from './orderInventoryService.js';
@@ -240,7 +239,6 @@ export async function cancelOrderByGuest(
     if (!order) throw new NotFoundError('Đơn không tồn tại.');
     if (order.participantId !== participantId)
       throw new ForbiddenError('Bạn không thể hủy đơn của khách khác.');
-    await assertNoPaymentCorrection(order.id, session);
     if (
       !['AWAITING_PAYMENT', 'PENDING'].includes(order.status) ||
       order.paymentStatus !== 'UNPAID' ||
@@ -299,7 +297,6 @@ export async function transitionByStaff(
       Date.now() < order.pickup.scheduledAt.getTime() - 15 * 60000
     )
       throw new ForbiddenError('Chỉ pha đơn đặt trước từ 15 phút trước giờ nhận.');
-    await assertNoPaymentCorrection(order.id, session);
     const allowed = allowedNext(order.status);
     if (next !== 'CANCELLED' && order.paymentStatus !== 'PAID')
       throw new ForbiddenError('Phải xác nhận đã nhận đủ tiền trước khi chuyển đơn sang pha chế.');
