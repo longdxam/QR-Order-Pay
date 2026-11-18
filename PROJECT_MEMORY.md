@@ -4,6 +4,12 @@ Cập nhật: 17/11/2026.
 
 > **Quy tắc đang áp dụng:** Quán dùng **QR cố định ký HMAC `qrs1`**, in/dùng lại qua các phiên; không đổi mỗi 60 giây. [QR hiện hành](docs/qr-prepayment.md) thay thế thiết kế QR động ghi ngày 12/10 bên dưới. Mỗi mục có ngày trong memory là lịch sử, không tự đại diện cho trạng thái hiện tại. Các tính năng đã gỡ xem [phạm vi hiện hành](docs/retired-features.md).
 
+## Thẻ đơn KDS gọn hơn — 18/11/2026
+
+- User thấy thẻ KDS nhiều chữ, xít nhau. `OrderCard` trong `client/src/features/staff/KDS.tsx`: bỏ dòng lặp “Bàn · giờ ngày” (giữ tên bàn chữ to + “Đặt lúc HH:mm”); badge phút không xuống dòng; mỗi món một dòng có ô số lượng, size nhạt cạnh tên, đường kẻ giữa các món; chỉ hiện tùy chọn **khác mặc định** (đường khác 50%, ít/không đá) và topping dạng nhãn; ghi chú trong ô nền vàng; bỏ giá trên thẻ (xem ở nút chi tiết); nút hủy thành dòng chữ đỏ “Hủy đơn · đã hoàn tiền”, hộp xác nhận giữ nguyên. Aria-label “Chuyển sang …” giữ nguyên.
+- Typecheck/lint/client 229/229 đạt; build web image và user đã recreate container web; KDS live 8081 xác nhận giao diện mới.
+- Dữ liệu demo cho báo cáo (ngoài repo) tạo qua UI ngày 18/11, backup trước `.cache/maycafe-before-report-demo-20261118.archive.gz`.
+
 ## Điều chỉnh khoản thu chờ duyệt không còn khóa đơn; tắt autofill form Nhân viên — 18/11/2026
 
 - User thấy bất tiện: yêu cầu điều chỉnh khoản thu của Staff đang chờ Admin (DB lúc đó có 1 METHOD "Kiểm tra lại") khóa cả thu tiền, hủy/yêu cầu hủy, hoàn tiền, chuyển KDS và đóng phiên. User chọn **không chặn gì cả**. Bỏ `assertNoPaymentCorrection` khỏi orderService (khách hủy, Staff chuyển trạng thái), cancelRequestService, orderRefundService, paymentService (thu tiền, đóng phiên/chốt bill); chỉ giữ trong `requestPaymentCorrection` để không có hai yêu cầu chờ cùng khoản. An toàn vì `applyPaymentCorrection` đã kiểm tra lại payment version, đơn nguồn chưa pha (VOID/TRANSFER), phiên mở và đơn nhận còn dư nợ; yêu cầu cũ bị từ chối (403/409), Admin Bỏ điều chỉnh. Test mới trong prepaidQr: VOID chờ → KDS CONFIRMED/PREPARING 200 → duyệt 403, khoản thu giữ SUCCESS; TRANSFER chờ → thu đủ đơn nhận → duyệt 409. Bỏ 2 assertion cũ kiểm `PAYMENT_CORRECTION_PENDING`. Server toàn bộ 441/441, lint đạt. Cập nhật payment-safeguards.

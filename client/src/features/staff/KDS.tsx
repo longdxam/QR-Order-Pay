@@ -379,17 +379,22 @@ function OrderCard({
   const ageMin = Math.max(0, Math.floor((Date.now() - stageStartedAt(order)) / 60000));
   const threshold = LATE_AFTER_MINUTES[order.status] ?? 10;
   const isLate = ageMin >= threshold;
+  const placedAt = new Date(order.createdAt).toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
   return (
-    <Card className={`p-3 space-y-2 ${isLate ? 'border-danger/60' : ''}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-display font-semibold">{orderLabel(order)}</p>
-          <p className="font-semibold text-primary">
+    <Card className={`overflow-hidden p-0 ${isLate ? 'border-danger/60' : ''}`}>
+      <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-display text-lg font-semibold leading-tight">
             {order.gift ? `Bàn trả tiền: ${order.tableName}` : order.tableName}
           </p>
+          <p className="text-xs text-muted-foreground">Đặt lúc {placedAt}</p>
           <GiftLabel gift={order.gift} />
           {order.items.some((i) => i.hasCupPhoto) && (
-            <Link to="/staff/cup-prints" className="text-sm font-semibold underline">
+            <Link to="/staff/cup-prints" className="text-xs font-semibold underline">
               Có ảnh · Mở thiết kế cốc
             </Link>
           )}
@@ -401,71 +406,117 @@ function OrderCard({
               })}
             </p>
           ) : null}
-          <p className="text-xs text-muted-foreground">
-            {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </p>
         </div>
-        <Badge tone={isLate ? 'danger' : 'info'}>
-          {isLate ? `Quá hạn · ${ageMin} phút` : `${ageMin} phút`}
+        <Badge
+          className="shrink-0 whitespace-nowrap tabular-nums"
+          tone={isLate ? 'danger' : 'info'}
+        >
+          {isLate ? `Quá hạn ${ageMin}′` : `${ageMin} phút`}
         </Badge>
       </div>
-      <ul className="space-y-1 text-sm">
-        {order.items.map((it, idx) => (
-          <li key={idx} className="flex flex-col">
-            <span className="font-medium">
-              {it.quantity} x {it.nameSnapshot}
-              {it.sizeName ? ` (${it.sizeName})` : ''}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Đường {it.sugarLevel} · {labelIce(it.iceLevel)} · {vnd(it.lineTotal)}
-            </span>
-            {it.note ? (
-              <span className="text-xs italic text-primary">Ghi chú: {it.note}</span>
-            ) : null}
-            {it.toppingNamesSnapshot?.length ? (
-              <span className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</span>
-            ) : null}
-            <FreestyleRecipe value={it.freestyle} />
-          </li>
-        ))}
+      <ul className="divide-y divide-border border-y border-border">
+        {order.items.map((it, idx) => {
+          const modifiers = itemModifiers(it.sugarLevel, it.iceLevel);
+          return (
+            <li key={idx} className="flex gap-3 px-4 py-2.5">
+              <span className="mt-0.5 inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 text-xs font-bold tabular-nums">
+                {it.quantity}×
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-sm font-semibold leading-snug">
+                  {it.nameSnapshot}
+                  {it.sizeName ? (
+                    <span className="ml-1 font-normal text-muted-foreground">· {it.sizeName}</span>
+                  ) : null}
+                </p>
+                {modifiers.length || it.toppingNamesSnapshot?.length ? (
+                  <div className="flex flex-wrap gap-1">
+                    {modifiers.map((m) => (
+                      <span
+                        key={m}
+                        className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                    {it.toppingNamesSnapshot?.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                      >
+                        + {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {it.note ? (
+                  <p className="rounded-md bg-warning/10 px-2 py-1 text-xs italic">“{it.note}”</p>
+                ) : null}
+                <FreestyleRecipe value={it.freestyle} />
+              </div>
+            </li>
+          );
+        })}
       </ul>
-      <div className="flex gap-2">
-        {nextStatus ? (
+      <div className="space-y-1.5 px-4 py-3">
+        <div className="flex gap-2">
+          {nextStatus ? (
+            <Button
+              onClick={onAdvance}
+              disabled={busy}
+              size="sm"
+              className="flex-1 whitespace-nowrap"
+              aria-label={`Chuyển sang ${nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)}`}
+            >
+              {nextStatus === 'SERVED' &&
+              order.fulfillmentType &&
+              order.fulfillmentType !== 'DINE_IN'
+                ? 'Khách đã nhận'
+                : statusLabel(nextStatus)}
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            </Button>
+          ) : null}
           <Button
-            onClick={onAdvance}
-            disabled={busy}
+            variant="outline"
             size="sm"
-            className="flex-1"
-            aria-label={`Chuyển sang ${nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)}`}
+            onClick={onView}
+            title="Xem chi tiết"
+            aria-label="Xem chi tiết đơn"
           >
-            {nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN'
-              ? 'Khách đã nhận'
-              : statusLabel(nextStatus)}{' '}
-            <ChevronRight className="h-4 w-4 shrink-0" />
+            <Eye className="h-4 w-4" />
           </Button>
+        </div>
+        {['PENDING', 'CONFIRMED'].includes(order.status) ? (
+          <button
+            type="button"
+            disabled={busy}
+            className="w-full rounded-full py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
+            title={
+              order.paymentStatus === 'PAID'
+                ? 'Chỉ dùng sau khi đã hoàn tiền mặt cho khách'
+                : undefined
+            }
+            onClick={() => {
+              if (window.confirm(`Hủy đơn ${orderLabel(order)}?`)) onCancel();
+            }}
+          >
+            {order.paymentStatus === 'PAID' ? 'Hủy đơn · đã hoàn tiền' : 'Hủy đơn'}
+          </button>
         ) : null}
-        <Button variant="outline" size="sm" onClick={onView} title="Xem chi tiết">
-          <Eye className="h-4 w-4" />
-        </Button>
       </div>
-      {['PENDING', 'CONFIRMED'].includes(order.status) ? (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          className="w-full"
-          onClick={() => {
-            if (window.confirm(`Hủy đơn ${orderLabel(order)}?`)) onCancel();
-          }}
-        >
-          {order.paymentStatus === 'PAID' ? 'Hủy & xác nhận đã hoàn tiền' : 'Hủy đơn'}
-        </Button>
-      ) : null}
     </Card>
   );
+}
+
+/** Only the choices that differ from the standard recipe, so the barista sees what to change. */
+function itemModifiers(sugar: string, ice: string): string[] {
+  const out: string[] = [];
+  if (sugar && sugar !== '50%' && sugar !== 'Theo công thức') out.push(`Đường ${sugar}`);
+  if (ice === 'no-ice' || ice === 'less-ice') {
+    const label = labelIce(ice);
+    out.push(label.charAt(0).toUpperCase() + label.slice(1));
+  }
+  return out;
 }
 
 function stageStartedAt(order: Order): number {
