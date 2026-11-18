@@ -1,20 +1,32 @@
 import { z } from 'zod';
 
 export const memberPhoneSchema = z
-  .string()
+  .string({ required_error: 'Vui lòng nhập số điện thoại.' })
   .trim()
-  .max(24)
+  .min(1, 'Vui lòng nhập số điện thoại.')
+  .max(24, 'Số điện thoại quá dài.')
   .transform((v) => v.replace(/[\s().-]/g, '').replace(/^\+84/, '0'))
-  .pipe(z.string().regex(/^0[35789]\d{8}$/, 'SĐT di động Việt Nam không hợp lệ.'));
+  .pipe(
+    z
+      .string()
+      .regex(
+        /^0[35789]\d{8}$/,
+        'Số điện thoại phải là số di động Việt Nam gồm 10 chữ số, bắt đầu bằng 03, 05, 07, 08 hoặc 09 (hoặc +84).',
+      ),
+  );
 export const memberPasswordSchema = z
-  .string()
+  .string({ required_error: 'Vui lòng nhập mật khẩu.' })
   .min(8, 'Mật khẩu cần ít nhất 8 ký tự.')
-  .max(64)
+  .max(64, 'Mật khẩu tối đa 64 ký tự.')
   .refine((v) => new TextEncoder().encode(v).length <= 72, 'Mật khẩu quá dài.');
 export const memberRegisterSchema = z
   .object({
     phone: memberPhoneSchema,
-    name: z.string().trim().min(2).max(80),
+    name: z
+      .string({ required_error: 'Vui lòng nhập tên.' })
+      .trim()
+      .min(2, 'Tên cần ít nhất 2 ký tự.')
+      .max(80, 'Tên tối đa 80 ký tự.'),
     password: memberPasswordSchema,
   })
   .strict();
