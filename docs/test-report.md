@@ -1,6 +1,6 @@
 # Test report — cập nhật 15/11/2026
 
-> Nhật ký theo ngày: các tính năng/thiết kế trong mục cũ có thể đã ngừng. Phạm vi hiện tại xem [tính năng đã gỡ](retired-features.md), [QR cố định](qr-prepayment.md) và [bộ nhớ dự án](../PROJECT_MEMORY.md).
+> Nhật ký theo ngày: các tính năng/thiết kế trong mục cũ có thể đã ngừng. Phạm vi hiện tại xem [tính năng đã gỡ](retired-features.md) và [QR cố định](qr-prepayment.md).
 
 ## Luồng khách, vận hành và báo cáo — 15/11/2026
 

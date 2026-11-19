@@ -1,6 +1,6 @@
 # Hạn chế đã biết
 
-Cập nhật mục AI ngày 06/10/2026; các trạng thái còn lại phản ánh snapshot 23/09/2026. Xem [bộ nhớ dự án](../PROJECT_MEMORY.md) và [test report](test-report.md).
+Cập nhật mục AI ngày 06/10/2026; các trạng thái còn lại phản ánh snapshot 23/09/2026. Xem [test report](test-report.md).
 
 - **AI Barista mới có smoke provider thật giới hạn**: Zen `space-bunny-free` đã trả `llm` cho ba case trước chuyên hoá và một case kết hợp sau chuyên hoá ngày 06/10/2026; một case mới timeout 15 giây và fallback. Chưa benchmark chất lượng, skill-vs-baseline, chi phí hoặc latency đại diện. Backend chỉ hỗ trợ native Chat Completions với Bearer auth/JSON-object mode; live cần model/key tường minh. `ANOMALY_AI_MODE` độc lập, mặc định `fallback`; HTTP 401 ngày 22/09/2026 là bằng chứng lịch sử. Xem [ai-evaluation.md](ai-evaluation.md).
 - **MongoDB cần replica set** để dùng transaction; compose.yaml đã cấu hình nhưng cần Docker Desktop chạy. Test integration dùng `mongodb-memory-server` để thay thế.

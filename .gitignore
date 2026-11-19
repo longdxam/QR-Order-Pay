@@ -37,3 +37,22 @@ test-results/
 Thumbs.db
 .vscode/
 .idea/
+
+# Ghi chú cho AI/agent, tài liệu trình bày cá nhân và dữ liệu demo một lần: giữ trên máy, không đưa lên Git
+AGENTS.md
+PROJECT_MEMORY.md
+claude_de_xuat.md
+HUONG_DAN_*.md
+docs/superpowers/
+docs/archive/
+docs/upgrade-progress.md
+docs/frontend-reference-notes.md
+docs/kich-ban-video-trinh-bay.md
+docs/loi-van-trinh-bay.md
+docs/defense-notes.md
+docs/demo-data-defense.md
+docs/workforce-history-demo.md
+docs/Bao_cao_chuc_nang_kien_truc_thiet_ke_May_Cafe.docx
+docs/hinh-trinh-bay/
+scripts/archive-demo-data-20261116.mjs
+scripts/setup-workforce-history-demo.mjs

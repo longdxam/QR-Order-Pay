@@ -1,6 +1,5 @@
 # Fantastic Cafe — QR Ordering & AI Barista
 
-Trạng thái triển khai và ghi nhớ cho lần làm việc tiếp theo: [PROJECT_MEMORY.md](PROJECT_MEMORY.md).
 Kết quả kiểm chứng mới nhất: [docs/test-report.md](docs/test-report.md).
 Bối cảnh thiết kế, nhận diện và các file quan trọng: [docs/design-context.md](docs/design-context.md).
 
