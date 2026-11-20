@@ -6,6 +6,7 @@
  */
 import mongoose from 'mongoose';
 import { hashPassword, randomToken, sha256, randomShortCode } from '../utils/crypto.js';
+import { startOfDayVietnam } from '../utils/reportWindow.js';
 import { config } from '../config/index.js';
 import { CategoryModel } from '../models/Category.js';
 import { ProductModel } from '../models/Product.js';
@@ -599,9 +600,9 @@ export async function seed(): Promise<void> {
   const orders: unknown[] = [];
   const payments: unknown[] = [];
 
+  const seededAt = Date.now();
   for (let d = 0; d < 30; d++) {
-    const date = new Date();
-    date.setDate(date.getDate() - d);
+    const dayStart = startOfDayVietnam(new Date(seededAt - d * 86_400_000)).getTime();
     const count = 2 + Math.floor(rand() * 4); // 2..5 orders per day
     for (let k = 0; k < count; k++) {
       const product = pick(productList.filter((p) => p.isAvailable));
@@ -622,9 +623,12 @@ export async function seed(): Promise<void> {
       const unitPrice = unit + toppingSum;
       const lineTotal = unitPrice * qty;
       const total = lineTotal;
-      const createdAt = new Date(date);
-      createdAt.setHours(8 + Math.floor(rand() * 12));
-      createdAt.setMinutes(Math.floor(rand() * 60));
+      // 8h–19h giờ Việt Nam, không phụ thuộc múi giờ của máy/container chạy seed.
+      const createdAt = new Date(
+        dayStart + (8 + Math.floor(rand() * 12)) * 3_600_000 + Math.floor(rand() * 60) * 60_000,
+      );
+      // Đơn lịch sử phải nằm trọn trong quá khứ, kể cả mốc thu tiền (+5 phút).
+      if (createdAt.getTime() + 300_000 > seededAt) continue;
       const status = d === 0 ? 'SERVED' : pick([...orderStatuses]);
       const isPaid = status === 'SERVED' && rand() > 0.1;
       const paymentStatus = isPaid
