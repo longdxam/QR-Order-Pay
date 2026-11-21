@@ -20,3 +20,10 @@ Images come from existing Product.image URLs in the running catalog; no product 
 - `/menu-images/e367662b94a41194.webp`: https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=600&q=70&auto=format
 - `/menu-images/4ad0bfb00317499f.webp`: https://images.unsplash.com/photo-1571805341302-f857308690e3?w=600&q=70&auto=format
 - `/menu-images/292050b1713c49a7.webp`: https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=600&q=70&auto=format
+
+## Replacements for removed photos
+
+These Product.image URLs return HTTP 404, so the products keep their URL and the cache maps it to a replacement photo of the same drink.
+
+- `/menu-images/720278b0a4a17d19.webp` (Trà Vải Hoa Hồng, replaces https://images.unsplash.com/photo-1595981234057-1cb4ffa6c64b?w=600&q=70&auto=format): https://images.pexels.com/photos/12033286/pexels-photo-12033286.jpeg — "A Lychee Mocktail on a Coaster" by Augustinus Martinus Noppé, Pexels License, https://www.pexels.com/photo/a-lychee-mocktail-on-a-coaster-12033286/
+- `/menu-images/cc83d16359634d9f.webp` (Trà Xanh Matcha Latte, replaces https://images.unsplash.com/photo-1536013455834-d44bbf3c8b06?w=600&q=70&auto=format): https://images.unsplash.com/photo-1560148196-df61132466ce?w=600&q=70&auto=format — "Matcha latte" by Jason Leung, Unsplash License, https://unsplash.com/photos/matcha-latte-rW_EmeV7dEU
