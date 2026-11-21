@@ -246,6 +246,12 @@ describe('anonymous gift UI', () => {
       { expectedVersion: 0, decision: 'ACCEPT' },
     ]);
   });
+  it('describes gift item options in Vietnamese instead of internal codes', async () => {
+    mock.rows = [row()];
+    mount();
+    await screen.findByText('Đường 50% · đá thường');
+    expect(screen.queryByText(/normal-ice/)).toBeNull();
+  });
   it('lets the sender choose to show their table for this gift and resets the next draft to anonymous', async () => {
     mount();
     await choose();

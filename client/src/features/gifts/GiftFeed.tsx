@@ -117,7 +117,14 @@ function GiftCard({
             {i.quantity} × {i.name} {i.variantName}
             {i.hasCupPhoto ? ' · Có ảnh tùy chỉnh' : ''}
             <span className="block text-xs text-muted-foreground">
-              {[i.sugarLevel, i.iceLevel, ...i.toppingNames, i.note].filter(Boolean).join(' · ')}
+              {[
+                i.sugarLevel && `Đường ${i.sugarLevel}`,
+                i.iceLevel && iceLabel(i.iceLevel),
+                ...i.toppingNames,
+                i.note,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           </li>
         ))}
@@ -158,4 +165,9 @@ function GiftCard({
       </div>
     </Card>
   );
+}
+
+function iceLabel(v: string): string {
+  if (v === 'Theo công thức') return v;
+  return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
 }
