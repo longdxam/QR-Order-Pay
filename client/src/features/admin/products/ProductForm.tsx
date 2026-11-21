@@ -3,8 +3,9 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import type { Category, FormState, TagSuggestions } from './model';
 
-const inputCls =
-  'w-full rounded-md border border-control bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary';
+const controlCls =
+  'rounded-md border border-control bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary';
+const inputCls = `w-full ${controlCls}`;
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
@@ -160,7 +161,8 @@ export function ProductForm({
           {form.variants.map((v, i) => (
             <div key={i} className="flex items-center gap-2">
               <input
-                className={inputCls + ' w-20'}
+                // Không dùng inputCls ở hàng size/giá: w-full của nó thắng w-20 và đè ô giá còn ~0px.
+                className={controlCls + ' w-20 shrink-0'}
                 placeholder="Tên"
                 value={v.name}
                 onChange={(e) => {
@@ -170,7 +172,7 @@ export function ProductForm({
                 }}
               />
               <input
-                className={inputCls + ' flex-1'}
+                className={controlCls + ' min-w-0 flex-1'}
                 type="number"
                 min={0}
                 placeholder="Giá"
