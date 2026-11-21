@@ -18,12 +18,14 @@ Images come from existing Product.image URLs in the running catalog; no product 
 - `/menu-images/c0287295f1575714.webp`: https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=600&q=70&auto=format
 - `/menu-images/19e048981e1e6c50.webp`: https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=600&q=70&auto=format
 - `/menu-images/e367662b94a41194.webp`: https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=600&q=70&auto=format
-- `/menu-images/4ad0bfb00317499f.webp`: https://images.unsplash.com/photo-1571805341302-f857308690e3?w=600&q=70&auto=format
+- `/menu-images/52c088476a563be0.webp` (Trà Sữa Oolong): https://images.pexels.com/photos/11160113/pexels-photo-11160113.jpeg — "Photo of a Milk Tea Drink" by Shameel mukkath, Pexels License, https://www.pexels.com/photo/photo-of-a-milk-tea-drink-11160113/
+- `/menu-images/2d417a7dd182546b.webp` (Hồng Trà Sữa): https://images.pexels.com/photos/12433998/pexels-photo-12433998.png — "Milk Tea in a Tall Drinking Glass" by Vitaly Gorbachev, Pexels License, https://www.pexels.com/photo/milk-tea-in-a-tall-drinking-glass-12433998/
 - `/menu-images/292050b1713c49a7.webp`: https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=600&q=70&auto=format
 
-## Replacements for removed photos
+## Replacements for wrong or removed photos
 
-These Product.image URLs return HTTP 404, so the products keep their URL and the cache maps it to a replacement photo of the same drink.
+These Product.image URLs no longer show the right drink (HTTP 404, or a different photo), so the cache maps them to a replacement photo of the same drink. Products seeded before the fix keep the old URL and still get the right image.
 
 - `/menu-images/720278b0a4a17d19.webp` (Trà Vải Hoa Hồng, replaces https://images.unsplash.com/photo-1595981234057-1cb4ffa6c64b?w=600&q=70&auto=format): https://images.pexels.com/photos/12033286/pexels-photo-12033286.jpeg — "A Lychee Mocktail on a Coaster" by Augustinus Martinus Noppé, Pexels License, https://www.pexels.com/photo/a-lychee-mocktail-on-a-coaster-12033286/
 - `/menu-images/cc83d16359634d9f.webp` (Trà Xanh Matcha Latte, replaces https://images.unsplash.com/photo-1536013455834-d44bbf3c8b06?w=600&q=70&auto=format): https://images.unsplash.com/photo-1560148196-df61132466ce?w=600&q=70&auto=format — "Matcha latte" by Jason Leung, Unsplash License, https://unsplash.com/photos/matcha-latte-rW_EmeV7dEU
+- `/menu-images/2d417a7dd182546b.webp` (Trà Sữa Oolong and Hồng Trà Sữa in data seeded before the fix, replaces https://images.unsplash.com/photo-1571805341302-f857308690e3?w=600&q=70&auto=format, which is a salad photo): see the Hồng Trà Sữa source above. The seed now gives each milk tea its own photo.
